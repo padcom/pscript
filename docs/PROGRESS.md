@@ -16,7 +16,27 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M7 | Functions | done (2026-10-26) |
 | M8 | Arrow functions | done (2026-10-26) |
 | M9 | Objects | done (2026-10-26) |
-| M10 | Arrays and for…of | next |
+| M10 | Arrays and for…of | done (2026-10-27) |
+| M11 | Exceptions | next |
+
+## M10 — Arrays and for…of
+
+Done: array and loop programs pass (`tests/programs/arrays/`, also against Node and acorn where JS-compatible). `npm run check` and `npm run build` green; 626 tests + 2 todo.
+
+What exists:
+
+- Grammar: array literals (no holes, trailing comma), `for (let x of e)`, `for (const x of e)`, `for (x of e)`. `yy.forOfDeclaration` builds the one-declarator `VariableDeclaration` acorn produces.
+- Arrays (§4.4.7, D37): integer keys only — reads out of range (including negative indexes) → `RangeError: Index -1 out of range for length 1`; writes past the end fill with `null`; writing a non-integer key → `TypeError: Arrays only accept integer keys (got 'foo')`; `length` is writable (truncates/extends with `null`; invalid → `RangeError: Invalid array length`). Reads of other keys go to `Array.prototype`. Strings reject negative indexes the same way.
+- `src/runtime/iterators.ts`: `ScriptIterator` (never visible to scripts; lives on the VM stack), `getIterator` (arrays: live, by index while `i < length`; strings: by code unit; else `TypeError: x is not iterable`), `DONE` sentinel.
+- Compiler: `ARRAY n`; for-of as `GET_ITER; top: ITER_NEXT done; [PUSH_ENV 1; INIT] body; next: [POP_ENV] JUMP top; break: [POP_ENV] POP; done:` — `break` jumps to the label that pops the iteration environment and the iterator, `continue` to the one that pops only the environment. A bare identifier is assigned with `STORE`/`STORE_GLOBAL`.
+- VM opcodes added: `ARRAY GET_ITER ITER_NEXT`.
+- `src/stdlib/native.ts` (`defineMethods`, `integerArgument`, `orNull`), `src/stdlib/array.ts`: `push pop shift unshift slice splice concat join reverse indexOf lastIndexOf includes at fill flat` (non-array receiver → TypeError; "nothing / not found" → `null`, D37; `includes` uses SameValueZero, `indexOf` strict equality); the global `Array` is a read-only namespace object (not a class) with `isArray` and `of`.
+
+Gaps:
+
+- Callback methods (`map`, `filter`, `sort`, …) and `Array.from` → M12/M13.
+- `[] instanceof Array` gives the generic `Right-hand side of 'instanceof' is not a class` (§10.10 suggests mentioning `Array.isArray`).
+- Script arrays returned to the host are the internal objects until interop (M23).
 
 ## M9 — Objects
 

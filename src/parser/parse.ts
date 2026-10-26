@@ -6,6 +6,7 @@ import type {
   AssignmentOperator,
   BlockStatement,
   Expression,
+  ForOfStatement,
   Identifier,
   MemberExpression,
   Pattern,
@@ -152,6 +153,9 @@ function controlFlowBuilders(errors: SyntaxErrorFactory) {
     },
     forStatement(header: ForHeader, body: Statement, loc: JisonLoc) {
       return builders.forStatement(header, checkBody(errors, body), loc)
+    },
+    forOfStatement(left: ForOfStatement['left'], right: Expression, body: Statement, loc: JisonLoc) {
+      return builders.forOfStatement(left, right, checkBody(errors, body), loc)
     },
   }
 }

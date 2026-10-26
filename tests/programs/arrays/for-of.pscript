@@ -1,0 +1,24 @@
+// §10.6
+for (const ch of 'hey') print(ch)
+for (let item of [10, 20]) print(item)
+let total = 0
+for (const x of [1, 2, 3, 4, 5, 6]) {
+  if (x == 2) continue
+  if (x == 5) break
+  total += x
+}
+print(total)
+let last = null
+for (last of ['a', 'b', 'c']) {}
+print(last)
+const grows = [1]
+for (const x of grows) if (grows.length < 4) grows.push(x * 2)
+print(grows.join())
+let pairs = ''
+for (const a of [1, 2]) for (const b of 'xy') pairs += a + b + ' '
+print(pairs)
+function firstOver(list, limit) {
+  for (const x of list) if (x > limit) return x
+  return -1
+}
+print(firstOver([1, 5, 10], 4), firstOver([1], 4))

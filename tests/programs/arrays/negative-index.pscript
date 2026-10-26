@@ -1,0 +1,2 @@
+// @pscript-only: negative indexes are out of range (D37)
+print([1][-1])

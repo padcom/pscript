@@ -1,0 +1,10 @@
+// §10.4: a fresh `i` per iteration
+const LIMIT = 3
+let fns = []
+for (let i = 0; i < LIMIT; i++) fns.push(() => i)
+let results = []
+for (const fn of fns) results.push(fn())
+print(results.join(','))
+let byOf = []
+for (const v of ['a', 'b']) byOf.push(() => v)
+print(byOf[0](), byOf[1]())

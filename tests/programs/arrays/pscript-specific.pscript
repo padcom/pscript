@@ -1,0 +1,9 @@
+// @pscript-only: D37 (null for "not found"), print formatting (D18), gaps filled with null
+const xs = [5, 3, 8, 1]
+print(xs.at(10), [].pop(), [].shift(), xs)
+const ys = [1]
+ys[3] = 4
+print(ys, ys.length)
+ys.length = 6
+print(ys)
+print([1, [2, [3, [4]]]], ['a', "b"])

@@ -1,0 +1,2 @@
+// @pscript-only: Array is not a class (D26)
+print([] instanceof Array)

@@ -1,5 +1,6 @@
 // AST node builders used by the grammar actions (`yy.*`, §5.3).
 import type {
+  ArrayExpression,
   ArrowFunctionExpression,
   AssignmentExpression,
   AssignmentPattern,
@@ -8,6 +9,7 @@ import type {
   BlockStatement,
   BreakStatement,
   ContinueStatement,
+  ForOfStatement,
   ForStatement,
   IfStatement,
   WhileStatement,
@@ -149,6 +151,21 @@ export const builders = {
 
   member(object: Expression, property: Expression, computed: boolean, loc: JisonLoc): MemberExpression {
     return { type: 'MemberExpression', object, property, computed, optional: false, loc: toLoc(loc) }
+  },
+
+  array(elements: Expression[], loc: JisonLoc): ArrayExpression {
+    return { type: 'ArrayExpression', elements, loc: toLoc(loc) }
+  },
+
+  forOfStatement(left: ForOfStatement['left'], right: Expression, body: Statement, loc: JisonLoc): ForOfStatement {
+    return { type: 'ForOfStatement', left, right, body, await: false, loc: toLoc(loc) }
+  },
+
+  // `let x` / `const x` in `for (… of …)`: one declarator without initialiser.
+  forOfDeclaration(kind: 'let' | 'const', id: Identifier, start: JisonLoc, end: JisonLoc): VariableDeclaration {
+    const loc = toLoc({ ...start, last_line: end.last_line, last_column: end.last_column })
+
+    return { type: 'VariableDeclaration', kind, declarations: [{ type: 'VariableDeclarator', id, init: null, loc: id.loc }], loc }
   },
 
   object(properties: Property[], loc: JisonLoc): ObjectExpression {

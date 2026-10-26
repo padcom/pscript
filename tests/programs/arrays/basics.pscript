@@ -1,0 +1,13 @@
+// §10.10 (callback methods arrive in M12)
+const xs = [5, 3, 8]
+xs.push(1)
+print(xs.length, xs[0], xs[xs.length - 1])
+print(xs.includes(8), xs.indexOf(3), xs.join('-'))
+print(Array.isArray(xs), Array.isArray('no'))
+const nested = [1, 'a', [2, [3]]]
+print(nested[2][1][0], nested.length, [].length)
+const trailing = [1, 2, 3,]
+print(trailing.length)
+xs[1] = 30
+xs[xs.length] = 99
+print(xs.join(','))

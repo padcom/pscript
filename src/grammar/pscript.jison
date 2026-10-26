@@ -111,6 +111,7 @@ Statement
   | IfStatement
   | WhileStatement
   | ForStatement
+  | ForOfStatement
   | BREAK ';'
     { $$ = yy.jump('BreakStatement', @$) }
   | CONTINUE ';'
@@ -172,6 +173,15 @@ WhileStatement
 ForStatement
   : FOR '(' ForInit ';' OptionalExpression ';' OptionalExpression ')' Statement
     { $$ = yy.forStatement({ init: $3, test: $5, update: $7 }, $9, @$) }
+  ;
+
+ForOfStatement
+  : FOR '(' LET IDENT OF AssignmentExpression ')' Statement
+    { $$ = yy.forOfStatement(yy.forOfDeclaration('let', yy.identifier($4, @4), @3, @4), $6, $8, @$) }
+  | FOR '(' CONST IDENT OF AssignmentExpression ')' Statement
+    { $$ = yy.forOfStatement(yy.forOfDeclaration('const', yy.identifier($4, @4), @3, @4), $6, $8, @$) }
+  | FOR '(' IDENT OF AssignmentExpression ')' Statement
+    { $$ = yy.forOfStatement(yy.identifier($3, @3), $5, $7, @$) }
   ;
 
 ForInit
@@ -406,6 +416,7 @@ PrimaryExpression
     { $$ = yy.thisExpression(@$) }
   | FunctionExpression
   | ObjectLiteral
+  | ArrayLiteral
   | '(' Expression ')'
     { $$ = $2 }
   ;
@@ -451,4 +462,21 @@ LiteralPropertyName
     { $$ = yy.stringLiteral($1, @$) }
   | NUMBER
     { $$ = yy.numberLiteral($1, @$) }
+  ;
+
+/* Array literals (§4.4.7): no holes, trailing comma allowed. */
+ArrayLiteral
+  : '[' ']'
+    { $$ = yy.array([], @$) }
+  | '[' ElementList ']'
+    { $$ = yy.array($2, @$) }
+  | '[' ElementList ',' ']'
+    { $$ = yy.array($2, @$) }
+  ;
+
+ElementList
+  : AssignmentExpression
+    { $$ = [$1] }
+  | ElementList ',' AssignmentExpression
+    { $$ = $1.concat([$3]) }
   ;

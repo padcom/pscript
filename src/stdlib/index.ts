@@ -1,5 +1,6 @@
 // Standard library installation (§4.6).
 import type { Realm } from '@/runtime/values'
+import { installArray } from './array'
 import { installGlobals, type StdlibIO } from './global'
 
 export type { StdlibIO }
@@ -12,4 +13,5 @@ export type { StdlibIO }
  */
 export function installStdlib(realm: Realm, io: StdlibIO) {
   installGlobals(realm, io)
+  installArray(realm)
 }

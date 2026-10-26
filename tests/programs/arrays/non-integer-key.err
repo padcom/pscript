@@ -1,0 +1,1 @@
+TypeError: Arrays only accept integer keys (got 'foo')

@@ -21,15 +21,16 @@ export function propertyKey(key: Value): string {
   return typeof key === 'string' ? key : toString(key)
 }
 
-function indexOf(key: string): number {
-  const index = globalThis.Number(key)
+const INTEGER_KEY = /^-?(?:0|[1-9]\d*)$/
 
-  return globalThis.Number.isInteger(index) && index >= 0 && String(index) === key ? index : -1
+// The integer an index-like key denotes (negative too), or null for other keys.
+function indexOf(key: string): number | null {
+  return INTEGER_KEY.test(key) ? globalThis.Number(key) : null
 }
 
-// `xs[10]` / `'abc'[5]` out of range is an error, not undefined (D37).
+// `xs[10]`, `xs[-1]` and `'abc'[5]` are errors, not undefined (D37).
 function checkIndex(index: number, length: number) {
-  if (index >= length) throw rangeError(`Index ${index} out of range for length ${length}`)
+  if (index < 0 || index >= length) throw rangeError(`Index ${index} out of range for length ${length}`)
 }
 
 function lookup(object: ScriptObject | null, key: string): Value {
@@ -50,7 +51,7 @@ function getString(ctx: AccessContext, value: string, key: string): Value {
   if (key === 'length') return value.length
 
   const index = indexOf(key)
-  if (index < 0) return lookup(ctx.realm.StringPrototype, key)
+  if (index === null) return lookup(ctx.realm.StringPrototype, key)
   checkIndex(index, value.length)
 
   return value[index]
@@ -60,7 +61,7 @@ function getArray(array: ScriptArray, key: string): Value {
   if (key === 'length') return array.items.length
 
   const index = indexOf(key)
-  if (index < 0) return lookup(array, key)
+  if (index === null) return lookup(array, key)
   checkIndex(index, array.items.length)
 
   return array.items[index]
@@ -98,15 +99,14 @@ export function getProperty(ctx: AccessContext, receiver: Value, key: string): V
   return isObject(receiver) ? getObject(receiver, key) : getPrimitive(ctx, receiver, key)
 }
 
-// Writing past the end of an array fills the gap with null (D37).
-function setArray(array: ScriptArray, key: string, value: Value): boolean {
+// Writing past the end of an array fills the gap with null (D37); other keys are not allowed (§4.4.7).
+function setArray(array: ScriptArray, key: string, value: Value) {
   const index = indexOf(key)
-  if (index < 0) return false
+  if (index === null) throw typeError(`Arrays only accept integer keys (got '${key}')`)
+  if (index < 0) throw rangeError(`Index ${index} out of range for length ${array.items.length}`)
 
   while (array.items.length < index) array.items.push(null)
   array.items[index] = value
-
-  return true
 }
 
 const READ_ONLY_FUNCTION_KEYS = new Set(['name', 'length'])
@@ -120,19 +120,28 @@ function checkWritable(object: ScriptObject, key: string) {
   if (isReadOnlyFunctionKey(object, key)) throw typeError(`Cannot assign to read only property '${key}' of function`)
 }
 
+// Writing `length` truncates or extends (with null, D37).
 function setArrayLength(array: ScriptArray, value: Value) {
-  array.items.length = globalThis.Math.max(0, globalThis.Number(value) | 0)
+  const length = globalThis.Number(value)
+  if (!(globalThis.Number.isInteger(length) && length >= 0)) throw rangeError('Invalid array length')
+
+  array.items.length = globalThis.Math.min(length, array.items.length)
+
+  while (array.items.length < length) array.items.push(null)
 }
 
-// Arrays: `length` and indices live in `items`; everything else is an ordinary property.
-function setArrayElement(array: ScriptArray, key: string, value: Value): boolean {
+// Arrays: only `length` and integer indices can be written.
+function setArrayElement(array: ScriptArray, key: string, value: Value) {
   if (key === 'length') setArrayLength(array, value)
-
-  return key === 'length' || setArray(array, key, value)
+  else setArray(array, key, value)
 }
 
 function setObject(object: ScriptObject, key: string, value: Value) {
-  if (object instanceof ScriptArray && setArrayElement(object, key, value)) return
+  if (object instanceof ScriptArray) {
+    setArrayElement(object, key, value)
+
+    return
+  }
   checkWritable(object, key)
   object.props.set(key, value)
 }

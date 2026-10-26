@@ -1,6 +1,7 @@
 // Single-pass compiler from AST to bytecode (§5.5).
 import { PScriptSyntaxError, formatExcerpt } from '@/errors'
 import type {
+  ArrayExpression,
   ArrowFunctionExpression,
   AssignmentExpression,
   AssignmentPattern,
@@ -11,6 +12,7 @@ import type {
   ConditionalExpression,
   ContinueStatement,
   Expression,
+  ForOfStatement,
   ForStatement,
   FunctionDeclaration,
   FunctionExpression,
@@ -127,6 +129,7 @@ const EXPRESSIONS: { [K in Expression['type']]?: Handler<Extract<Expression, { t
   NewExpression: (c, node) => c.newExpression(node),
   MemberExpression: (c, node) => c.member(node),
   ObjectExpression: (c, node) => c.object(node),
+  ArrayExpression: (c, node) => c.array(node),
 }
 
 /**
@@ -155,6 +158,7 @@ const STATEMENTS: { [K in Statement['type']]?: Handler<Extract<Statement, { type
   IfStatement: (c, node) => c.ifStatement(node),
   WhileStatement: (c, node) => c.whileStatement(node),
   ForStatement: (c, node) => c.forStatement(node),
+  ForOfStatement: (c, node) => c.forOfStatement(node),
   BreakStatement: (c, node) => c.jump(node, 'breaks'),
   ContinueStatement: (c, node) => c.jump(node, 'continues'),
   ReturnStatement: (c, node) => c.returnStatement(node),
@@ -430,6 +434,47 @@ class Compiler {
     this.patchAll(exit < 0 ? loop.breaks : [exit, ...loop.breaks])
   }
 
+  // for-of (§5.5): GET_ITER; top: ITER_NEXT done; [PUSH_ENV 1] bind; body; next: [POP_ENV] JUMP top;
+  // break: [POP_ENV] POP (the iterator); done: (ITER_NEXT already popped it).
+  forOfStatement(node: ForOfStatement) {
+    this.resetCompletion()
+    this.expression(node.right)
+    this.emitAt(node.right.loc, Op.GET_ITER)
+    const top = this.out.code.length
+    const done = this.out.emitJump(Op.ITER_NEXT)
+    const outer = this.scope
+    const iteration = this.bindIterationValue(node.left)
+    const loop = this.loopBody(node.body)
+
+    this.scope = outer
+    this.patchAll(loop.continues)
+
+    if (iteration.hasEnv) this.out.emit(Op.POP_ENV)
+    this.out.patch(this.out.emitJump(Op.JUMP), top)
+    this.patchAll(loop.breaks)
+
+    if (iteration.hasEnv) this.out.emit(Op.POP_ENV)
+    this.out.emit(Op.POP)
+    this.out.patch(done)
+  }
+
+  // `let x` / `const x` get a fresh binding per iteration; a bare name is assigned.
+  private bindIterationValue(left: ForOfStatement['left']): Scope {
+    const scope = new Scope(this.scope, 'block')
+
+    if (left.type === 'Identifier') {
+      this.store(left.name, left.loc)
+      this.out.emit(Op.POP)
+
+      return scope
+    }
+    this.declareVariables(left, scope)
+    this.enterScope(scope)
+    this.initialize(left.declarations[0].id.name)
+
+    return scope
+  }
+
   private condition(test: Expression): number {
     this.expression(test)
 
@@ -610,6 +655,11 @@ class Compiler {
 
     reference.prepare()
     reference.get()
+  }
+
+  array(node: ArrayExpression) {
+    for (const element of node.elements) this.expression(element)
+    this.out.emit(Op.ARRAY, node.elements.length)
   }
 
   object(node: ObjectExpression) {

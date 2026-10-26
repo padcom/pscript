@@ -14,6 +14,7 @@ import {
   truthy,
   typeOf,
 } from '@/runtime/operators'
+import { DONE, getIterator, type ScriptIterator } from '@/runtime/iterators'
 import { defineProperty, getProperty, propertyKey, setProperty } from '@/runtime/properties'
 import { ScriptError, rangeError, referenceError, typeError } from '@/runtime/script-error'
 import { arityError } from '@/compiler/signature'
@@ -399,6 +400,25 @@ export class VM implements AccessContext {
           break
         }
         case Op.OBJECT: stack.push(new ScriptObject(this.realm.ObjectPrototype)); break
+        case Op.ARRAY: {
+          const argc = code[ip++]
+
+          stack.push(new ScriptArray(this.realm.ArrayPrototype, stack.splice(stack.length - argc, argc)))
+          break
+        }
+        case Op.GET_ITER: stack.push(getIterator(stack.pop()) as unknown as Value); break
+        case Op.ITER_NEXT: {
+          const next = (stack[stack.length - 1] as unknown as ScriptIterator).next()
+
+          if (next === DONE) {
+            stack.pop()
+            ip = code[ip]
+          } else {
+            stack.push(next)
+            ip++
+          }
+          break
+        }
         case Op.DEFINE_PROP:
           this.defineProperty(stack.pop(), stack[stack.length - 1] as ScriptObject, constants[code[ip++]] as string)
           break
