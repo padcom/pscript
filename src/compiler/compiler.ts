@@ -5,14 +5,17 @@ import type {
   BinaryExpression,
   BlockStatement,
   CallExpression,
+  ConditionalExpression,
   Expression,
   Identifier,
   Literal,
+  LogicalExpression,
   Node,
   Program,
   SourceLocation,
   Statement,
   UnaryExpression,
+  UpdateExpression,
   VariableDeclaration,
 } from '@/parser/ast'
 import { parse } from '@/parser/parse'
@@ -41,7 +44,22 @@ const ARITHMETIC_OPS: Partial<Record<string, Op>> = {
   '**': Op.POW,
 }
 
-const BINARY_OPS: Partial<Record<BinaryExpression['operator'], Op>> = { ...ARITHMETIC_OPS }
+const BINARY_OPS: Record<BinaryExpression['operator'], Op> = {
+  '+': Op.ADD,
+  '-': Op.SUB,
+  '*': Op.MUL,
+  '/': Op.DIV,
+  '%': Op.MOD,
+  '**': Op.POW,
+  '==': Op.EQ,
+  '!=': Op.NE,
+  '<': Op.LT,
+  '<=': Op.LE,
+  '>': Op.GT,
+  '>=': Op.GE,
+  'instanceof': Op.INSTANCEOF,
+  'in': Op.IN,
+}
 
 const UNARY_OPS: Record<UnaryExpression['operator'], Op> = {
   '!': Op.NOT,
@@ -66,6 +84,9 @@ const EXPRESSIONS: { [K in Expression['type']]?: Handler<Extract<Expression, { t
   BinaryExpression: (c, node) => c.binary(node),
   CallExpression: (c, node) => c.call(node),
   AssignmentExpression: (c, node) => c.assignment(node),
+  LogicalExpression: (c, node) => c.logical(node),
+  ConditionalExpression: (c, node) => c.conditional(node),
+  UpdateExpression: (c, node) => c.update(node),
 }
 
 const STATEMENTS: { [K in Statement['type']]?: Handler<Extract<Statement, { type: K }>> } = {
@@ -230,12 +251,54 @@ class Compiler {
   }
 
   binary(node: BinaryExpression) {
-    const op = BINARY_OPS[node.operator]
-    if (op === undefined) throw this.unsupported(node)
     this.expression(node.left)
     this.expression(node.right)
     this.out.mark(node.loc)
-    this.out.emit(op)
+    this.out.emit(BINARY_OPS[node.operator])
+  }
+
+  logical(node: LogicalExpression) {
+    this.expression(node.left)
+    const end = this.out.emitJump(LOGICAL_JUMPS[node.operator])
+
+    this.expression(node.right)
+    this.out.patch(end)
+  }
+
+  conditional(node: ConditionalExpression) {
+    this.expression(node.test)
+    const otherwise = this.out.emitJump(Op.JUMP_IF_FALSE)
+
+    this.expression(node.consequent)
+    const end = this.out.emitJump(Op.JUMP)
+
+    this.out.patch(otherwise)
+    this.expression(node.alternate)
+    this.out.patch(end)
+  }
+
+  // `++x`: LOAD POS INC STORE; `x++`: LOAD POS DUP INC STORE POP (leaves the old number).
+  update(node: UpdateExpression) {
+    const { argument, prefix } = node
+    if (argument.type !== 'Identifier') throw this.unsupported(argument)
+
+    this.expression(argument)
+    this.out.mark(node.loc)
+    this.out.emit(Op.POS)
+
+    if (prefix) this.increment(node, argument)
+    else this.postIncrement(node, argument)
+  }
+
+  private increment({ operator }: UpdateExpression, target: Identifier) {
+    this.out.emit(operator === '++' ? Op.INC : Op.DEC)
+    this.store(target.name, target.loc)
+  }
+
+  private postIncrement(node: UpdateExpression, target: Identifier) {
+    this.out.emit(Op.DUP)
+    this.increment(node, target)
+    this.out.emit(Op.POP)
   }
 
   call(node: CallExpression) {

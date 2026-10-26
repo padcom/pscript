@@ -4,6 +4,8 @@ import type {
   AssignmentOperator,
   BinaryOperator,
   BlockStatement,
+  ConditionalExpression,
+  LogicalExpression,
   CallExpression,
   EmptyStatement,
   Expression,
@@ -14,6 +16,7 @@ import type {
   SourceLocation,
   Statement,
   UnaryExpression,
+  UpdateExpression,
   VariableDeclaration,
   VariableDeclarator,
 } from './ast'
@@ -93,6 +96,18 @@ export const builders = {
 
   binary(operator: BinaryOperator, left: Expression, right: Expression, loc: JisonLoc): Expression {
     return { type: 'BinaryExpression', operator, left, right, loc: toLoc(loc) }
+  },
+
+  logical(operator: LogicalExpression['operator'], left: Expression, right: Expression, loc: JisonLoc): LogicalExpression {
+    return { type: 'LogicalExpression', operator, left, right, loc: toLoc(loc) }
+  },
+
+  conditional(test: Expression, consequent: Expression, alternate: Expression, loc: JisonLoc): ConditionalExpression {
+    return { type: 'ConditionalExpression', test, consequent, alternate, loc: toLoc(loc) }
+  },
+
+  update(operator: '++' | '--', prefix: boolean, argument: UpdateExpression['argument'], loc: JisonLoc): UpdateExpression {
+    return { type: 'UpdateExpression', operator, prefix, argument, loc: toLoc(loc) }
   },
 
   unary(operator: UnaryExpression['operator'], argument: Expression, loc: JisonLoc): UnaryExpression {

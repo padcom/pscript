@@ -2,7 +2,7 @@
 import pscriptParser from '@/grammar/pscript.jison'
 import type { JisonParseErrorHash } from '@/grammar/jison-types'
 import { PScriptSyntaxError, formatExcerpt } from '@/errors'
-import type { AssignmentOperator, Expression, Program, SourceLocation, Statement, VariableDeclarator } from './ast'
+import type { AssignmentOperator, Expression, Identifier, Program, SourceLocation, Statement, VariableDeclarator } from './ast'
 import { builders, sourceLoc, type JisonLoc } from './ast-builders'
 import { EscapeError, checkNumber } from './literals'
 import { createTokenFilter, type TokenState } from './token-filter'
@@ -102,14 +102,22 @@ function lexerHelpers(errors: SyntaxErrorFactory, tokens: TokenState) {
   }
 }
 
+// Assignment and update targets: identifiers (members come with objects, M9).
+function checkTarget(errors: SyntaxErrorFactory, target: Expression, what: string): Identifier {
+  if (target.type === 'Identifier' && target.name === 'undefined') throw errors.at("Cannot assign to 'undefined'", target.loc)
+  if (target.type !== 'Identifier') throw errors.at(`Invalid ${what} target`, target.loc)
+
+  return target
+}
+
 // Static checks that the grammar leaves to its actions.
 function checkedBuilders(errors: SyntaxErrorFactory) {
   return {
     assignment(operator: AssignmentOperator, left: Expression, right: Expression, loc: JisonLoc) {
-      if (left.type === 'Identifier' && left.name === 'undefined') throw errors.at("Cannot assign to 'undefined'", left.loc)
-      if (left.type !== 'Identifier') throw errors.at('Invalid assignment target', left.loc)
-
-      return builders.assignment(operator, left, right, loc)
+      return builders.assignment(operator, checkTarget(errors, left, 'assignment'), right, loc)
+    },
+    update(operator: '++' | '--', prefix: boolean, argument: Expression, loc: JisonLoc) {
+      return builders.update(operator, prefix, checkTarget(errors, argument, `'${operator}'`), loc)
     },
     variableDeclaration(kind: 'let' | 'const', declarations: VariableDeclarator[], loc: JisonLoc) {
       const missing = kind === 'const' ? declarations.find(d => d.init === null) : undefined

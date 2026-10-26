@@ -1,0 +1,10 @@
+let n = 5
+print(n > 3 ? 'big' : 'small', n > 10 ? 'big' : 'small')
+print(n < 0 ? 'negative' : n == 0 ? 'zero' : 'positive')
+let r = n ? n * 2 : -1
+print(r, 0 ? 'truthy' : 'falsy', '' ? 1 : null ?? 'fallback')
+let picked = ''
+let v = true ? (picked = 'then') : (picked = 'else')
+print(v, picked)
+let w = false ? 1 : r = 99
+print(w, r)

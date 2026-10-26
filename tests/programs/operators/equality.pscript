@@ -1,0 +1,9 @@
+// §10.5 (D1: == and != are strict)
+print(1 == 1, 1 == '1', null == undefined)
+print('a' != 'b')
+let nan = 0 / 0
+print(nan == nan, nan != nan, 0 == -0, 'abc' == 'ab' + 'c')
+print(null == null, undefined == undefined, true == 1, '' == 0, false == 0)
+print(print == print, typeof print == 'function')
+let x = 3
+print(x == 3 == true, x != 3 != false)

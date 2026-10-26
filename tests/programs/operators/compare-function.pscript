@@ -1,0 +1,2 @@
+// @pscript-only: D5 (JS compares a function to a number as NaN)
+print < 1

@@ -1,0 +1,13 @@
+// §10.5
+print(null ?? 'default', 0 || 'x', 0 ?? 'x')
+print(1 && 2, 0 && 2, '' || null, 'a' || 'b', undefined ?? null ?? 3)
+print(!0 && 'yes', !1 || 'no', false ?? 'not nullish')
+let log = ''
+let a = (log = log + 'L') && (log = log + 'R')
+print(a, log)
+log = ''
+let b = false && (log = 'evaluated')
+let c = true || (log = 'evaluated')
+let d = 1 ?? (log = 'evaluated')
+print(b, c, d, log == '')
+print(1 && 2 || 3, 0 && 2 || 3, 1 || 2 && 3)

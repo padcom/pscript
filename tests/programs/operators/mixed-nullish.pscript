@@ -1,0 +1,2 @@
+// @pscript-only: `??` may be mixed with `&&` and `||` without parentheses (a SyntaxError in JS)
+print(null ?? 0 || 'b', 'a' || null ?? 'c', null && 1 ?? 'd')

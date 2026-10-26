@@ -139,13 +139,62 @@ Expression
 
 /* The target is checked by yy.assignment (Identifier or, later, MemberExpression). */
 AssignmentExpression
-  : AdditiveExpression
+  : ConditionalExpression
   | CallExpression AssignmentOperator AssignmentExpression
     { $$ = yy.assignment($2, $1, $3, @$) }
   ;
 
 AssignmentOperator
   : '=' | '+=' | '-=' | '*=' | '/=' | '%=' | '**=' | '&&=' | '||=' | '??='
+  ;
+
+ConditionalExpression
+  : NullishExpression
+  | NullishExpression '?' AssignmentExpression ':' AssignmentExpression
+    { $$ = yy.conditional($1, $3, $5, @$) }
+  ;
+
+/* Unlike JS, `??` may be mixed with `&&` and `||` without parentheses (§4.4.3). */
+NullishExpression
+  : OrExpression
+  | NullishExpression '??' OrExpression
+    { $$ = yy.logical($2, $1, $3, @$) }
+  ;
+
+OrExpression
+  : AndExpression
+  | OrExpression '||' AndExpression
+    { $$ = yy.logical($2, $1, $3, @$) }
+  ;
+
+AndExpression
+  : EqualityExpression
+  | AndExpression '&&' EqualityExpression
+    { $$ = yy.logical($2, $1, $3, @$) }
+  ;
+
+EqualityExpression
+  : RelationalExpression
+  | EqualityExpression '==' RelationalExpression
+    { $$ = yy.binary($2, $1, $3, @$) }
+  | EqualityExpression '!=' RelationalExpression
+    { $$ = yy.binary($2, $1, $3, @$) }
+  ;
+
+RelationalExpression
+  : AdditiveExpression
+  | RelationalExpression '<' AdditiveExpression
+    { $$ = yy.binary($2, $1, $3, @$) }
+  | RelationalExpression '<=' AdditiveExpression
+    { $$ = yy.binary($2, $1, $3, @$) }
+  | RelationalExpression '>' AdditiveExpression
+    { $$ = yy.binary($2, $1, $3, @$) }
+  | RelationalExpression '>=' AdditiveExpression
+    { $$ = yy.binary($2, $1, $3, @$) }
+  | RelationalExpression INSTANCEOF AdditiveExpression
+    { $$ = yy.binary('instanceof', $1, $3, @$) }
+  | RelationalExpression IN AdditiveExpression
+    { $$ = yy.binary('in', $1, $3, @$) }
   ;
 
 AdditiveExpression
@@ -177,12 +226,25 @@ UnaryExpression
     { $$ = yy.unary($1, $2, @$) }
   | TYPEOF UnaryExpression
     { $$ = yy.unary('typeof', $2, @$) }
+  | '++' UnaryExpression
+    { $$ = yy.update($1, true, $2, @$) }
+  | '--' UnaryExpression
+    { $$ = yy.update($1, true, $2, @$) }
   ;
 
 ExponentiationExpression
-  : CallExpression
-  | CallExpression '**' UnaryExpression
+  : PostfixExpression
+  | PostfixExpression '**' UnaryExpression
     { $$ = yy.binary($2, $1, $3, @$) }
+  ;
+
+/* A newline before postfix `++`/`--` ends the statement (the token filter inserts `;`). */
+PostfixExpression
+  : CallExpression
+  | CallExpression '++'
+    { $$ = yy.update($2, false, $1, @$) }
+  | CallExpression '--'
+    { $$ = yy.update($2, false, $1, @$) }
   ;
 
 CallExpression

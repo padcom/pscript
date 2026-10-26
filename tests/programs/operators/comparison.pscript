@@ -1,0 +1,8 @@
+print(1 < 2, 2 <= 2, 3 > 4, 4 >= 5)
+print('a' < 'b', 'B' < 'a', 'abc' < 'abd', 'a' < 'aa', '' < 'a')
+print('10' < '9', '10' < 9, 10 < '9')
+print(null < 1, null >= 0, undefined < 1, undefined >= 0)
+print(true > false, 'a' < 1, 'a' >= 1)
+let nan = 0 / 0
+print(nan < 1, nan >= 1, -0 < 0, 1 / 0 > 1e308)
+print(1 + 2 < 4, 2 * 3 >= 6 == true)

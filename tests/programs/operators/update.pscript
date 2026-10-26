@@ -1,0 +1,19 @@
+// §10.5
+let n = 5
+n += 2
+n **= 2
+print(n++, n)
+print(++n, n, --n, n--, n)
+let s = '5'
+s++
+print(s, typeof s)
+let t = '7'
+print(t--, typeof t, t)
+let u = null
+u++
+let v = true
+++v
+print(u, v)
+let i = 0
+let j = i++ + i++ + ++i
+print(i, j)

@@ -1,7 +1,7 @@
 // Operator semantics (§4.4.2, §4.4.3). Primitives coerce as in JS; objects, arrays and
 // functions in arithmetic or comparison are a TypeError (D5).
 import { type ScriptError, typeError } from './script-error'
-import { Array as ScriptArray, Class, Function as ScriptFunction, Object as ScriptObject, type Value } from './values'
+import { Array as ScriptArray, Class, Function as ScriptFunction, Interface, Object as ScriptObject, type Value } from './values'
 
 /**
  * Whether a value is a script object.
@@ -118,4 +118,104 @@ export function arithmetic(op: ArithmeticOperator, a: Value, b: Value): number {
   checkPrimitives(op, a, b)
 
   return ARITHMETIC[op](globalThis.Number(a), globalThis.Number(b))
+}
+
+/**
+ * `==` (D1): strict like JS `===`, no coercion; objects by identity.
+ *
+ * @param a left operand
+ * @param b right operand
+ * @returns whether the operands are equal
+ */
+export function strictEquals(a: Value, b: Value): boolean {
+  return a === b
+}
+
+export type RelationalOperator = '<' | '<=' | '>' | '>='
+
+const RELATIONAL: Record<RelationalOperator, (a: number | string, b: number | string) => boolean> = {
+  '<': (a, b) => a < b,
+  '<=': (a, b) => a <= b,
+  '>': (a, b) => a > b,
+  '>=': (a, b) => a >= b,
+}
+
+/**
+ * `< <= > >=`: two strings compare by code unit, other primitives as numbers; objects → TypeError (D5).
+ *
+ * @param op operator
+ * @param a left operand
+ * @param b right operand
+ * @returns the comparison result
+ */
+export function compare(op: RelationalOperator, a: Value, b: Value): boolean {
+  checkPrimitives(op, a, b)
+
+  if (typeof a === 'string' && typeof b === 'string') return RELATIONAL[op](a, b)
+
+  return RELATIONAL[op](globalThis.Number(a), globalThis.Number(b))
+}
+
+function classOf(value: Value): Class | null {
+  return value instanceof ScriptObject ? value.klass ?? null : null
+}
+
+function isConstructedFrom(value: Value, type: Class): boolean {
+  let klass = classOf(value)
+
+  while (klass && klass !== type) klass = klass.superClass
+
+  return klass !== null
+}
+
+function implementsInterface(value: Value, type: Interface): boolean {
+  return classOf(value)?.interfaces.has(type) ?? false
+}
+
+/**
+ * `a instanceof T` (D26, D32): `T` must be a class or an interface; only class-constructed objects match.
+ *
+ * @param value left operand
+ * @param type right operand
+ * @returns whether `value` was constructed from `type` (or implements it)
+ */
+export function instanceOf(value: Value, type: Value): boolean {
+  if (type instanceof Interface) return implementsInterface(value, type)
+  if (!(type instanceof Class)) throw typeError("Right-hand side of 'instanceof' is not a class")
+
+  return isConstructedFrom(value, type)
+}
+
+function isIndex(name: string, length: number): boolean {
+  const index = globalThis.Number(name)
+
+  return String(index) === name && globalThis.Number.isInteger(index) && index >= 0 && index < length
+}
+
+function isArrayKey(array: ScriptArray, name: string): boolean {
+  return name === 'length' || isIndex(name, array.items.length)
+}
+
+function hasInChain(object: ScriptObject, name: string): boolean {
+  for (let current: ScriptObject | null = object; current; current = current.proto) {
+    if (current.props.has(name)) return true
+  }
+
+  return false
+}
+
+/**
+ * `key in object`: the property exists on the object or its prototype chain (arrays: indices and `length`).
+ * Hidden members (§4.5.2) arrive with access modifiers.
+ *
+ * @param key left operand
+ * @param object right operand
+ * @returns whether the property exists
+ */
+export function hasProperty(key: Value, object: Value): boolean {
+  if (!isObject(object)) throw typeError(`Cannot use 'in' operator to search for a key in ${kindOf(object)}`)
+
+  const name = toString(key)
+
+  return (object instanceof ScriptArray && isArrayKey(object, name)) || hasInChain(object, name)
 }

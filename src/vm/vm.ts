@@ -2,7 +2,17 @@
 import type { CompiledScript, FunctionProto } from '@/compiler/function-proto'
 import { GlobalFlags, Op } from '@/compiler/opcodes'
 import { PScriptRuntimeError, formatExcerpt, type ScriptStackFrame } from '@/errors'
-import { add, arithmetic, toNumber, truthy, typeOf } from '@/runtime/operators'
+import {
+  add,
+  arithmetic,
+  compare,
+  hasProperty,
+  instanceOf,
+  strictEquals,
+  toNumber,
+  truthy,
+  typeOf,
+} from '@/runtime/operators'
 import { ScriptError, referenceError, typeError } from '@/runtime/script-error'
 import {
   Environment,
@@ -238,6 +248,40 @@ export class VM implements AccessContext {
           b = stack.pop()
           stack.push(arithmetic('**', stack.pop(), b))
           break
+        case Op.EQ:
+          b = stack.pop()
+          stack.push(strictEquals(stack.pop(), b))
+          break
+        case Op.NE:
+          b = stack.pop()
+          stack.push(!strictEquals(stack.pop(), b))
+          break
+        case Op.LT:
+          b = stack.pop()
+          stack.push(compare('<', stack.pop(), b))
+          break
+        case Op.LE:
+          b = stack.pop()
+          stack.push(compare('<=', stack.pop(), b))
+          break
+        case Op.GT:
+          b = stack.pop()
+          stack.push(compare('>', stack.pop(), b))
+          break
+        case Op.GE:
+          b = stack.pop()
+          stack.push(compare('>=', stack.pop(), b))
+          break
+        case Op.INSTANCEOF:
+          b = stack.pop()
+          stack.push(instanceOf(stack.pop(), b))
+          break
+        case Op.IN:
+          b = stack.pop()
+          stack.push(hasProperty(stack.pop(), b))
+          break
+        case Op.INC: stack.push((stack.pop() as number) + 1); break
+        case Op.DEC: stack.push((stack.pop() as number) - 1); break
         case Op.NEG: stack.push(-toNumber(stack.pop(), '-')); break
         case Op.POS: stack.push(toNumber(stack.pop(), '+')); break
         case Op.NOT: stack.push(!truthy(stack.pop())); break

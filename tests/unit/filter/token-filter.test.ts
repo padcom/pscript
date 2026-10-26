@@ -38,6 +38,10 @@ describe('statement starters after a newline', () => {
     ['a\n!b', ['IDENT', ';', '!', 'IDENT', ';', 'EOF']],
     ['a\n++b', ['IDENT', ';', '++', 'IDENT', ';', 'EOF']],
     ['a\ntypeof b', ['IDENT', ';', 'TYPEOF', 'IDENT', ';', 'EOF']],
+    ['a++\nb', ['IDENT', '++', ';', 'IDENT', ';', 'EOF']],
+    ['a\n? b\n: c', ['IDENT', '?', 'IDENT', ':', 'IDENT', ';', 'EOF']],
+    ['a\n&& b\n|| c\n?? d', ['IDENT', '&&', 'IDENT', '||', 'IDENT', '??', 'IDENT', ';', 'EOF']],
+    ['a\n== b\n< c', ['IDENT', '==', 'IDENT', '<', 'IDENT', ';', 'EOF']],
   ])('%j', (source, tokens) => {
     expect(tokenize(source)).toEqual(tokens)
   })

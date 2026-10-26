@@ -7,6 +7,12 @@ function expression(source: string): Expression {
 }
 
 const RENDER: Record<string, (node: any, render: (node: Node) => string) => string> = {
+  LogicalExpression: (node, render) => `(${render(node.left)} ${node.operator} ${render(node.right)})`,
+  ConditionalExpression: (node, render) => `(${render(node.test)} ? ${render(node.consequent)} : ${render(node.alternate)})`,
+  UpdateExpression: (node, render) => node.prefix
+    ? `(${node.operator}${render(node.argument)})`
+    : `(${render(node.argument)}${node.operator})`,
+  AssignmentExpression: (node, render) => `(${render(node.left)} ${node.operator} ${render(node.right)})`,
   BinaryExpression: (node, render) => `(${render(node.left)} ${node.operator} ${render(node.right)})`,
   UnaryExpression: (node, render) => `(${node.operator === 'typeof' ? 'typeof ' : node.operator}${render(node.argument)})`,
   CallExpression: (node, render) => `${render(node.callee)}(${node.arguments.map(render).join(', ')})`,
@@ -40,6 +46,30 @@ describe('precedence', () => {
     ['f(1, g(2))(3)', 'f(1, g(2))(3)'],
     ['f(a, b,)', 'f(a, b)'],
     ['-f(1) ** 2', '(-(f(1) ** 2))'],
+  ])('%s', (source, expected) => {
+    expect(show(expression(source))).toBe(expected)
+  })
+})
+
+describe('precedence of comparison, logical and conditional operators (§4.4.3)', () => {
+  it.each([
+    ['a < b == c > d', '((a < b) == (c > d))'],
+    ['a + 1 < b * 2', '((a + 1) < (b * 2))'],
+    ['a instanceof B in c', '((a instanceof B) in c)'],
+    ['a == b != c', '((a == b) != c)'],
+    ['a && b || c && d', '((a && b) || (c && d))'],
+    ['a || b ?? c', '((a || b) ?? c)'],
+    ['a ?? b || c', '(a ?? (b || c))'],
+    ['a ?? b && c ?? d', '((a ?? (b && c)) ?? d)'],
+    ['!a && b', '((!a) && b)'],
+    ['a ? b : c ? d : e', '(a ? b : (c ? d : e))'],
+    ['a || b ? c : d', '((a || b) ? c : d)'],
+    ['a ? b = 1 : c = 2', '(a ? (b = 1) : (c = 2))'],
+    ['x = a ? b : c', '(x = (a ? b : c))'],
+    ['-a++ ** 2', '(-((a++) ** 2))'],
+    ['++a + b--', '((++a) + (b--))'],
+    ['!--a', '(!(--a))'],
+    ['typeof a++', '(typeof (a++))'],
   ])('%s', (source, expected) => {
     expect(show(expression(source))).toBe(expected)
   })
