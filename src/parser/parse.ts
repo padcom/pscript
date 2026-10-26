@@ -63,6 +63,20 @@ class SyntaxErrorFactory {
   }
 }
 
+const LINE_HELPERS = {
+  // Jison counts only \r and \n as line breaks; U+2028 / U+2029 are line terminators too (§4.1.1).
+  lineSeparator(lexer: { yylineno: number, yylloc: JisonLoc }): string {
+    lexer.yylineno++
+    lexer.yylloc.last_line = lexer.yylineno + 1
+    lexer.yylloc.last_column = 0
+
+    return 'NEWLINE'
+  },
+  blockComment(text: string): string | undefined {
+    return /[\n\r\u2028\u2029]/.test(text) ? 'NEWLINE' : undefined
+  },
+}
+
 function lexerHelpers(errors: SyntaxErrorFactory, tokens: TokenState) {
   return {
     identToken(text: string, loc: JisonLoc): string {
@@ -92,6 +106,7 @@ function createYy(source: string, options: ParseOptions, tokens: TokenState) {
   return {
     ...builders,
     ...lexerHelpers(errors, tokens),
+    ...LINE_HELPERS,
     program(body: Statement[]): Program {
       return { type: 'Program', sourceType: options.goal ?? 'script', body, loc: sourceLoc(source) }
     },
@@ -106,6 +121,33 @@ function createYy(source: string, options: ParseOptions, tokens: TokenState) {
   }
 }
 
+function createParser(source: string, options: ParseOptions) {
+  const parser = new pscriptParser.Parser()
+  const tokens: TokenState = { current: null }
+
+  parser.yy = createYy(source, options, tokens)
+  parser.lexer = createTokenFilter(pscriptParser, tokens)
+
+  return parser
+}
+
+/**
+ * Runs the lexer and the token filter only (for tests and debugging).
+ *
+ * @param source source text
+ * @returns the token names the parser would see, ending with `EOF`
+ */
+export function tokenize(source: string): string[] {
+  const { lexer, yy } = createParser(source, {})
+  const names: string[] = []
+
+  lexer.setInput(source, yy)
+
+  for (let name = ''; name !== 'EOF';) names.push(name = String(lexer.lex()))
+
+  return names
+}
+
 /**
  * Parses PScript source into an ESTree-compatible AST.
  *
@@ -115,11 +157,5 @@ function createYy(source: string, options: ParseOptions, tokens: TokenState) {
  * @throws {PScriptSyntaxError} on any lexical or syntax error
  */
 export function parse(source: string, options: ParseOptions = {}): Program {
-  const parser = new pscriptParser.Parser()
-  const tokens: TokenState = { current: null }
-
-  parser.yy = createYy(source, options, tokens)
-  parser.lexer = createTokenFilter(pscriptParser.lexer, tokens)
-
-  return parser.parse(source)
+  return createParser(source, options).parse(source)
 }

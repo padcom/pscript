@@ -1,0 +1,18 @@
+// Adapted from §10.3 to the features available so far.
+// line comment
+/* block
+   comment */
+print('start')
+print(1
+  + 2)                    // inside parentheses newlines never end a statement
+print(10
+  - 4)
+print('a') ; print('b')   // explicit semicolons still work
+print('c')
+(print)('d')              // D2: a line starting with `(` is a new statement, not a call
+print(2 /* inline */ * 3) /* block comment
+spanning lines */ print('after comment')
+print(typeof
+  print)
+;;
+print('end')              // no semicolon at the end of the file

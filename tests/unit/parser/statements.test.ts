@@ -20,8 +20,9 @@ describe('syntax errors', () => {
   it.each([
     ['1 +', 'Unexpected end of input', 4],
     ['1 2', 'Unexpected number 2', 3],
-    ['f(1', "Unexpected end of input; expected ')', ','", 4],
-    ['(1 + 2', "Unexpected end of input; expected ')'", 7],
+    ['f(1', 'Unexpected end of input', 4],
+    ['(1 + 2', 'Unexpected end of input', 7],
+    ['f(1 2', 'Unexpected number 2', 5],
     ['1 + )', "Unexpected token ')'", 5],
   ])('%s', (source, reason, column) => {
     expect(() => parse(source)).toThrow(expect.objectContaining({ reason: expect.stringContaining(reason), column }))

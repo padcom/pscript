@@ -12,7 +12,12 @@ IDENT           [A-Za-z_$][A-Za-z0-9_$]*
 
 %%
 
-\s+                                             /* skip whitespace */
+[ \t\v\f\u00A0\uFEFF]+                         /* skip whitespace */
+\r\n|[\n\r]                                     return 'NEWLINE'
+[\u2028\u2029]                                  return yy.lineSeparator(this)
+"//"[^\n\r\u2028\u2029]*                          /* skip line comment */
+"/*"[\s\S]*?"*/"                                return yy.blockComment(yytext)
+"/*"                                            yy.lexError("Unterminated comment", yylloc)
 
 {NUMBER}                                        return yy.numberToken(yytext, yylloc, this._input)
 
@@ -78,11 +83,10 @@ IDENT           [A-Za-z_$][A-Za-z0-9_$]*
 
 %%
 
+/* The token filter (src/parser/token-filter.ts) inserts the `;` that ASI requires (§4.2.1). */
 Program
   : StatementList EOF
     { return yy.program($1) }
-  | StatementList Expression EOF
-    { return yy.program($1.concat([yy.expressionStatement($2, @2)])) }
   ;
 
 StatementList

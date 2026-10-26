@@ -70,6 +70,8 @@ export interface JisonParseErrorHash {
 export interface JisonParser {
   /** shared state visible to grammar actions as `yy` */
   yy: Record<string, any>
+  /** grammar symbol id → terminal name (the generated lexer returns ids for quoted tokens) */
+  terminals_: Record<number, string>
   /** the lexer used by `parse()`; can be replaced by a filtering lexer */
   lexer: JisonLexer
   /** parses the input and returns the value of the start rule */

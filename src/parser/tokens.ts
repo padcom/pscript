@@ -1,5 +1,4 @@
-// Token contract (§4.1.2). Punctuator and literal tokens (§4.1.4–4.1.6) and the
-// token filter's ENDERS / CONTINUERS sets (§4.2.1) are added with the milestones that need them.
+// Token contract (§4.1.2, §4.2.1). Punctuators are named by their own text (`'+'`, `'('`, …).
 
 /** Reserved keywords; each lexes to the token named by its upper-case spelling. */
 export const KEYWORDS = [
@@ -70,8 +69,81 @@ export type KeywordToken = Uppercase<Keyword>
 
 export type ContextualKeywordToken = Uppercase<ContextualKeyword>
 
-/** Token names produced by the lexer and the token filter. */
-export type TokenName = 'IDENT' | KeywordToken | ContextualKeywordToken
+/** Token names produced by the lexer and the token filter (punctuators use their text). */
+export type TokenName = 'IDENT' | 'NUMBER' | 'STRING' | 'NEWLINE' | 'EOF' | KeywordToken | ContextualKeywordToken | (string & {})
+
+/** Tokens that may end a statement (§4.2.1). */
+export const ENDERS: ReadonlySet<TokenName> = new Set([
+  'IDENT',
+  'NUMBER',
+  'STRING',
+  'TEMPLATE_FULL',
+  'TEMPLATE_TAIL',
+  'TRUE',
+  'FALSE',
+  'NULL',
+  'UNDEFINED',
+  'THIS',
+  'SUPER',
+  ')',
+  ']',
+  '}',
+  '++',
+  '--',
+  'RETURN',
+  'BREAK',
+  'CONTINUE',
+])
+
+/**
+ * Tokens that may not start a statement, so a line starting with one continues the previous line (§4.2.1).
+ * `(` and `[` are deliberately absent (D2), and so are `++`, `--` and `!`.
+ */
+export const CONTINUERS: ReadonlySet<TokenName> = new Set([
+  '.',
+  '?.',
+  ',',
+  '?',
+  ':',
+  '=>',
+  '=',
+  '+=',
+  '-=',
+  '*=',
+  '/=',
+  '%=',
+  '**=',
+  '&&=',
+  '||=',
+  '??=',
+  '+',
+  '-',
+  '*',
+  '/',
+  '%',
+  '**',
+  '==',
+  '!=',
+  '<',
+  '<=',
+  '>',
+  '>=',
+  '&&',
+  '||',
+  '??',
+  'INSTANCEOF',
+  'IN',
+  'OF',
+  'EXTENDS',
+  'IMPLEMENTS',
+  'ELSE',
+  'CATCH',
+  'FINALLY',
+  ')',
+  ']',
+  '}',
+  ';',
+])
 
 /** Identifier syntax: `$` is an ordinary identifier character (D30). */
 export const IDENT_PATTERN = /^[A-Za-z_$][A-Za-z0-9_$]*$/
