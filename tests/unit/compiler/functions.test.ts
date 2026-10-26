@@ -46,6 +46,21 @@ describe('compiling function names', () => {
   })
 })
 
+describe('member calls (§5.5)', () => {
+  it('compiles o.m(x) as <o> DUP GET_PROP m <x> CALL_METHOD 1', () => {
+    expect(ops('o.m(x)').slice(3, 9)).toEqual(['LOAD_GLOBAL', 'DUP', 'GET_PROP', 'LOAD_GLOBAL', 'CALL_METHOD', 'STORE'])
+  })
+
+  it('compiles o[k](x) with GET_INDEX', () => {
+    expect(ops('o[k]()').slice(3, 8)).toEqual(['LOAD_GLOBAL', 'DUP', 'LOAD_GLOBAL', 'GET_INDEX', 'CALL_METHOD'])
+  })
+
+  it('keeps the old value below the base for postfix member updates', () => {
+    expect(ops('o.a++').slice(3, 11)).toEqual(['LOAD_GLOBAL', 'DUP', 'GET_PROP', 'POS', 'DUP', 'ROT3', 'INC', 'SET_PROP'])
+    expect(ops('o[k]--').slice(4, 12)).toEqual(['LOAD_GLOBAL', 'DUP2', 'GET_INDEX', 'POS', 'DUP', 'ROT4', 'DEC', 'SET_INDEX'])
+  })
+})
+
 describe('function scope errors', () => {
   it.each([
     ['function f(a) { let a }', "Identifier 'a' has already been declared"],

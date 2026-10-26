@@ -1,0 +1,17 @@
+let o = { a: 1, 'b c': 2, 3: 'three', nested: { deep: { value: 'x' } } }
+print(o.a, o['b c'], o[3], o['3'], o.nested.deep.value, o['nested']['deep'].value)
+print(o.missing, typeof o.missing, o.missing == undefined)
+o.added = 'new'
+o['computed' + 1] = true
+print(o.added, o.computed1)
+let key = 'a'
+o[key] += 10
+o.a *= 2
+print(o.a)
+print('a' in o, 'zzz' in o, 3 in o)
+let empty = {}
+print(typeof empty, empty.x)
+let last = { k: 1, k: 2 }
+print(last.k)
+let keywords = { if: 1, for: 2, new: 3, function: 4, true: 5, null: 6, typeof: 7 }
+print(keywords.if + keywords.for + keywords.new + keywords.function + keywords.true + keywords.null + keywords.typeof)

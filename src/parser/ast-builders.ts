@@ -21,9 +21,12 @@ import type {
   FunctionExpression,
   Identifier,
   Literal,
+  MemberExpression,
   NewExpression,
+  ObjectExpression,
   Pattern,
   Program,
+  Property,
   RestElement,
   ReturnStatement,
   SourceLocation,
@@ -142,6 +145,18 @@ export const builders = {
 
   thisExpression(loc: JisonLoc): ThisExpression {
     return { type: 'ThisExpression', loc: toLoc(loc) }
+  },
+
+  member(object: Expression, property: Expression, computed: boolean, loc: JisonLoc): MemberExpression {
+    return { type: 'MemberExpression', object, property, computed, optional: false, loc: toLoc(loc) }
+  },
+
+  object(properties: Property[], loc: JisonLoc): ObjectExpression {
+    return { type: 'ObjectExpression', properties, loc: toLoc(loc) }
+  },
+
+  property(key: Identifier | Literal, value: Expression, method: boolean, loc: JisonLoc): Property {
+    return { type: 'Property', key, value, kind: 'init', method, shorthand: false, computed: false, loc: toLoc(loc) }
   },
 
   newExpression(callee: Expression, args: Expression[], loc: JisonLoc): NewExpression {

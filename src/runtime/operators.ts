@@ -63,19 +63,36 @@ export function toNumber(value: Value, op: string): number {
   return globalThis.Number(value)
 }
 
+function cannotConvert(): never {
+  throw typeError('Cannot convert object to string')
+}
+
+function functionToString(fn: ScriptFunction): string {
+  return fn instanceof Class ? `[class ${fn.name}]` : `[Function: ${fn.name}]`
+}
+
+function arrayToString(array: ScriptArray): string {
+  // eslint-disable-next-line no-use-before-define -- mutual recursion with toString
+  return array.items.map(item => (item === null || item === undefined ? '' : toString(item))).join(',')
+}
+
+// Built-in string forms (§4.4.3). A script-defined `toString()` is honoured from M13 on.
+function objectToString(object: ScriptObject): string {
+  if (object instanceof ScriptArray) return arrayToString(object)
+  if (object instanceof ScriptFunction) return functionToString(object)
+
+  return object instanceof Interface ? cannotConvert() : '[object Object]'
+}
+
 /**
- * `ToString`. Objects: only the built-in forms of functions and classes so far.
+ * `ToString`. Objects use their built-in forms: arrays join with `,`, plain objects `[object Object]`.
  *
  * @param value any value
  * @returns the string
  * @throws {ScriptError} TypeError when the object cannot be converted
  */
 export function toString(value: Value): string {
-  if (!isObject(value)) return String(value)
-  if (value instanceof Class) return `[class ${value.name}]`
-  if (value instanceof ScriptFunction) return `[Function: ${value.name}]`
-
-  throw typeError('Cannot convert object to string')
+  return isObject(value) ? objectToString(value) : String(value)
 }
 
 function checkPrimitives(op: string, a: Value, b: Value) {

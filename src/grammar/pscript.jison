@@ -123,14 +123,14 @@ Statement
 
 /* The token filter turns `function` at the start of a statement into FUNCTION_DECLARATION. */
 FunctionDeclaration
-  : FUNCTION_DECLARATION IDENT '(' FormalParameters ')' '{' StatementList '}'
+  : FUNCTION_DECLARATION IDENT '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
     { $$ = yy.functionNode('FunctionDeclaration', { id: yy.identifier($2, @2), params: $4 }, yy.block($7, @6), @$) }
   ;
 
 FunctionExpression
-  : FUNCTION '(' FormalParameters ')' '{' StatementList '}'
+  : FUNCTION '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
     { $$ = yy.functionNode('FunctionExpression', { id: null, params: $3 }, yy.block($6, @5), @$) }
-  | FUNCTION IDENT '(' FormalParameters ')' '{' StatementList '}'
+  | FUNCTION IDENT '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
     { $$ = yy.functionNode('FunctionExpression', { id: yy.identifier($2, @2), params: $4 }, yy.block($7, @6), @$) }
   ;
 
@@ -188,7 +188,7 @@ OptionalExpression
   ;
 
 Block
-  : '{' StatementList '}'
+  : BLOCK_LBRACE StatementList '}'
     { $$ = yy.block($2, @$) }
   ;
 
@@ -223,7 +223,7 @@ Expression
 AssignmentExpression
   : ConditionalExpression
   | ArrowFunction
-  | CallExpression AssignmentOperator AssignmentExpression
+  | LeftHandSideExpression AssignmentOperator AssignmentExpression
     { $$ = yy.assignment($2, $1, $3, @$) }
   ;
 
@@ -236,7 +236,7 @@ ArrowFunction
   ;
 
 ArrowBody
-  : '{' StatementList '}'
+  : BLOCK_LBRACE StatementList '}'
     { $$ = yy.block($2, @$) }
   | AssignmentExpression
   ;
@@ -337,19 +337,38 @@ ExponentiationExpression
 
 /* A newline before postfix `++`/`--` ends the statement (the token filter inserts `;`). */
 PostfixExpression
-  : CallExpression
-  | CallExpression '++'
+  : LeftHandSideExpression
+  | LeftHandSideExpression '++'
     { $$ = yy.update($2, false, $1, @$) }
-  | CallExpression '--'
+  | LeftHandSideExpression '--'
     { $$ = yy.update($2, false, $1, @$) }
   ;
 
-CallExpression
+/* JS-style split: `new` binds to a member chain, calls extend it (`new a.B(1).c()`). */
+LeftHandSideExpression
+  : MemberExpression
+  | CallExpression
+  ;
+
+MemberExpression
   : PrimaryExpression
-  | NEW PrimaryExpression Arguments
+  | MemberExpression '.' IDENT
+    { $$ = yy.member($1, yy.identifier($3, @3), false, @$) }
+  | MemberExpression '[' Expression ']'
+    { $$ = yy.member($1, $3, true, @$) }
+  | NEW MemberExpression Arguments
     { $$ = yy.newExpression($2, $3, @$) }
+  ;
+
+CallExpression
+  : MemberExpression Arguments
+    { $$ = yy.call($1, $2, @$) }
   | CallExpression Arguments
     { $$ = yy.call($1, $2, @$) }
+  | CallExpression '.' IDENT
+    { $$ = yy.member($1, yy.identifier($3, @3), false, @$) }
+  | CallExpression '[' Expression ']'
+    { $$ = yy.member($1, $3, true, @$) }
   ;
 
 Arguments
@@ -386,6 +405,50 @@ PrimaryExpression
   | THIS
     { $$ = yy.thisExpression(@$) }
   | FunctionExpression
+  | ObjectLiteral
   | '(' Expression ')'
     { $$ = $2 }
+  ;
+
+/* Object literals (§4.4.6). OBJ_LBRACE comes from the token filter's brace classification (§4.2.2). */
+ObjectLiteral
+  : OBJ_LBRACE '}'
+    { $$ = yy.object([], @$) }
+  | OBJ_LBRACE PropertyList '}'
+    { $$ = yy.object($2, @$) }
+  | OBJ_LBRACE PropertyList ',' '}'
+    { $$ = yy.object($2, @$) }
+  ;
+
+PropertyList
+  : Property
+    { $$ = [$1] }
+  | PropertyList ',' Property
+    { $$ = $1.concat([$3]) }
+  ;
+
+/* Identifier keys have their own rules: reducing IDENT to a PropertyName first is ambiguous for LALR(1). */
+Property
+  : IDENT
+    { $$ = yy.shorthandProperty(yy.identifier($1, @1), @$) }
+  | IDENT ':' AssignmentExpression
+    { $$ = yy.property(yy.identifier($1, @1), $3, false, @$) }
+  | IDENT MethodTail
+    { $$ = yy.property(yy.identifier($1, @1), yy.method($2, @2), true, @$) }
+  | LiteralPropertyName ':' AssignmentExpression
+    { $$ = yy.property($1, $3, false, @$) }
+  | LiteralPropertyName MethodTail
+    { $$ = yy.property($1, yy.method($2, @2), true, @$) }
+  ;
+
+MethodTail
+  : '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
+    { $$ = { params: $2, body: yy.block($5, @4) } }
+  ;
+
+LiteralPropertyName
+  : STRING
+    { $$ = yy.stringLiteral($1, @$) }
+  | NUMBER
+    { $$ = yy.numberLiteral($1, @$) }
   ;

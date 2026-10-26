@@ -7,7 +7,11 @@ describe('§4.2.1 ASI consequences', () => {
   it('let a = 1\\nlet b = 2 → two declarations', () => {
     expect(parse('let a = 1\nlet b = 2').body.map(s => s.type)).toEqual(['VariableDeclaration', 'VariableDeclaration'])
   })
-  it.todo('x = a\\n  .map(f) → one statement (M9)')
+  it('x = a\\n  .map(f) → one statement', () => {
+    expect(parse('x = a\n  .map(f)').body).toMatchObject([
+      { expression: { right: { type: 'CallExpression', callee: { type: 'MemberExpression', property: { name: 'map' } } } } },
+    ])
+  })
   it('x = a\\n  + b → x = a + b', () => {
     expect(parse('x = a\n  + b').body).toMatchObject([
       { expression: { type: 'AssignmentExpression', right: { type: 'BinaryExpression', operator: '+' } } },
@@ -40,7 +44,11 @@ describe('§4.2.1 ASI consequences, continued', () => {
       body: { body: [{ type: 'ReturnStatement', argument: null }, { type: 'ExpressionStatement', expression: { value: 42 } }] },
     })
   })
-  it.todo('let o = {\\n a: 1\\n} → object literal, no ; inside (M9)')
+  it('let o = {\\n a: 1\\n} → object literal, no ; inside', () => {
+    expect(parse('let o = {\n a: 1\n}').body).toMatchObject([
+      { declarations: [{ init: { type: 'ObjectExpression', properties: [{ key: { name: 'a' } }] } }] },
+    ])
+  })
 
   it('f(\\n a,\\n b\\n) → one call', () => {
     const { body } = parse('f(\n a,\n b\n)')

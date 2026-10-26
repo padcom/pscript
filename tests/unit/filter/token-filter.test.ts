@@ -55,7 +55,7 @@ describe('control-flow headers and else', () => {
     ['if (f(a))\nb', ['IF', '(', 'IDENT', '(', 'IDENT', ')', ')', 'IDENT', ';', 'EOF']],
     ['f(a)\nb', ['IDENT', '(', 'IDENT', ')', ';', 'IDENT', ';', 'EOF']],
     ['if (a) b\nelse c', ['IF', '(', 'IDENT', ')', 'IDENT', ';', 'ELSE', 'IDENT', ';', 'EOF']],
-    ['if (a) { b }\nelse c', ['IF', '(', 'IDENT', ')', '{', 'IDENT', ';', '}', 'ELSE', 'IDENT', ';', 'EOF']],
+    ['if (a) { b }\nelse c', ['IF', '(', 'IDENT', ')', 'BLOCK_LBRACE', 'IDENT', ';', '}', 'ELSE', 'IDENT', ';', 'EOF']],
     ['if (a) b; else c', ['IF', '(', 'IDENT', ')', 'IDENT', ';', 'ELSE', 'IDENT', ';', 'EOF']],
     ['if (a) b else c', ['IF', '(', 'IDENT', ')', 'IDENT', 'ELSE', 'IDENT', ';', 'EOF']],
   ])('%j', (source, tokens) => {
@@ -64,15 +64,23 @@ describe('control-flow headers and else', () => {
 })
 
 describe('blocks', () => {
-  it('inserts before a } that closes a block, and after it at a newline', () => {
-    expect(tokenize('{ a }\nb')).toEqual(['{', 'IDENT', ';', '}', ';', 'IDENT', ';', 'EOF'])
+  it('inserts before a } that closes a block; a block statement needs no `;` after it', () => {
+    expect(tokenize('{ a }\nb')).toEqual(['BLOCK_LBRACE', 'IDENT', ';', '}', 'IDENT', ';', 'EOF'])
   })
 
   it('inserts at newlines inside a block', () => {
-    expect(tokenize('{\na\nb\n}')).toEqual(['{', 'IDENT', ';', 'IDENT', ';', '}', ';', 'EOF'])
+    expect(tokenize('{\na\nb\n}')).toEqual(['BLOCK_LBRACE', 'IDENT', ';', 'IDENT', ';', '}', 'EOF'])
   })
 
   it('does not insert before } after a non-ender', () => {
-    expect(tokenize('{ a; }')).toEqual(['{', 'IDENT', ';', '}', ';', 'EOF'])
+    expect(tokenize('{ a; }')).toEqual(['BLOCK_LBRACE', 'IDENT', ';', '}', 'EOF'])
+  })
+
+  it('inserts after the body of a function expression or arrow, not of a declaration', () => {
+    const after = (source: string) => tokenize(source).slice(-5)
+
+    expect(after('function f() {}\nx')).toEqual(['BLOCK_LBRACE', '}', 'IDENT', ';', 'EOF'])
+    expect(after('g = () => {}\nx')).toEqual(['}', ';', 'IDENT', ';', 'EOF'])
+    expect(after('g = function () {}\nx')).toEqual(['}', ';', 'IDENT', ';', 'EOF'])
   })
 })

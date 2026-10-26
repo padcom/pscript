@@ -1,0 +1,4 @@
+{name: "Ann", "full name": "Ann Smith", class: "admin", greet: [Function: greet], nested: {a: 1, b: "x"}}
+{} {a: {b: {c: [Object]}}}
+{name: "loop", me: [Circular]}
+[object Object] [object Object]!

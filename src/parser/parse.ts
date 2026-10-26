@@ -7,6 +7,7 @@ import type {
   BlockStatement,
   Expression,
   Identifier,
+  MemberExpression,
   Pattern,
   Program,
   SourceLocation,
@@ -36,6 +37,11 @@ const TOKEN_NAMES: Record<string, string> = {
   NUMBER: 'number',
   STRING: 'string',
   IDENT: 'identifier',
+  ARROW_IDENT: 'identifier',
+  BLOCK_LBRACE: "'{'",
+  OBJ_LBRACE: "'{'",
+  ARROW_LPAREN: "'('",
+  FUNCTION_DECLARATION: "'function'",
 }
 
 function describeExpected(token: string): string {
@@ -112,12 +118,14 @@ function lexerHelpers(errors: SyntaxErrorFactory, tokens: TokenState) {
   }
 }
 
-// Assignment and update targets: identifiers (members come with objects, M9).
-function checkTarget(errors: SyntaxErrorFactory, target: Expression, what: string): Identifier {
-  if (target.type === 'Identifier' && target.name === 'undefined') throw errors.at("Cannot assign to 'undefined'", target.loc)
-  if (target.type !== 'Identifier') throw errors.at(`Invalid ${what} target`, target.loc)
+// Assignment and update targets: identifiers and member expressions.
+const TARGET_TYPES = new Set(['Identifier', 'MemberExpression'])
 
-  return target
+function checkTarget(errors: SyntaxErrorFactory, target: Expression, what: string): Identifier | MemberExpression {
+  if (target.type === 'Identifier' && target.name === 'undefined') throw errors.at("Cannot assign to 'undefined'", target.loc)
+  if (!TARGET_TYPES.has(target.type)) throw errors.at(`Invalid ${what} target`, target.loc)
+
+  return target as Identifier | MemberExpression
 }
 
 // `if (x) let y = 1` is not allowed (as in JS strict mode): a declaration needs a block.
@@ -178,6 +186,20 @@ function checkParams(errors: SyntaxErrorFactory, params: Pattern[]): Pattern[] {
   return params
 }
 
+// Object-literal parts that need checks: shorthand names must be usable as variables; methods have checked parameters.
+function objectBuilders(errors: SyntaxErrorFactory) {
+  return {
+    shorthandProperty(id: Identifier, loc: JisonLoc) {
+      if (KEYWORD_SET.has(id.name)) throw errors.at(`Unexpected keyword '${id.name}' in shorthand property`, id.loc)
+
+      return { ...builders.property(id, id, false, loc), shorthand: true }
+    },
+    method({ params, body }: { params: Pattern[], body: BlockStatement }, loc: JisonLoc) {
+      return builders.functionNode('FunctionExpression', { id: null, params: checkParams(errors, params) }, body, loc)
+    },
+  }
+}
+
 // Static checks that the grammar leaves to its actions.
 function checkedBuilders(errors: SyntaxErrorFactory) {
   return {
@@ -211,6 +233,7 @@ function createYy(source: string, options: ParseOptions, tokens: TokenState) {
     ...LINE_HELPERS,
     ...checkedBuilders(errors),
     ...controlFlowBuilders(errors),
+    ...objectBuilders(errors),
     program(body: Statement[]): Program {
       return { type: 'Program', sourceType: options.goal ?? 'script', body, loc: sourceLoc(source) }
     },

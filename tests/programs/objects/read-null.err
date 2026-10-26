@@ -1,0 +1,1 @@
+objects/read-null.pscript:2:7 TypeError: Cannot read properties of null (reading 'x')

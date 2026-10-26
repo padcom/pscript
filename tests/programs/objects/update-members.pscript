@@ -1,0 +1,13 @@
+let o = { n: 1, list: { size: 0 } }
+print(o.n++, o.n, ++o.n, o.n--, --o.n)
+o.list.size += 5
+o['list']['size'] -= 1
+print(o.list.size)
+let k = 'n'
+print(o[k]++, o[k], ++o[k])
+let opt = { a: null, b: 0, c: 'set' }
+opt.a ??= 'default'
+opt.b ||= 'fallback'
+opt.c &&= 'replaced'
+opt['d'] ??= 'created'
+print(opt.a, opt.b, opt.c, opt.d)

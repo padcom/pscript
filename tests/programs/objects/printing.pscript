@@ -1,0 +1,8 @@
+// @pscript-only: print formatting (D18)
+const user = { name: 'Ann', 'full name': 'Ann Smith', class: 'admin', greet() { return 1 }, nested: { a: 1, b: 'x' } }
+print(user)
+print({}, { a: { b: { c: { d: 1 } } } })
+let self = { name: 'loop' }
+self.me = self
+print(self)
+print('' + user, user + '!')

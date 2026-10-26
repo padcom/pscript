@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ClassTemplate, FunctionProto } from '@/compiler/function-proto'
 import { formatNested, formatValue } from '@/runtime/format'
-import { Class, Closure, Environment, NativeFunction, Object as ScriptObject } from '@/runtime/values'
+import { Array as ScriptArray, Class, Closure, Environment, NativeFunction, Object as ScriptObject } from '@/runtime/values'
 
 const template = { name: 'P' } as ClassTemplate
 
@@ -26,8 +26,25 @@ describe('print formatting (D18)', () => {
     expect(formatValue(base)).toBe('[class P]')
     expect(formatValue(derived)).toBe('[class Q extends P]')
   })
+})
 
-  it('prints other objects as [Object] until their formats are implemented', () => {
-    expect(formatValue(new ScriptObject(null))).toBe('[Object]')
+describe('print formatting of objects and arrays (§4.6.2)', () => {
+  it('prints objects and arrays', () => {
+    const object = new ScriptObject(null)
+    const array = new ScriptArray(null, [1, 'a', null])
+
+    object.props.set('a', 1).set('full name', 'Ann').set('list', array)
+    expect(formatValue(new ScriptObject(null))).toBe('{}')
+    expect(formatValue(new ScriptArray(null, []))).toBe('[]')
+    expect(formatValue(object)).toBe('{a: 1, "full name": "Ann", list: [1, "a", null]}')
+  })
+
+  it('marks cycles and limits depth', () => {
+    const object = new ScriptObject(null)
+    const deep = new ScriptArray(null, [new ScriptArray(null, [new ScriptArray(null, [new ScriptArray(null, [1])])])])
+
+    object.props.set('self', object)
+    expect(formatValue(object)).toBe('{self: [Circular]}')
+    expect(formatValue(deep)).toBe('[[[[Array]]]]')
   })
 })

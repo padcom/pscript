@@ -14,11 +14,11 @@ describe('declarations and blocks', () => {
     ])
   })
 
-  it('parses nested blocks; the `;` inserted after a block `}` is an EmptyStatement (§4.2.1)', () => {
-    const [outer] = parse('{ let a = 1\n { a } }').body
+  it('parses nested blocks without stray empty statements', () => {
+    const { body } = parse('{ let a = 1\n { a } }')
 
-    expect(outer).toMatchObject({ type: 'BlockStatement' })
-    expect((outer as BlockStatement).body.map(s => s.type)).toEqual(['VariableDeclaration', 'BlockStatement', 'EmptyStatement'])
+    expect(body).toHaveLength(1)
+    expect((body[0] as BlockStatement).body.map(s => s.type)).toEqual(['VariableDeclaration', 'BlockStatement'])
   })
 
   it.each([

@@ -15,7 +15,34 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M6 | Control flow | done (2026-10-26) |
 | M7 | Functions | done (2026-10-26) |
 | M8 | Arrow functions | done (2026-10-26) |
-| M9 | Objects | next |
+| M9 | Objects | done (2026-10-26) |
+| M10 | Arrays and for…of | next |
+
+## M9 — Objects
+
+Done: object programs pass (also against Node where JS-compatible); the acorn oracle (`tests/parser-oracle.test.ts`) matches every JS-valid, non-`@pscript-only` program. `npm run check` and `npm run build` green; 597 tests + 2 todo.
+
+What exists:
+
+- Token filter:
+  - **Brace classification (§4.2.2)**: `{` becomes `BLOCK_LBRACE` or `OBJ_LBRACE`. Brackets are now `{statement}` (block statements, function-declaration bodies), `{block}` (bodies of function expressions, arrows, methods — after `)` / `=>`) and `{object}`. A statement start (none, `;`, `BLOCK_LBRACE`, `}`, `else`, `try`, `finally`, a header `)`) or a pending function-declaration body (tracked by bracket depth, `declarationDepth`) gives `{statement}`; `)`/`=>` give `{block}`; anything else `{object}`.
+  - **The `}` of a `{statement}` is not an ENDER** (`closesStatement`), so no `;` (EmptyStatement) is inserted after block statements and function declarations — required for the acorn oracle. Expression bodies keep the §4.2.1 behaviour (`let f = () => {\n}\nf()` is two statements).
+  - **Keywords as property names (§4.2.4)**: after `.`, and in object-key position (`{object}` top, prev `OBJ_LBRACE`/`,`, next `:` `(` `,` `}`) → `IDENT` (text kept). Class-member positions come with M15.
+  - `CATCH` added to the header keywords (its `)` does not end a statement), ready for M11.
+- Grammar: JS-style `LeftHandSideExpression` = `MemberExpression | CallExpression`; `MemberExpression` includes `new X(...)` (so `new a.B(1).c()` works); object literals: `key: value`, shorthand `{ a }`, methods `m() {}`, string/number keys, trailing comma. Identifier keys have their own rules (reducing `IDENT` to a `PropertyName` first was an LALR conflict in Jison). Assignment/update targets may be member expressions. Parse errors show `BLOCK_LBRACE`/`OBJ_LBRACE` as `'{'` etc.
+- `src/runtime/properties.ts`: `getProperty`, `setProperty`, `defineProperty`, `propertyKey`. Missing property → `undefined`; `null`/`undefined` receivers → `TypeError: Cannot read properties of null (reading 'k')` / `Cannot set properties of …`; primitives → their realm prototypes; strings: `length` and index (out of range → `RangeError: Index 5 out of range for length 3`, D37); arrays: `length` (assignable, truncates) and indices (out of range read → RangeError, write past the end fills with `null`); functions: `name` / `length` (read-only); non-extensible objects reject new properties.
+- Compiler: `Reference` abstraction for assignment targets (name / `o.k` / `o[k]`, `baseSize` 0/1/2) used by `=`, compound and logical assignment (logical drops the base with `SWAP POP` / `ROT3 POP POP` when it does not assign) and `++`/`--` (postfix keeps the old value with `DUP` + `ROT3`/`ROT4`). `o.m(x)` → `<o> DUP GET_PROP m <x> CALL_METHOD 1`; object literals → `OBJECT` + `DEFINE_PROP k` per property; methods are protos of kind `'method'`; property values that are anonymous functions/arrows are named after the key. Assigning an anonymous function to a variable names it too.
+- VM opcodes added: `DUP2 SWAP ROT3 ROT4 GET_PROP SET_PROP GET_INDEX SET_INDEX OBJECT DEFINE_PROP CALL_METHOD` (`this` = receiver). `DEFINE_PROP` sets the home object of methods.
+- `print` formats objects and arrays (§4.6.2: `{a: 1, "full name": "Ann"}`, `[1, "a"]`, `[Circular]`, `[Object]`/`[Array]` beyond depth 2). `ToString`: plain objects `[object Object]`, arrays `join(',')`.
+- `tests/parser-oracle.test.ts`: acorn (`ecmaVersion: 'latest'`, script) vs PScript, ignoring `start end loc range access generator async directive` and `expression` on non-arrow functions; programs acorn rejects are skipped.
+
+Decisions / gaps:
+
+- `ToString` of an object does not call a script-defined `toString()` yet (M13/M14).
+- Computed keys (`{ [k]: v }`, COULD) and accessors (M16) are not supported yet.
+- `functions/duplicate-parameter.pscript` is now `@pscript-only` (acorn's sloppy mode allows duplicate parameters).
+- The dispatch loop's lint exemption now also covers `@stylistic/padding-line-between-statements` (`CALL_METHOD` falls through to `CALL`).
+- `x is not a function` messages name the value's type, not the expression (`o.m is not a function` in JS).
 
 ## M8 — Arrow functions
 

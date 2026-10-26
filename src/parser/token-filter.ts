@@ -2,7 +2,7 @@
 // tokens and inserts the semicolons that ASI requires (§4.2.1). It is the only place where
 // newline-sensitive decisions are made.
 import type { JisonLexer, JisonLocation, JisonParser } from '@/grammar/jison-types'
-import { CONTINUERS, ENDERS } from './tokens'
+import { CONTINUERS, ENDERS, KEYWORDS } from './tokens'
 
 /**
  * State shared between the token filter and the parse error hook.
@@ -32,9 +32,30 @@ interface Token {
   closesHeader?: boolean
   /** a `}` that closes a block */
   closesBlock?: boolean
+  /** a `}` that closes a block statement or a function declaration's body: no `;` needed after it */
+  closesStatement?: boolean
 }
 
-type Bracket = '(' | '(header)' | '[' | '{block}' | '{object}'
+/**
+ * Open brackets. Braces (§4.2.2) are `{statement}` (block statements and function-declaration
+ * bodies), `{block}` (bodies of function expressions, arrows and methods: the expression goes on
+ * after the `}`) or `{object}` (object literals).
+ */
+type Bracket = '(' | '(header)' | '[' | '{statement}' | '{block}' | '{object}'
+
+const BLOCK_LIKE = new Set<Bracket | undefined>(['{statement}', '{block}'])
+
+/** A `{` after one of these opens a block statement. */
+const STATEMENT_BRACE_PRECEDERS = new Set([';', 'BLOCK_LBRACE', '}', 'ELSE', 'TRY', 'FINALLY'])
+
+/** A `{` after one of these opens a function, arrow or method body. */
+const BODY_BRACE_PRECEDERS = new Set([')', '=>'])
+
+const KEYWORD_TOKENS = new Set(KEYWORDS.map(keyword => keyword.toUpperCase()))
+
+/** In an object literal, a key follows `{` or `,` and is followed by one of these (§4.2.4). */
+const KEY_PRECEDERS = new Set(['OBJ_LBRACE', ','])
+const KEY_FOLLOWERS = new Set([':', '(', ',', '}'])
 
 const PAREN_DEPTH: Record<string, number> = { '(': 1, ')': -1 }
 
@@ -44,14 +65,10 @@ const ARROW_STARTS: Record<string, (filter: TokenFilter, token: Token) => void> 
   '(': (filter, token) => filter.classifyParen(token),
 }
 
-/** Tokens after which a statement starts (besides a control-flow header's `)`). */
-const STATEMENT_PRECEDERS = new Set([';', '{', '}', 'ELSE'])
-
 /** Keywords whose `( … )` is followed by a statement, so their `)` does not end one. */
-const HEADER_KEYWORDS = new Set(['IF', 'WHILE', 'FOR'])
+const HEADER_KEYWORDS = new Set(['IF', 'WHILE', 'FOR', 'CATCH'])
 
-// Object-literal braces are told apart from blocks in M9 (§4.2.2); until then every `{` is a block.
-const OPENERS: Record<string, Bracket> = { '(': '(', 'ARROW_LPAREN': '(', '[': '[', '{': '{block}' }
+const OPENERS: Record<string, Bracket> = { '(': '(', 'ARROW_LPAREN': '(', '[': '[' }
 const CLOSERS = new Set([')', ']', '}'])
 
 function endOf(loc: JisonLocation): JisonLocation {
@@ -66,7 +83,7 @@ function endOf(loc: JisonLocation): JisonLocation {
  */
 const SPECIAL_TOKENS: Record<string, (filter: TokenFilter, token: Token) => boolean> = {
   'EOF': filter => filter.atStatementLevel(),
-  '}': filter => filter.top() === '{block}',
+  '}': filter => BLOCK_LIKE.has(filter.top()),
   'ELSE': (filter, token) => filter.endsBranch(token),
 }
 
@@ -85,6 +102,8 @@ export class TokenFilter {
   private brackets: Bracket[] = []
   /** raw tokens read ahead (arrow detection), not yet seen by the parser */
   private lookahead: Token[] = []
+  /** bracket depth of a function declaration whose body brace is still to come, or -1 */
+  private declarationDepth = -1
 
   constructor(private base: JisonLexer, private terminals: Record<number, string>, private state: TokenState) {
     this.options = base.options
@@ -99,6 +118,7 @@ export class TokenFilter {
     this.pending = null
     this.brackets = []
     this.lookahead = []
+    this.declarationDepth = -1
 
     return this
   }
@@ -123,9 +143,27 @@ export class TokenFilter {
   private read(): Token {
     const token = this.lookahead.shift() ?? this.readRaw()
 
+    this.keywordAsName(token)
     ARROW_STARTS[token.name]?.(this, token)
 
     return token
+  }
+
+  // Keywords are property names after `.` and as object-literal keys (§4.2.4).
+  private keywordAsName(token: Token) {
+    if (KEYWORD_TOKENS.has(token.name) && this.inNamePosition()) token.name = 'IDENT'
+  }
+
+  private inNamePosition(): boolean {
+    return this.prev?.name === '.' || this.inKeyPosition()
+  }
+
+  private inKeyPosition(): boolean {
+    return this.top() === '{object}' && this.afterKeyPreceder() && KEY_FOLLOWERS.has(this.peek(0).name)
+  }
+
+  private afterKeyPreceder(): boolean {
+    return KEY_PRECEDERS.has(this.prev?.name ?? '')
   }
 
   // `x =>`: an identifier immediately followed by `=>` is an arrow's only parameter.
@@ -194,7 +232,9 @@ export class TokenFilter {
   }
 
   private prevEnds(): boolean {
-    return this.prev !== null && ENDERS.has(this.prev.name) && !this.prev.closesHeader
+    const { prev } = this
+
+    return prev !== null && ENDERS.has(prev.name) && !prev.closesHeader && !prev.closesStatement
   }
 
   // `prev` may end a statement: insert at EOF, before a block's `}`, or at a newline that
@@ -223,7 +263,7 @@ export class TokenFilter {
   atStatementLevel(): boolean {
     const top = this.top()
 
-    return top === undefined || top === '{block}'
+    return top === undefined || BLOCK_LIKE.has(top)
   }
 
   private virtualSemicolon(before: Token): Token {
@@ -233,8 +273,9 @@ export class TokenFilter {
   }
 
   private emit(token: Token): string {
-    if (token.name === 'FUNCTION' && this.atStatementStart()) token.name = 'FUNCTION_DECLARATION'
-    this.track(token)
+    if (token.name === 'FUNCTION' && this.atStatementStart()) this.declarationStart(token)
+    if (token.name === '{') this.classifyBrace(token)
+    else this.track(token)
     this.prev = token
     this.yytext = token.text
     this.match = token.text
@@ -246,11 +287,39 @@ export class TokenFilter {
     return token.name
   }
 
-  // A statement may start here: beginning of input, after `;`, a block brace, a control-flow header or `else`.
+  // A statement may start here: beginning of input, after `;`, a block brace, `}`, a control-flow header,
+  // `else`, `try` or `finally`.
   private atStatementStart(): boolean {
     const { prev } = this
 
-    return prev === null || STATEMENT_PRECEDERS.has(prev.name) || Boolean(prev.closesHeader)
+    return prev === null || STATEMENT_BRACE_PRECEDERS.has(prev.name) || Boolean(prev.closesHeader)
+  }
+
+  private declarationStart(token: Token) {
+    token.name = 'FUNCTION_DECLARATION'
+    this.declarationDepth = this.brackets.length
+  }
+
+  // Brace classification (§4.2.2): BLOCK_LBRACE or OBJ_LBRACE, with the matching stack entry.
+  private classifyBrace(token: Token) {
+    const kind = this.braceKind()
+
+    token.name = kind === '{object}' ? 'OBJ_LBRACE' : 'BLOCK_LBRACE'
+    this.brackets.push(kind)
+  }
+
+  private braceKind(): Bracket {
+    if (this.declarationDepth === this.brackets.length) {
+      this.declarationDepth = -1
+
+      return '{statement}'
+    }
+
+    return this.atStatementStart() ? '{statement}' : this.bodyOrObject()
+  }
+
+  private bodyOrObject(): Bracket {
+    return BODY_BRACE_PRECEDERS.has(this.prev?.name ?? '') ? '{block}' : '{object}'
   }
 
   private track(token: Token) {
@@ -260,7 +329,8 @@ export class TokenFilter {
 
   private close(token: Token, bracket: Bracket | undefined) {
     token.closesHeader = bracket === '(header)'
-    token.closesBlock = bracket === '{block}'
+    token.closesBlock = BLOCK_LIKE.has(bracket)
+    token.closesStatement = bracket === '{statement}'
   }
 
   private opener(name: string): Bracket {

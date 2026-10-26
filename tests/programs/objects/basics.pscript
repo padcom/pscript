@@ -1,0 +1,11 @@
+// §10.9 (accessors arrive in M16, Object.keys / JSON in M13)
+const name = 'Ann'
+const user = {
+  name,                                       // shorthand property
+  'full name': 'Ann Smith',
+  class: 'admin',                             // keywords are allowed as keys
+  greet() { return 'Hi, ' + this.name },      // method shorthand
+}
+print(user.greet(), '/', user['full name'], '/', user.class)
+user.name = 'Annie'
+print(user.greet())

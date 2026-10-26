@@ -1,0 +1,4 @@
+// @pscript-only: out-of-range string index is a RangeError (D37)
+function greet(name, greeting = 'Hi') {}
+print('hello'.length, 'hello'[1], greet.name, greet.length, print.name)
+print('abc'[3])

@@ -1,0 +1,17 @@
+const counter = {
+  count: 0,
+  inc() { this.count++; return this },
+  add(n) { this.count += n; return this },
+  get() { return this.count },
+}
+print(counter.inc().inc().add(10).get())
+const calc = {
+  base: 10,
+  plus: function (x) { return this.base + x },
+  later() { return () => this.base * 2 },
+}
+print(calc.plus(5), calc.later()())
+const other = { base: 100, plus: calc.plus }
+print(other.plus(1))
+let ops = { double: x => x * 2, square: function (x) { return x * x } }
+print(ops.double(4), ops['square'](5), ops.double.name, ops.square.name)

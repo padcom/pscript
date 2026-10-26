@@ -14,6 +14,7 @@ import {
   truthy,
   typeOf,
 } from '@/runtime/operators'
+import { defineProperty, getProperty, propertyKey, setProperty } from '@/runtime/properties'
 import { ScriptError, rangeError, referenceError, typeError } from '@/runtime/script-error'
 import { arityError } from '@/compiler/signature'
 import {
@@ -23,6 +24,7 @@ import {
   Environment,
   Function as ScriptFunction,
   NativeFunction,
+  Object as ScriptObject,
   UNINITIALIZED,
   type AccessContext,
   type Realm,
@@ -225,12 +227,19 @@ export class VM implements AccessContext {
     return closure
   }
 
+  // Object-literal property; a method remembers the object as its home object (for `super`, §5.4).
+  private defineProperty(value: Value, object: ScriptObject, key: string) {
+    if (value instanceof Closure && value.fnProto.kind === 'method') value.homeObject = object
+    defineProperty(object, key, value)
+  }
+
   private notAClass(callee: Value): never {
     throw typeError(`${callee instanceof ScriptFunction ? callee.name || 'anonymous function' : kindOf(callee)} is not a class`)
   }
 
   // §5.6.2: one switch dispatch loop, with hot locals; exempt from the size and nesting rules.
-  /* eslint-disable complexity, max-lines-per-function, max-depth, prefer-destructuring, @stylistic/max-statements-per-line */
+  /* eslint-disable complexity, max-lines-per-function, max-depth, prefer-destructuring,
+    @stylistic/max-statements-per-line, @stylistic/padding-line-between-statements */
   // Runs until the frame at depth `entryDepth` returns (or the script halts).
   private run(entryDepth: number): Value {
     const { stack, globals } = this
@@ -356,18 +365,58 @@ export class VM implements AccessContext {
         case Op.NOT: stack.push(!truthy(stack.pop())); break
         case Op.TYPEOF: stack.push(typeOf(stack.pop())); break
 
+        case Op.DUP2: stack.push(stack[stack.length - 2], stack[stack.length - 1]); break
+        case Op.SWAP:
+          b = stack[stack.length - 1]
+          stack[stack.length - 1] = stack[stack.length - 2]
+          stack[stack.length - 2] = b
+          break
+        // the index is computed before the pop: a b c → c a b, a b c d → d a b c
+        case Op.ROT3: stack.splice(stack.length - 3, 0, stack.pop()); break
+        case Op.ROT4: stack.splice(stack.length - 4, 0, stack.pop()); break
+        case Op.GET_PROP:
+          stack.push(getProperty(this, stack.pop(), constants[code[ip++]] as string))
+          break
+
+        case Op.SET_PROP: {
+          const value = stack.pop()
+
+          setProperty(this, stack.pop(), constants[code[ip++]] as string, value)
+          stack.push(value)
+          break
+        }
+        case Op.GET_INDEX:
+          b = stack.pop()
+          stack.push(getProperty(this, stack.pop(), propertyKey(b)))
+          break
+
+        case Op.SET_INDEX: {
+          const value = stack.pop()
+          const key = propertyKey(stack.pop())
+
+          setProperty(this, stack.pop(), key, value)
+          stack.push(value)
+          break
+        }
+        case Op.OBJECT: stack.push(new ScriptObject(this.realm.ObjectPrototype)); break
+        case Op.DEFINE_PROP:
+          this.defineProperty(stack.pop(), stack[stack.length - 1] as ScriptObject, constants[code[ip++]] as string)
+          break
+        case Op.CALL_METHOD: // CALL with the receiver below the function
         case Op.CALL: {
+          const isMethod = code[ip - 1] === Op.CALL_METHOD
           const argc = code[ip++]
           const args = stack.splice(stack.length - argc, argc)
           const callee = stack.pop()
+          const thisValue = isMethod ? stack.pop() : null // plain call: this = null (D37)
 
           if (callee instanceof Closure) {
             frame.ip = ip
-            frame = this.enterClosure(callee, args, null) // plain call: this = null (D37)
+            frame = this.enterClosure(callee, args, thisValue)
             code = frame.proto.code
             constants = frame.proto.constants
             ip = 0
-          } else stack.push(this.callFunction(callee, null, args))
+          } else stack.push(this.callFunction(callee, thisValue, args))
           break
         }
 
@@ -403,5 +452,6 @@ export class VM implements AccessContext {
       }
     }
   }
-  /* eslint-enable complexity, max-lines-per-function, max-depth, prefer-destructuring, @stylistic/max-statements-per-line */
+  /* eslint-enable complexity, max-lines-per-function, max-depth, prefer-destructuring,
+    @stylistic/max-statements-per-line, @stylistic/padding-line-between-statements */
 }

@@ -39,7 +39,8 @@ describe('conversions', () => {
   it('converts to strings', () => {
     expect([1.5, -0, null, undefined, true].map(toString)).toEqual(['1.5', '0', 'null', 'undefined', 'true'])
     expect(toString(fn)).toBe('[Function: f]')
-    expect(() => toString(object)).toThrow('Cannot convert object to string')
+    expect(toString(object)).toBe('[object Object]')
+    expect(toString(new ScriptArray(null, [1, null, 'a', undefined]))).toBe('1,,a,')
     expect(anonymous.name).toBe('')
   })
 })

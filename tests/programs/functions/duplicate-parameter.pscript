@@ -1,1 +1,2 @@
+// @pscript-only: duplicate parameters are always an error (JS allows them in sloppy mode)
 function f(a, a) {}

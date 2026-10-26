@@ -18,10 +18,13 @@ import type {
   IfStatement,
   Literal,
   LogicalExpression,
+  MemberExpression,
   NewExpression,
   Node,
+  ObjectExpression,
   Pattern,
   Program,
+  Property,
   ReturnStatement,
   SourceLocation,
   Statement,
@@ -32,7 +35,7 @@ import type {
 } from '@/parser/ast'
 import type { FunctionNode } from '@/parser/ast-builders'
 import { parse } from '@/parser/parse'
-import type { CompiledScript, FunctionProto } from './function-proto'
+import type { CompiledScript, FunctionKind, FunctionProto } from './function-proto'
 import { GlobalFlags, Op } from './opcodes'
 import { ProtoBuilder } from './proto-builder'
 import { Scope, type Binding, type BindingKind } from './scope'
@@ -122,7 +125,28 @@ const EXPRESSIONS: { [K in Expression['type']]?: Handler<Extract<Expression, { t
   ArrowFunctionExpression: (c, node) => c.closure(c.functionProto(node, '')),
   ThisExpression: c => c.thisExpression(),
   NewExpression: (c, node) => c.newExpression(node),
+  MemberExpression: (c, node) => c.member(node),
+  ObjectExpression: (c, node) => c.object(node),
 }
+
+/**
+ * An assignment target (§5.5): what `prepare` pushes stays on the stack for `get` and `set`.
+ */
+interface Reference {
+  /** values pushed by `prepare`: 0 for a name, 1 for `o.k` (o), 2 for `o[k]` (o, k) */
+  baseSize: number
+  /** pushes the base values */
+  prepare: () => void
+  /** base → value */
+  get: () => void
+  /** base value → value */
+  set: () => void
+}
+
+/** Indexed by `Reference.baseSize` (1 or 2). */
+const DUPLICATE_BASE: Record<number, Op> = { 1: Op.DUP, 2: Op.DUP2 }
+const ROTATE_BELOW_BASE: Record<number, Op> = { 1: Op.ROT3, 2: Op.ROT4 }
+const DROP_BASE: Record<number, Op[]> = { 1: [Op.SWAP, Op.POP], 2: [Op.ROT3, Op.POP, Op.POP] }
 
 const STATEMENTS: { [K in Statement['type']]?: Handler<Extract<Statement, { type: K }>> } = {
   ExpressionStatement: (c, node) => c.expressionStatement(node.expression),
@@ -543,69 +567,183 @@ class Compiler {
   }
 
   // `++x`: LOAD POS INC STORE; `x++`: LOAD POS DUP INC STORE POP (leaves the old number).
-  update(node: UpdateExpression) {
-    const { argument, prefix } = node
-    if (argument.type !== 'Identifier') throw this.unsupported(argument)
 
-    this.expression(argument)
-    this.out.mark(node.loc)
-    this.out.emit(Op.POS)
-
-    if (prefix) this.increment(node, argument)
-    else this.postIncrement(node, argument)
-  }
-
-  private increment({ operator }: UpdateExpression, target: Identifier) {
-    this.out.emit(operator === '++' ? Op.INC : Op.DEC)
-    this.store(target.name, target.loc)
-  }
-
-  private postIncrement(node: UpdateExpression, target: Identifier) {
-    this.out.emit(Op.DUP)
-    this.increment(node, target)
-    this.out.emit(Op.POP)
-  }
+  // `a ||= b` assigns only when needed (§5.5).
 
   call(node: CallExpression) {
-    if (node.callee.type === 'Super') throw this.unsupported(node)
-    this.checkArity(node.callee, node.arguments.length, node.loc)
-    this.expression(node.callee)
+    const { callee } = node
+    if (callee.type === 'Super') throw this.unsupported(node)
+    this.checkArity(callee, node.arguments.length, node.loc)
+
+    const isMethod = this.callee(callee)
 
     for (const argument of node.arguments) this.expression(argument)
-    this.out.mark(node.loc)
-    this.out.emit(Op.CALL, node.arguments.length)
+    this.emitAt(node.loc, isMethod ? Op.CALL_METHOD : Op.CALL, node.arguments.length)
+  }
+
+  // Pushes the function (and, for `o.m()`, the receiver below it); returns whether it is a method call.
+  private callee(callee: Expression): boolean {
+    if (callee.type !== 'MemberExpression') {
+      this.expression(callee)
+
+      return false
+    }
+    this.methodCallee(callee)
+
+    return true
+  }
+
+  // `o.m(x)` → <o> DUP GET_PROP m <x> CALL_METHOD 1: the receiver stays below the function (§5.5).
+  private methodCallee({ object, property, computed, loc }: MemberExpression) {
+    if (object.type === 'Super') throw this.unsupported(object)
+    this.expression(object)
+    this.out.emit(Op.DUP)
+
+    if (computed) {
+      this.expression(property)
+      this.emitAt(loc, Op.GET_INDEX)
+    } else this.emitAt(loc, Op.GET_PROP, this.out.constant((property as Identifier).name))
+  }
+
+  member(node: MemberExpression) {
+    const reference = this.reference(node)
+
+    reference.prepare()
+    reference.get()
+  }
+
+  object(node: ObjectExpression) {
+    this.out.emit(Op.OBJECT)
+
+    for (const property of node.properties) this.property(property)
+  }
+
+  private property({ key, value, method, loc }: Property) {
+    const name = key.type === 'Identifier' ? key.name : String((key as Literal).value)
+
+    if (method) this.closure(this.functionProto(value as FunctionExpression, name, 'method'))
+    else this.namedExpression(value, name)
+    this.out.mark(loc)
+    this.out.emit(Op.DEFINE_PROP, this.out.constant(name))
+  }
+
+  // ---------------------------------------------------------------------------
+  // Assignment targets
+
+  // An assignment target: a name, `o.k` (the object stays on the stack) or `o[k]` (object and key stay).
+  private reference(target: Identifier | MemberExpression): Reference {
+    if (target.type === 'Identifier') return this.nameReference(target)
+    if (target.object.type === 'Super') throw this.unsupported(target)
+
+    return target.computed ? this.indexReference(target, target.object) : this.propertyReference(target, target.object)
+  }
+
+  private nameReference({ name, loc }: Identifier): Reference {
+    return { baseSize: 0, prepare: () => {}, get: () => this.load(name, loc), set: () => this.store(name, loc) }
+  }
+
+  private propertyReference({ property, loc }: MemberExpression, object: Expression): Reference {
+    const name = this.out.constant((property as Identifier).name)
+
+    return {
+      baseSize: 1,
+      prepare: () => this.expression(object),
+      get: () => this.emitAt(loc, Op.GET_PROP, name),
+      set: () => this.emitAt(loc, Op.SET_PROP, name),
+    }
+  }
+
+  private indexReference({ property, loc }: MemberExpression, object: Expression): Reference {
+    return {
+      baseSize: 2,
+      prepare: () => {
+        this.expression(object)
+        this.expression(property)
+      },
+      get: () => this.emitAt(loc, Op.GET_INDEX),
+      set: () => this.emitAt(loc, Op.SET_INDEX),
+    }
+  }
+
+  private emitAt(loc: SourceLocation, op: Op, ...operands: number[]) {
+    this.out.mark(loc)
+    this.out.emit(op, ...operands)
+  }
+
+  // Duplicates the target's base values so that reading the target keeps them for the write.
+  private dupBase({ baseSize }: Reference) {
+    if (baseSize > 0) this.out.emit(DUPLICATE_BASE[baseSize])
   }
 
   assignment(node: AssignmentExpression) {
     const { left, right, operator } = node
-    if (left.type !== 'Identifier') throw this.unsupported(left)
-
+    const reference = this.reference(left)
     const base = operator.slice(0, -1)
-    if (base in LOGICAL_JUMPS) {
-      this.logicalAssignment(left, right, LOGICAL_JUMPS[base])
+
+    if (base in LOGICAL_JUMPS) this.logicalAssignment(reference, right, LOGICAL_JUMPS[base])
+    else this.plainAssignment(node, reference)
+  }
+
+  private plainAssignment({ left, right, operator, loc }: AssignmentExpression, reference: Reference) {
+    reference.prepare()
+
+    if (operator === '=') this.namedExpression(right, left.type === 'Identifier' ? left.name : '')
+    else this.compoundValue(reference, right, ARITHMETIC_OPS[operator.slice(0, -1)] as Op, loc)
+    reference.set()
+  }
+
+  private compoundValue(reference: Reference, right: Expression, op: Op, loc: SourceLocation) {
+    this.dupBase(reference)
+    reference.get()
+    this.expression(right)
+    this.emitAt(loc, op)
+  }
+
+  // `a ||= b` assigns only when needed (§5.5); when it does not, the target's base values are dropped.
+  private logicalAssignment(reference: Reference, right: Expression, jump: Op) {
+    reference.prepare()
+    this.dupBase(reference)
+    reference.get()
+    const skip = this.out.emitJump(jump)
+
+    this.expression(right)
+    reference.set()
+
+    if (reference.baseSize === 0) {
+      this.out.patch(skip)
 
       return
     }
-    if (operator === '=') this.expression(right)
-    else this.compoundValue(node, ARITHMETIC_OPS[base] as Op)
-    this.store(left.name, left.loc)
-  }
+    const end = this.out.emitJump(Op.JUMP)
 
-  private compoundValue({ left, right, loc }: AssignmentExpression, op: Op) {
-    this.expression(left)
-    this.expression(right)
-    this.out.mark(loc)
-    this.out.emit(op)
-  }
+    this.out.patch(skip)
 
-  // `a ||= b` assigns only when needed (§5.5).
-  private logicalAssignment(left: Identifier, right: Expression, jump: Op) {
-    this.expression(left)
-    const end = this.out.emitJump(jump)
-
-    this.expression(right)
-    this.store(left.name, left.loc)
+    for (const op of DROP_BASE[reference.baseSize]) this.out.emit(op)
     this.out.patch(end)
+  }
+
+  // `++x`: <target> POS INC <set>; `x++` additionally keeps the old number below the base (DUP, ROT3/ROT4).
+  update(node: UpdateExpression) {
+    const reference = this.reference(node.argument)
+    const step = node.operator === '++' ? Op.INC : Op.DEC
+
+    reference.prepare()
+    this.dupBase(reference)
+    reference.get()
+    this.emitAt(node.loc, Op.POS)
+
+    if (node.prefix) this.out.emit(step)
+    else this.keepOldValue(reference, step)
+    reference.set()
+
+    if (!node.prefix) this.out.emit(Op.POP)
+  }
+
+  private keepOldValue({ baseSize }: Reference, step: Op) {
+    this.out.emit(Op.DUP)
+
+    if (baseSize > 0) this.out.emit(ROTATE_BELOW_BASE[baseSize])
+    this.out.emit(step)
   }
 
   // Compile-time arity check when the callee is a known function (D38, §4.4.13).
@@ -668,11 +806,11 @@ class Compiler {
     this.out.emit(Op.CLOSURE, this.out.constant(proto))
   }
 
-  functionProto(node: AnyFunction, name: string): FunctionProto {
+  functionProto(node: AnyFunction, name: string, kind?: FunctionKind): FunctionProto {
     const outer = this.fn
     const scope = new Scope(outer.scope, 'function')
     const isArrow = node.type === 'ArrowFunctionExpression'
-    const out = new ProtoBuilder({ name, kind: isArrow ? 'arrow' : 'function' })
+    const out = new ProtoBuilder({ name, kind: kind ?? (isArrow ? 'arrow' : 'function') })
 
     this.fn = { out, scope, loops: [], tracksCompletion: false, parent: outer, isArrow, usesThis: false }
 

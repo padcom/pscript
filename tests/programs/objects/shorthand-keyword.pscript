@@ -1,0 +1,2 @@
+// @pscript-only: a shorthand property must be a variable name
+let o = { class }

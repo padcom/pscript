@@ -1,0 +1,3 @@
+const o = { m() { return this.v } }
+const m = o.m
+m()
