@@ -9,6 +9,7 @@ DIGITS          [0-9]+
 EXPONENT        [eE][+-]?{DIGITS}
 NUMBER          (({DIGITS}"."{DIGITS}?)|("."{DIGITS})|{DIGITS}){EXPONENT}?
 IDENT           [A-Za-z_$][A-Za-z0-9_$]*
+TEMPLATE_TEXT   (?:[^`\\$]|\\[\s\S]|\$(?!\{))*
 
 %%
 
@@ -26,6 +27,12 @@ IDENT           [A-Za-z_$][A-Za-z0-9_$]*
 ["']                                            yy.lexError("Unterminated string", yylloc)
 
 {IDENT}                                         return yy.identToken(yytext, yylloc)
+
+/* Template literals (§4.1.8): a chunk runs from ` or } to the next ` or ${. Whether a } closes an
+   interpolation is decided by the brace stack in yy; if not, the action gives the text back (less). */
+\`{TEMPLATE_TEXT}(?:\`|\$\{)                     return yy.templateStart(yytext, yylloc)
+\}{TEMPLATE_TEXT}(?:\`|\$\{)                     return yy.templateContinue(this)
+\`                                              yy.lexError("Unterminated template literal", yylloc)
 
 "#"                                             yy.lexError("Unexpected '#'. Use the 'private' modifier for private members", yylloc)
 "==="                                           yy.lexError("'===' is not supported; use '=='", yylloc)
@@ -53,8 +60,8 @@ IDENT           [A-Za-z_$][A-Za-z0-9_$]*
 "&&"                                            return '&&'
 "||"                                            return '||'
 "??"                                            return '??'
-"{"                                             return '{'
-"}"                                             return '}'
+"{"                                             return yy.openBrace()
+"}"                                             return yy.closeBrace()
 "("                                             return '('
 ")"                                             return ')'
 "["                                             return '['
@@ -421,6 +428,7 @@ PrimaryExpression
     { $$ = yy.numberLiteral($1, @$) }
   | STRING
     { $$ = yy.stringLiteral($1, @$) }
+  | TemplateLiteral
   | TRUE
     { $$ = yy.literal(true, $1, @$) }
   | FALSE
@@ -498,4 +506,19 @@ ElementList
     { $$ = [$1] }
   | ElementList ',' AssignmentExpression
     { $$ = $1.concat([$3]) }
+  ;
+
+/* Template literals (§4.1.8, D34): quasis and substitutions alternate. */
+TemplateLiteral
+  : TEMPLATE_FULL
+    { $$ = yy.template([yy.quasi($1, @1, true)], [], @$) }
+  | TEMPLATE_HEAD Expression TemplateRest
+    { $$ = yy.template([yy.quasi($1, @1, false)].concat($3.quasis), [$2].concat($3.expressions), @$) }
+  ;
+
+TemplateRest
+  : TEMPLATE_TAIL
+    { $$ = { quasis: [yy.quasi($1, @1, true)], expressions: [] } }
+  | TEMPLATE_MIDDLE Expression TemplateRest
+    { $$ = { quasis: [yy.quasi($1, @1, false)].concat($3.quasis), expressions: [$2].concat($3.expressions) } }
   ;

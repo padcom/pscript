@@ -17,6 +17,7 @@ import type {
 } from './ast'
 import { builders, sourceLoc, type ForHeader, type FunctionHead, type FunctionType, type JisonLoc } from './ast-builders'
 import { EscapeError, checkNumber } from './literals'
+import { TemplateBraces, templateElement } from './templates'
 import { createTokenFilter, type TokenState } from './token-filter'
 import { FUTURE_RESERVED_WORDS, KEYWORDS } from './tokens'
 
@@ -43,6 +44,10 @@ const TOKEN_NAMES: Record<string, string> = {
   OBJ_LBRACE: "'{'",
   ARROW_LPAREN: "'('",
   FUNCTION_DECLARATION: "'function'",
+  TEMPLATE_FULL: 'template',
+  TEMPLATE_HEAD: 'template',
+  TEMPLATE_MIDDLE: 'template',
+  TEMPLATE_TAIL: 'template',
 }
 
 function describeExpected(token: string): string {
@@ -228,10 +233,31 @@ function checkedBuilders(errors: SyntaxErrorFactory) {
   }
 }
 
+// Template literals (§4.1.8): lexer hooks around a per-parse brace stack, and the AST builders.
+function templateHelpers(errors: SyntaxErrorFactory) {
+  const braces = new TemplateBraces()
+
+  return {
+    openBrace: () => braces.openBrace(),
+    closeBrace: () => braces.closeBrace(),
+    templateStart: (text: string) => braces.start(text),
+    templateContinue: (lexer: Parameters<TemplateBraces['continue']>[0]) => braces.continue(lexer),
+    quasi(token: string, loc: JisonLoc, tail: boolean) {
+      try {
+        return templateElement(token, loc, tail)
+      } catch (e) {
+        if (e instanceof EscapeError) throw errors.atToken(e.message, loc, e.offset)
+        throw e
+      }
+    },
+  }
+}
+
 function createYy(source: string, options: ParseOptions, tokens: TokenState) {
   const errors = new SyntaxErrorFactory(source, options.fileName)
 
   return {
+    ...templateHelpers(errors),
     ...builders,
     ...lexerHelpers(errors, tokens),
     ...LINE_HELPERS,

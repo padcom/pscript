@@ -1,0 +1,11 @@
+// §10.2 (the Money class example needs classes, M15)
+const user = { name: 'Ann', tasks: ['write', 'test'] }
+print(`Hello, ${user.name}!`)
+print(`${user.tasks.length} tasks: ${user.tasks.join(', ')}`)
+print(`2 + 2 = ${2 + 2}, cost: $5, ${ {a: 1}.a }`)
+
+const list = `<ul>
+${user.tasks.map(t => `  <li>${t}</li>`).join('\n')}
+</ul>`
+print(list)
+print(`escaped: \${not interpolated} \` backtick`)

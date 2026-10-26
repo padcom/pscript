@@ -1,0 +1,10 @@
+const text = `line 1
+line 2
+  indented`
+print(text.split('\n').length, text.split('\n')[2])
+print(`tab:\t| nl:\n| unicode:A\u{1F600} dollar:$ brace:\{ hex:\x42`)
+print(`continued \
+here`)
+print(`a
+${'b'}
+c`.split('\n').join('|'))

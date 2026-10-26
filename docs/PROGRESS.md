@@ -20,7 +20,25 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M11 | Exceptions | done (2026-10-27) |
 | M12 | Callbacks and re-entrancy | done (2026-10-27) |
 | M13 | Standard library | done (2026-10-27) |
-| M14 | Template literals | next |
+| M14 | Template literals | done (2026-10-27) |
+| M15 | Classes | next |
+
+## M14 — Template literals
+
+Done: `templates/` programs pass, also against Node and acorn where JS-compatible. `npm run check` and `npm run build` green; 734 tests + 1 todo.
+
+What exists:
+
+- Lexer: instead of an exclusive start condition, two regex rules match a whole template chunk — `` `text` `` / `` `text${ `` and `` }text${ `` / `` }text` `` (`TEMPLATE_TEXT` macro: `[^`\\$]`, escapes, `$` not followed by `{`). `src/parser/templates.ts` `TemplateBraces` (per parse, behind `yy.openBrace`/`closeBrace`/`templateStart`/`templateContinue`) keeps one open-brace counter per interpolation: a `}`-chunk only continues the template when the `}` closes the current interpolation (counter 0); otherwise the action calls Jison's `less(1)` to give the text back and returns a plain `}`. Unterminated template → `SyntaxError: Unterminated template literal`; unterminated interpolation → a parse error at the end.
+- Tokens `TEMPLATE_FULL`, `TEMPLATE_HEAD`, `TEMPLATE_MIDDLE`, `TEMPLATE_TAIL`; `templateElement` builds `TemplateElement { raw, cooked }` (`\r\n`/`\r` → `\n` in both; cooked via `cookString`, so escape errors and octal rules match strings, plus `` \` `` `\$` `\{`).
+- Grammar: `TemplateLiteral` as a primary expression (`TEMPLATE_FULL` | `TEMPLATE_HEAD Expression TemplateRest`).
+- Token filter (§4.2.6): `TEMPLATE_HEAD` opens a `{template}` bracket closed by `TEMPLATE_TAIL` (no ASI inside, `{` right after is an object literal); a template at the start of a line begins a statement (not a CONTINUER). **Tagged templates** (a template directly after an expression on the same line) → `SyntaxError: tagged templates are not supported; call a function with a template instead: tag(`x`)` — `return`/`break`/`continue` before a template are not tags.
+- Compiler: text parts → `CONST` (empty ones skipped), substitutions → `<expr> TO_STRING`, then `CONCAT n` (nothing to concatenate → `CONST ''`). VM: `TO_STRING` (= `toStringIn`: calls `toString()`, never a D5 error) and `CONCAT n`.
+
+Notes:
+
+- `templates/asi.pscript` is `@pscript-only`: in JS a template on the line after an expression is a tagged template.
+- The `Money` example of §10.2 (a class with `override toString()`) waits for M15.
 
 ## M13 — Standard library
 

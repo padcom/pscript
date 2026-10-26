@@ -2,7 +2,7 @@
 import type { CompiledScript, FunctionProto } from '@/compiler/function-proto'
 import { GlobalFlags, Op } from '@/compiler/opcodes'
 import { PScriptRuntimeError, formatExcerpt, type ScriptStackFrame } from '@/errors'
-import { addIn } from '@/runtime/conversions'
+import { addIn, toStringIn } from '@/runtime/conversions'
 import {
   arithmetic,
   compare,
@@ -521,6 +521,13 @@ export class VM implements AccessContext {
           break
         }
         case Op.OBJECT: stack.push(new ScriptObject(this.realm.ObjectPrototype)); break
+        case Op.TO_STRING: stack.push(toStringIn(this, stack.pop())); break
+        case Op.CONCAT: {
+          const argc = code[ip++]
+
+          stack.push(stack.splice(stack.length - argc, argc).join(''))
+          break
+        }
         case Op.ARRAY: {
           const argc = code[ip++]
 

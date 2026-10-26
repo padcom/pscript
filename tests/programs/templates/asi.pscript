@@ -1,0 +1,11 @@
+// @pscript-only: a template at the start of a line begins a new statement (D34; JS would make it a tagged template)
+let a = 'first'
+`second`
+print(a)
+let b = `multi
+line` + '!'
+print(b.length)
+print(`${
+  1 +
+  2
+}`)

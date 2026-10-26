@@ -41,7 +41,7 @@ interface Token {
  * bodies), `{block}` (bodies of function expressions, arrows and methods: the expression goes on
  * after the `}`) or `{object}` (object literals).
  */
-type Bracket = '(' | '(header)' | '[' | '{statement}' | '{block}' | '{object}'
+type Bracket = '(' | '(header)' | '[' | '{statement}' | '{block}' | '{object}' | '{template}'
 
 const BLOCK_LIKE = new Set<Bracket | undefined>(['{statement}', '{block}'])
 
@@ -68,8 +68,14 @@ const ARROW_STARTS: Record<string, (filter: TokenFilter, token: Token) => void> 
 /** Keywords whose `( … )` is followed by a statement, so their `)` does not end one. */
 const HEADER_KEYWORDS = new Set(['IF', 'WHILE', 'FOR', 'CATCH'])
 
-const OPENERS: Record<string, Bracket> = { '(': '(', 'ARROW_LPAREN': '(', '[': '[' }
-const CLOSERS = new Set([')', ']', '}'])
+// Inside `${ … }` (between TEMPLATE_HEAD and TEMPLATE_TAIL) there is no ASI (§4.2.6).
+const OPENERS: Record<string, Bracket> = { '(': '(', 'ARROW_LPAREN': '(', '[': '[', 'TEMPLATE_HEAD': '{template}' }
+const CLOSERS = new Set([')', ']', '}', 'TEMPLATE_TAIL'])
+
+const TEMPLATE_STARTS = new Set(['TEMPLATE_FULL', 'TEMPLATE_HEAD'])
+
+/** ENDERS that end a statement rather than an expression, so they cannot be a template's tag. */
+const STATEMENT_ENDERS = new Set(['RETURN', 'BREAK', 'CONTINUE'])
 
 function endOf(loc: JisonLocation): JisonLocation {
   return { first_line: loc.last_line, last_line: loc.last_line, first_column: loc.last_column, last_column: loc.last_column }
@@ -127,6 +133,7 @@ export class TokenFilter {
     const token = this.pending ?? this.read()
 
     this.pending = null
+    this.checkTagged(token)
 
     if (!this.needsSemicolon(token)) return this.emit(token)
 
@@ -147,6 +154,17 @@ export class TokenFilter {
     ARROW_STARTS[token.name]?.(this, token)
 
     return token
+  }
+
+  // `` tag`x` `` (an expression directly followed by a template on the same line) is not PScript (D34).
+  private checkTagged(token: Token) {
+    if (TEMPLATE_STARTS.has(token.name) && !token.afterNewline && this.prevIsTag()) {
+      this.state.fail('tagged templates are not supported; call a function with a template instead: tag(`x`)', token.loc)
+    }
+  }
+
+  private prevIsTag(): boolean {
+    return this.prevEnds() && !STATEMENT_ENDERS.has(this.prev?.name ?? '')
   }
 
   // Keywords are property names after `.` and as object-literal keys (§4.2.4).

@@ -31,6 +31,7 @@ import type {
   ReturnStatement,
   SourceLocation,
   Statement,
+  TemplateLiteral,
   ThrowStatement,
   TryStatement,
   UnaryExpression,
@@ -133,6 +134,7 @@ const EXPRESSIONS: { [K in Expression['type']]?: Handler<Extract<Expression, { t
   MemberExpression: (c, node) => c.member(node),
   ObjectExpression: (c, node) => c.object(node),
   ArrayExpression: (c, node) => c.array(node),
+  TemplateLiteral: (c, node) => c.template(node),
 }
 
 /**
@@ -810,6 +812,35 @@ class Compiler {
 
     reference.prepare()
     reference.get()
+  }
+
+  // `a${x}b` → CONST 'a'; <x> TO_STRING; CONST 'b'; CONCAT 3 — empty text parts are skipped (§4.1.8).
+  template(node: TemplateLiteral) {
+    let parts = 0
+
+    node.quasis.forEach((quasi, i) => {
+      parts += this.templateText(quasi.value.cooked)
+
+      if (i < node.expressions.length) parts += this.substitution(node.expressions[i])
+    })
+
+    if (parts === 0) this.out.emit(Op.CONST, this.out.constant(''))
+    else if (parts > 1) this.out.emit(Op.CONCAT, parts)
+  }
+
+  private templateText(text: string): number {
+    if (text === '') return 0
+    this.out.emit(Op.CONST, this.out.constant(text))
+
+    return 1
+  }
+
+  // ToString that calls toString() and never throws for being an object (unlike `+`, D5).
+  private substitution(expression: Expression): number {
+    this.expression(expression)
+    this.emitAt(expression.loc, Op.TO_STRING)
+
+    return 1
   }
 
   array(node: ArrayExpression) {

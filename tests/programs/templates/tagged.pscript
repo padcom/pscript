@@ -1,0 +1,2 @@
+// @pscript-only: tagged templates are not supported (D34)
+print`x`

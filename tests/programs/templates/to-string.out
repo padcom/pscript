@@ -1,0 +1,4 @@
+point: (1, 2)
+null undefined true 1e+21 0 1,2,3 [object Object]
+abc true string
+true plain true

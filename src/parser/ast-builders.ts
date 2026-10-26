@@ -34,6 +34,8 @@ import type {
   ReturnStatement,
   SourceLocation,
   Statement,
+  TemplateElement,
+  TemplateLiteral,
   ThisExpression,
   ThrowStatement,
   TryStatement,
@@ -154,6 +156,10 @@ export const builders = {
 
   member(object: Expression, property: Expression, computed: boolean, loc: JisonLoc): MemberExpression {
     return { type: 'MemberExpression', object, property, computed, optional: false, loc: toLoc(loc) }
+  },
+
+  template(quasis: TemplateElement[], expressions: Expression[], loc: JisonLoc): TemplateLiteral {
+    return { type: 'TemplateLiteral', quasis, expressions, loc: toLoc(loc) }
   },
 
   array(elements: Expression[], loc: JisonLoc): ArrayExpression {
