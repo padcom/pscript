@@ -9,6 +9,7 @@
 
 ## Table of contents
 
+0. Commit strategy
 1. Goals, scope, priorities
 2. Decisions (confirmed)
 3. Tooling & project setup
@@ -37,6 +38,10 @@
 10. Feature examples
 
 ---
+
+## 0. Commit strategy
+
+Whenever the code compiles and passes the tests please commit automatically.
 
 ## 1. Goals, scope, priorities
 
