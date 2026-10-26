@@ -1,0 +1,27 @@
+function level3() { throw new RangeError('deep') }
+function level2() { level3() }
+function level1() {
+  try { level2() } catch (e) { return 'caught ' + e.message }
+}
+print(level1())
+function rethrow() {
+  try { throw new Error('first') } catch (e) { throw new TypeError('second from ' + e.message) }
+}
+try { rethrow() } catch (e) { print(e.name, e.message) }
+let order = []
+try {
+  try { throw 1 } finally { order.push('inner finally') }
+} catch (e) {
+  order.push('outer catch ' + e)
+}
+print(order.join(', '))
+function counter() {
+  let n = 0
+  for (let i = 0; i < 5; i++) {
+    try { if (i % 2 == 0) throw i
+      n += 10 } catch (e) { n += e }
+  }
+  return n
+}
+print(counter())
+try { print('no error') } catch (e) { print('never') }

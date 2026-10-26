@@ -112,6 +112,9 @@ Statement
   | WhileStatement
   | ForStatement
   | ForOfStatement
+  | TryStatement
+  | THROW Expression ';'
+    { $$ = yy.throwStatement($2, @$) }
   | BREAK ';'
     { $$ = yy.jump('BreakStatement', @$) }
   | CONTINUE ';'
@@ -173,6 +176,22 @@ WhileStatement
 ForStatement
   : FOR '(' ForInit ';' OptionalExpression ';' OptionalExpression ')' Statement
     { $$ = yy.forStatement({ init: $3, test: $5, update: $7 }, $9, @$) }
+  ;
+
+TryStatement
+  : TRY Block CatchClause
+    { $$ = yy.tryStatement($2, $3, null, @$) }
+  | TRY Block FINALLY Block
+    { $$ = yy.tryStatement($2, null, $4, @$) }
+  | TRY Block CatchClause FINALLY Block
+    { $$ = yy.tryStatement($2, $3, $5, @$) }
+  ;
+
+CatchClause
+  : CATCH '(' IDENT ')' Block
+    { $$ = yy.catchClause(yy.identifier($3, @3), $5, @$) }
+  | CATCH Block
+    { $$ = yy.catchClause(null, $2, @$) }
   ;
 
 ForOfStatement

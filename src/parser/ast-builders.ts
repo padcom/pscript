@@ -8,6 +8,7 @@ import type {
   BinaryOperator,
   BlockStatement,
   BreakStatement,
+  CatchClause,
   ContinueStatement,
   ForOfStatement,
   ForStatement,
@@ -34,6 +35,8 @@ import type {
   SourceLocation,
   Statement,
   ThisExpression,
+  ThrowStatement,
+  TryStatement,
   UnaryExpression,
   UpdateExpression,
   VariableDeclaration,
@@ -178,6 +181,18 @@ export const builders = {
 
   newExpression(callee: Expression, args: Expression[], loc: JisonLoc): NewExpression {
     return { type: 'NewExpression', callee, arguments: args, loc: toLoc(loc) }
+  },
+
+  throwStatement(argument: Expression, loc: JisonLoc): ThrowStatement {
+    return { type: 'ThrowStatement', argument, loc: toLoc(loc) }
+  },
+
+  tryStatement(block: BlockStatement, handler: CatchClause | null, finalizer: BlockStatement | null, loc: JisonLoc) {
+    return { type: 'TryStatement', block, handler, finalizer, loc: toLoc(loc) } satisfies TryStatement
+  },
+
+  catchClause(param: Identifier | null, body: BlockStatement, loc: JisonLoc): CatchClause {
+    return { type: 'CatchClause', param, body, loc: toLoc(loc) }
   },
 
   block(body: Statement[], loc: JisonLoc): BlockStatement {

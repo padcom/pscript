@@ -4,6 +4,7 @@ import type { FunctionProto } from '@/compiler/function-proto'
 import { Op } from '@/compiler/opcodes'
 import { PScriptRuntimeError } from '@/errors'
 import { createRealm } from '@/runtime/realm'
+import type { Object as ScriptObject } from '@/runtime/values'
 import { installStdlib } from '@/stdlib'
 import { VM } from '@/vm/vm'
 
@@ -64,10 +65,10 @@ describe('vm errors', () => {
     }
 
     expect(error).toBeInstanceOf(PScriptRuntimeError)
+    expect((error?.value as ScriptObject).props.get('message')).toBe("Cannot apply '*' to number and function")
     expect(error?.message).toBe("x.pscript:2:3 TypeError: Cannot apply '*' to number and function\n  2 * print\n  ^")
     expect(error).toMatchObject({
       scriptName: 'TypeError',
-      value: { name: 'TypeError', message: "Cannot apply '*' to number and function" },
       scriptStack: [{ functionName: '<script>', line: 2, column: 3 }],
     })
   })

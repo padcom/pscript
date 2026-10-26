@@ -1,0 +1,2 @@
+function f() { throw new TypeError('bad') }
+f()

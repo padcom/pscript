@@ -1,0 +1,4 @@
+Error: boom
+    at inner (2:26)
+    at outer (3:20)
+    at <script> (4:7)

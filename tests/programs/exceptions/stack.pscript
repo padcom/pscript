@@ -1,0 +1,4 @@
+// @pscript-only: stack string format
+function inner() { throw new Error('boom') }
+function outer() { inner() }
+try { outer() } catch (e) { print(e.stack) }

@@ -17,6 +17,17 @@ export function defineMethods(realm: Realm, target: ScriptObject, methods: Recor
 }
 
 /**
+ * A method entry for `defineMethods` (keeps the implementation's types even for keys like `toString`).
+ *
+ * @param length the function's `length`
+ * @param impl the implementation
+ * @returns the entry
+ */
+export function method(length: number, impl: NativeImpl): [number, NativeImpl] {
+  return [length, impl]
+}
+
+/**
  * `ToIntegerOrInfinity` for optional numeric arguments: `undefined` stays `undefined` (the JS default applies).
  *
  * @param value argument

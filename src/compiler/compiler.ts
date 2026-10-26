@@ -8,6 +8,7 @@ import type {
   BinaryExpression,
   BlockStatement,
   BreakStatement,
+  CatchClause,
   CallExpression,
   ConditionalExpression,
   ContinueStatement,
@@ -30,6 +31,8 @@ import type {
   ReturnStatement,
   SourceLocation,
   Statement,
+  ThrowStatement,
+  TryStatement,
   UnaryExpression,
   UpdateExpression,
   VariableDeclaration,
@@ -162,6 +165,8 @@ const STATEMENTS: { [K in Statement['type']]?: Handler<Extract<Statement, { type
   BreakStatement: (c, node) => c.jump(node, 'breaks'),
   ContinueStatement: (c, node) => c.jump(node, 'continues'),
   ReturnStatement: (c, node) => c.returnStatement(node),
+  ThrowStatement: (c, node) => c.throwStatement(node),
+  TryStatement: (c, node) => c.tryStatement(node),
   FunctionDeclaration: () => {}, // hoisted to the start of its scope
   EmptyStatement: () => {},
 }
@@ -176,6 +181,20 @@ interface Loop {
   continues: number[]
   /** environment depth that `break` / `continue` unwind to */
   envDepth: number
+  /** handler regions active outside the loop (`break` / `continue` leave the ones above) */
+  regionDepth: number
+  /** values the loop itself keeps on the stack (a for-of iterator); others are dropped by `break` / `continue` */
+  stackItems: number
+}
+
+/**
+ * A `try` block (or the `catch` block of a `try … finally`) whose VM handler is active (§5.6.5).
+ */
+interface HandlerRegion {
+  /** the `finally` block to run when control leaves the region by break / continue / return */
+  finalizer: BlockStatement | null
+  /** scope of the `try` statement (the finally block is compiled in it) */
+  scope: Scope
 }
 
 /**
@@ -196,6 +215,10 @@ interface FunctionContext {
   isArrow: boolean
   /** an arrow (or an arrow nested in it) reads `this`, so its closure must capture it */
   usesThis: boolean
+  /** active handler regions, innermost last */
+  regions: HandlerRegion[]
+  /** values the compiler keeps on the stack across statements (for-of iterators, finally records) */
+  stackItems: number
 }
 
 // Arrows read the `this` of the enclosing function: mark the arrow and every arrow around it up to that function.
@@ -212,6 +235,8 @@ class Compiler {
     parent: null,
     isArrow: false,
     usesThis: false,
+    regions: [],
+    stackItems: 0,
   }
 
   constructor(private source: string | undefined, private fileName: string | undefined) {}
@@ -444,7 +469,11 @@ class Compiler {
     const done = this.out.emitJump(Op.ITER_NEXT)
     const outer = this.scope
     const iteration = this.bindIterationValue(node.left)
+
+    this.fn.stackItems++ // the iterator
     const loop = this.loopBody(node.body)
+
+    this.fn.stackItems--
 
     this.scope = outer
     this.patchAll(loop.continues)
@@ -491,7 +520,8 @@ class Compiler {
   }
 
   private loopBody(body: Statement): Loop {
-    const loop: Loop = { breaks: [], continues: [], envDepth: this.scope.envDepth }
+    const { regions, stackItems } = this.fn
+    const loop: Loop = { breaks: [], continues: [], envDepth: this.scope.envDepth, regionDepth: regions.length, stackItems }
 
     this.loops.push(loop)
     this.statement(body)
@@ -510,12 +540,137 @@ class Compiler {
   }
 
   // break / continue: unwind block environments down to the loop's, then jump (§5.5).
+  // break / continue (§5.5): drop extra stack values, leave the handler regions inside the loop
+  // (running their finally blocks), unwind block environments, then jump.
   jump(node: BreakStatement | ContinueStatement, list: 'breaks' | 'continues') {
     const loop = this.loops.at(-1)
     if (!loop) throw this.error(`Illegal ${list === 'breaks' ? 'break' : 'continue'} statement`, node.loc)
 
-    for (let depth = this.scope.envDepth; depth > loop.envDepth; depth--) this.out.emit(Op.POP_ENV)
+    for (let n = this.fn.stackItems; n > loop.stackItems; n--) this.out.emit(Op.POP)
+
+    const depth = this.leaveRegions(loop.regionDepth)
+
+    this.popEnvs(depth, loop.envDepth)
     loop[list].push(this.out.emitJump(Op.JUMP))
+  }
+
+  private popEnvs(from: number, to: number) {
+    for (let depth = from; depth > to; depth--) this.out.emit(Op.POP_ENV)
+  }
+
+  // Leaves the handler regions above `downTo`: pops their handlers and inlines their finally blocks.
+  // Returns the environment depth reached.
+  private leaveRegions(downTo: number): number {
+    const { regions } = this.fn
+    let depth = this.scope.envDepth
+
+    for (let i = regions.length - 1; i >= downTo; i--) {
+      this.popEnvs(depth, regions[i].scope.envDepth)
+      depth = regions[i].scope.envDepth
+      this.out.emit(Op.END_TRY)
+      this.inlineFinalizer(i)
+    }
+
+    return depth
+  }
+
+  private inlineFinalizer(index: number) {
+    const { regions } = this.fn
+    const { finalizer, scope } = regions[index]
+    if (!finalizer) return
+
+    const outer = this.scope
+
+    this.fn.regions = regions.slice(0, index)
+    this.scope = scope
+    this.finallyBlock(finalizer)
+    this.scope = outer
+    this.fn.regions = regions
+  }
+
+  // ---------------------------------------------------------------------------
+  // Exceptions (§4.4.9, §5.6.5)
+
+  throwStatement(node: ThrowStatement) {
+    this.expression(node.argument)
+    this.emitAt(node.loc, Op.THROW)
+  }
+
+  tryStatement(node: TryStatement) {
+    this.resetCompletion()
+
+    if (node.finalizer) this.tryFinally(node, node.finalizer)
+    else this.tryCatch(node.block, node.handler as CatchClause)
+  }
+
+  // TRY catch -1; <block>; END_TRY; JUMP end; catch: <bind exception> <catch block>; end:
+  private tryCatch(block: BlockStatement, handler: CatchClause) {
+    const tryAt = this.out.emit(Op.TRY, -1, -1)
+
+    this.inRegion({ finalizer: null, scope: this.scope }, () => this.block(block))
+    this.out.emit(Op.END_TRY)
+    const end = this.out.emitJump(Op.JUMP)
+
+    this.out.patch(tryAt + 1)
+    this.catchClause(handler)
+    this.out.patch(end)
+  }
+
+  // TRY -1 finally; <block or try-catch>; END_TRY; ENTER_FINALLY; finally: <finally block> END_FINALLY
+  private tryFinally(node: TryStatement, finalizer: BlockStatement) {
+    const tryAt = this.out.emit(Op.TRY, -1, -1)
+    const { handler } = node
+
+    this.inRegion({ finalizer, scope: this.scope }, () => {
+      if (handler) this.tryCatch(node.block, handler)
+      else this.block(node.block)
+    })
+    this.out.emit(Op.END_TRY)
+    this.out.emit(Op.ENTER_FINALLY)
+    this.out.patch(tryAt + 2)
+    this.fn.stackItems++ // the completion record
+    this.finallyBlock(finalizer)
+    this.fn.stackItems--
+    this.out.emit(Op.END_FINALLY)
+  }
+
+  private inRegion(region: HandlerRegion, body: () => void) {
+    this.fn.regions.push(region)
+    body()
+    this.fn.regions.pop()
+  }
+
+  // The exception is on the stack: bind it (in the catch block's scope) or drop it.
+  private catchClause({ param, body }: CatchClause) {
+    const outer = this.scope
+    const scope = new Scope(outer, 'block')
+
+    if (param) this.declareName(scope, param, 'let')
+    this.declare(body.body, scope)
+    this.enterScope(scope)
+
+    if (param) this.initialize(param.name)
+    else this.out.emit(Op.POP)
+    this.hoistFunctions(body.body)
+    this.statements(body.body)
+    this.scope = outer
+
+    if (scope.hasEnv) this.out.emit(Op.POP_ENV)
+  }
+
+  // A finally block does not change the completion value (§4.4.10): save it before, restore it after.
+  private finallyBlock(block: BlockStatement) {
+    if (!this.tracksCompletion) {
+      this.block(block)
+
+      return
+    }
+    this.out.emit(Op.LOAD, this.scope.envDepth, COMPLETION_SLOT)
+    this.fn.stackItems++
+    this.block(block)
+    this.fn.stackItems--
+    this.out.emit(Op.STORE, this.scope.envDepth, COMPLETION_SLOT)
+    this.out.emit(Op.POP)
   }
 
   variableDeclaration(node: VariableDeclaration) {
@@ -820,10 +975,14 @@ class Compiler {
   // ---------------------------------------------------------------------------
   // Functions
 
+  // The value is computed first, then enclosing finally blocks run (inlined), then RETURN (§4.4.9).
   returnStatement(node: ReturnStatement) {
     if (this.tracksCompletion) throw this.error('Illegal return statement', node.loc)
     if (node.argument) this.expression(node.argument)
     else this.out.emit(Op.NULL) // bare return gives null (D37)
+    this.fn.stackItems++
+    this.leaveRegions(0)
+    this.fn.stackItems--
     this.out.emit(Op.RETURN)
   }
 
@@ -862,7 +1021,17 @@ class Compiler {
     const isArrow = node.type === 'ArrowFunctionExpression'
     const out = new ProtoBuilder({ name, kind: kind ?? (isArrow ? 'arrow' : 'function') })
 
-    this.fn = { out, scope, loops: [], tracksCompletion: false, parent: outer, isArrow, usesThis: false }
+    this.fn = {
+      out,
+      scope,
+      loops: [],
+      tracksCompletion: false,
+      parent: outer,
+      isArrow,
+      usesThis: false,
+      regions: [],
+      stackItems: 0,
+    }
 
     try {
       return this.functionBody(node, signatureOf(name, node.params))

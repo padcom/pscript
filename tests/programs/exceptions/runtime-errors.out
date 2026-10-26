@@ -1,0 +1,7 @@
+TypeError: Cannot apply '+' to array and number
+RangeError: Index 5 out of range for length 1
+TypeError: anonymous(a) expects 1 argument, got 0
+TypeError: Cannot read properties of undefined (reading 'x')
+
+ok
+Class constructor Error cannot be invoked without 'new'

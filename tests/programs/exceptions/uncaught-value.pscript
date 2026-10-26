@@ -1,0 +1,2 @@
+// @pscript-only: message for uncaught non-errors
+throw 42

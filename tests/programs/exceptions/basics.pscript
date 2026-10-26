@@ -1,0 +1,18 @@
+// §10.12 (script subclasses of Error arrive with classes, M15)
+function parse(n) {
+  if (typeof n != 'number') throw new TypeError('not a number: ' + n)
+  return n
+}
+try {
+  parse('x')
+} catch (e) {
+  print(e.name, e.message, e instanceof TypeError, e instanceof Error, e instanceof RangeError)
+} finally {
+  print('done')
+}
+try { null.x } catch (e) { print(e.name) }
+try { notDefined } catch (e) { print(e.name, e.message) }
+try { throw 'plain value' } catch (e) { print(typeof e, e) }
+try { throw { code: 7 } } catch (e) { print(e.code) }
+try { throw new Error() } catch (e) { print(e.message == '', '' + e) }
+try { throw new RangeError('r') } catch (e) { print('' + e, e + '!') }

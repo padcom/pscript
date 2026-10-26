@@ -1,0 +1,8 @@
+let e = 'outer'
+try { throw 'inner' } catch (e) { print(e) }
+print(e)
+try { throw 1 } catch { print('no binding') }
+try { throw 2 } catch (err) {
+  let local = err * 10
+  print(local)
+}

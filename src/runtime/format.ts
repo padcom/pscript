@@ -1,5 +1,6 @@
 // print formatting (§4.6.2, D18). Class instances (D35) and accessors (M16) come later.
 import { IDENT_PATTERN } from '@/parser/tokens'
+import { toString } from './operators'
 import {
   Array as ScriptArray,
   Class,
@@ -35,9 +36,15 @@ class Formatter {
 
   value(value: Value, depth: number): string {
     if (typeof value === 'string') return JSON.stringify(value)
-    if (!(value instanceof ScriptObject)) return String(value)
 
-    return value instanceof ScriptFunction ? formatFunction(value) : this.container(value, depth)
+    return value instanceof ScriptObject ? this.object(value, depth) : String(value)
+  }
+
+  // Class instances print as their toString() (D35); functions and containers have their own forms.
+  private object(object: ScriptObject, depth: number): string {
+    if (object instanceof ScriptFunction) return formatFunction(object)
+
+    return object.klass ? toString(object) : this.container(object, depth)
   }
 
   private container(object: ScriptObject, depth: number): string {
@@ -47,7 +54,7 @@ class Formatter {
     this.seen.add(object)
 
     try {
-      return object instanceof ScriptArray ? this.array(object, depth) : this.object(object, depth)
+      return object instanceof ScriptArray ? this.array(object, depth) : this.plainObject(object, depth)
     } finally {
       this.seen.delete(object)
     }
@@ -57,7 +64,7 @@ class Formatter {
     return `[${array.items.map(item => this.value(item, depth + 1)).join(', ')}]`
   }
 
-  private object(object: ScriptObject, depth: number): string {
+  private plainObject(object: ScriptObject, depth: number): string {
     const entries = [...object.props].map(([key, value]) => `${formatKey(key)}: ${this.value(value as Value, depth + 1)}`)
 
     return entries.length === 0 ? '{}' : `{${entries.join(', ')}}`

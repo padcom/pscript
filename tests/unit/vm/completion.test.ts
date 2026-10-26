@@ -27,7 +27,9 @@ describe('§4.4.10 rows', () => {
     expect(node).toBe(expected)
   })
 
-  it.todo('try { 1 } finally { 2 } → 1 (M11)')
+  it('try { 1 } finally { 2 } → 1', () => {
+    expect(both('try { 1 } finally { 2 }')).toEqual([1, 1])
+  })
   it('function f() {} → undefined', () => {
     expect(both('function f() {}')).toEqual([undefined, undefined])
     expect(both("'a'; function f() {}")).toEqual(['a', 'a'])

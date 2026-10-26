@@ -8,15 +8,19 @@ import {
   compare,
   hasProperty,
   instanceOf,
+  inheritedProperty,
+  isErrorObject,
   kindOf,
   strictEquals,
   toNumber,
   truthy,
   typeOf,
 } from '@/runtime/operators'
+import { formatNested } from '@/runtime/format'
 import { DONE, getIterator, type ScriptIterator } from '@/runtime/iterators'
 import { defineProperty, getProperty, propertyKey, setProperty } from '@/runtime/properties'
-import { ScriptError, rangeError, referenceError, typeError } from '@/runtime/script-error'
+import { toHost } from '@/runtime/interop'
+import { ScriptError, ScriptThrow, rangeError, referenceError, typeError } from '@/runtime/script-error'
 import { arityError } from '@/compiler/signature'
 import {
   Array as ScriptArray,
@@ -28,11 +32,12 @@ import {
   Object as ScriptObject,
   UNINITIALIZED,
   type AccessContext,
+  type NativeClassImpl,
   type Realm,
   type Slot,
   type Value,
 } from '@/runtime/values'
-import type { Frame } from './frame'
+import type { Frame, Handler } from './frame'
 import { Globals } from './globals'
 
 /**
@@ -76,6 +81,20 @@ function functionName({ kind, name }: FunctionProto): string {
   return kind === 'script' ? '<script>' : name || '<anonymous>'
 }
 
+/**
+ * The pending completion of a `finally` block on the stack: normal, or an exception to rethrow (§5.6.5).
+ */
+class FinallyRecord {
+  constructor(readonly thrown: ScriptThrow | null) {}
+}
+
+// What the host sees of an uncaught value: error objects by name and message, anything else as "Uncaught <value>".
+function describeThrown(value: Value): [string, string] {
+  if (!(value instanceof ScriptObject && isErrorObject(value))) return ['Error', `Uncaught ${formatNested(value)}`]
+
+  return [String(inheritedProperty(value, 'name')), String(inheritedProperty(value, 'message') ?? '')]
+}
+
 function nullish(value: Value): boolean {
   return value === null || value === undefined
 }
@@ -106,7 +125,7 @@ export class VM implements AccessContext {
    */
   callFunction(fn: Value, thisValue: Value, args: Value[]): Value {
     if (fn instanceof NativeFunction) return fn.impl(this, thisValue, args)
-    if (!(fn instanceof Closure)) throw typeError(`${typeOf(fn)} is not a function`)
+    if (!(fn instanceof Closure)) this.notCallable(fn)
 
     this.enterClosure(fn, args, thisValue)
 
@@ -193,24 +212,88 @@ export class VM implements AccessContext {
     }
   }
 
+  // An exception that left the script: report it to the host (§5.9).
   private uncaught(e: unknown): unknown {
-    if (!(e instanceof ScriptError)) return e
+    if (e instanceof ScriptError) return this.uncaughtThrow(this.asThrow(e))
 
-    const scriptStack: ScriptStackFrame[] = this.frames.map(frame => {
-      const [line, column] = location(frame.proto, frame.opStart)
+    return e instanceof ScriptThrow ? this.uncaughtThrow(e) : e
+  }
 
-      return { functionName: functionName(frame.proto), line, column }
-    }).reverse()
-    const [{ line, column }] = scriptStack
-    const value = { name: e.scriptName, message: e.message }
+  private uncaughtThrow({ value, frames }: ScriptThrow): PScriptRuntimeError {
+    const [name, reason] = describeThrown(value)
+    const { line, column } = frames[0] ?? { line: 0, column: 0 }
 
-    return new PScriptRuntimeError(e.scriptName, e.message, value, {
-      scriptStack,
+    return new PScriptRuntimeError(name, reason, toHost(value), {
+      scriptStack: frames,
       fileName: this.script?.fileName,
       line,
       column,
       excerpt: this.excerpt(line, column),
     })
+  }
+
+  /**
+   * The current script stack, innermost first.
+   *
+   * @returns one entry per frame
+   */
+  captureStack(): ScriptStackFrame[] {
+    return this.frames.map(frame => {
+      const [line, column] = location(frame.proto, frame.opStart)
+
+      return { functionName: functionName(frame.proto), line, column }
+    }).reverse()
+  }
+
+  // A runtime error (ScriptError) becomes an instance of the matching built-in error class (§4.4.9).
+  private asThrow(e: unknown): ScriptThrow {
+    if (e instanceof ScriptThrow) return e
+    if (!(e instanceof ScriptError)) throw e
+
+    return new ScriptThrow(this.errorObject(e.scriptName, e.message), this.captureStack())
+  }
+
+  private errorObject(name: string, message: string): Value {
+    const cls = (this.realm.globals.get(name) ?? this.realm.globals.get('Error'))?.value as ClassValue & { /**
+                                                                                                            *
+                                                                                                            */
+      native: NativeClassImpl
+    }
+
+    return cls.native.construct(this, cls, [message])
+  }
+
+  // Finds the innermost handler in the frames of this dispatch loop (§5.6.5) or rethrows to the caller.
+  private unwind(e: unknown, entryDepth: number) {
+    const thrown = this.asThrow(e)
+
+    while (this.frames.length >= entryDepth) {
+      const frame = this.frames[this.frames.length - 1]
+      const handler = frame.handlers.pop()
+
+      if (handler) {
+        this.enterHandler(frame, handler, thrown)
+
+        return
+      }
+      this.frames.pop()
+      this.stack.length = frame.base
+    }
+    throw thrown
+  }
+
+  // Restores the stack and environment of the `try`, then continues in `catch` (with the value) or `finally`.
+  private enterHandler(frame: Frame, handler: Handler, thrown: ScriptThrow) {
+    this.stack.length = handler.stackHeight
+    frame.env = handler.env
+
+    if (handler.catchTarget >= 0) {
+      this.stack.push(thrown.value)
+      frame.ip = handler.catchTarget
+    } else {
+      this.stack.push(new FinallyRecord(thrown) as unknown as Value)
+      frame.ip = handler.finallyTarget
+    }
   }
 
   private excerpt(line: number, column: number): string | undefined {
@@ -234,6 +317,20 @@ export class VM implements AccessContext {
     defineProperty(object, key, value)
   }
 
+  private notCallable(fn: Value): never {
+    if (fn instanceof ClassValue) throw typeError(`Class constructor ${fn.name} cannot be invoked without 'new'`)
+
+    throw typeError(`${typeOf(fn)} is not a function`)
+  }
+
+  // `new C(...)` (§5.6.3): built-in classes construct natively; script classes arrive with M15.
+  private construct(callee: Value, args: Value[]): Value {
+    if (!(callee instanceof ClassValue)) this.notAClass(callee)
+    if (!callee.native) throw new Error('Script classes are not implemented yet')
+
+    return callee.native.construct(this, callee, args)
+  }
+
   private notAClass(callee: Value): never {
     throw typeError(`${callee instanceof ScriptFunction ? callee.name || 'anonymous function' : kindOf(callee)} is not a class`)
   }
@@ -241,8 +338,18 @@ export class VM implements AccessContext {
   // §5.6.2: one switch dispatch loop, with hot locals; exempt from the size and nesting rules.
   /* eslint-disable complexity, max-lines-per-function, max-depth, prefer-destructuring,
     @stylistic/max-statements-per-line, @stylistic/padding-line-between-statements */
-  // Runs until the frame at depth `entryDepth` returns (or the script halts).
+  // Runs until the frame at depth `entryDepth` returns (or the script halts), handling exceptions.
   private run(entryDepth: number): Value {
+    for (;;) {
+      try {
+        return this.dispatch(entryDepth)
+      } catch (e) {
+        this.unwind(e, entryDepth)
+      }
+    }
+  }
+
+  private dispatch(entryDepth: number): Value {
     const { stack, globals } = this
     let frame = this.frames[this.frames.length - 1]
     let { code, constants } = frame.proto
@@ -457,10 +564,23 @@ export class VM implements AccessContext {
         case Op.THIS: stack.push(frame.thisValue); break
 
         case Op.NEW: {
-          const callee = stack[stack.length - code[ip] - 1]
+          const argc = code[ip++]
+          const args = stack.splice(stack.length - argc, argc)
 
-          if (!(callee instanceof ClassValue)) this.notAClass(callee)
-          throw new Error('Classes are not implemented yet')
+          stack.push(this.construct(stack.pop(), args))
+          break
+        }
+        case Op.TRY:
+          frame.handlers.push({ catchTarget: code[ip++], finallyTarget: code[ip++], stackHeight: stack.length, env: frame.env })
+          break
+        case Op.END_TRY: frame.handlers.pop(); break
+        case Op.THROW: throw new ScriptThrow(stack.pop(), this.captureStack())
+        case Op.ENTER_FINALLY: stack.push(new FinallyRecord(null) as unknown as Value); break
+        case Op.END_FINALLY: {
+          const record = stack.pop() as unknown as FinallyRecord
+
+          if (record.thrown) throw record.thrown
+          break
         }
         case Op.JUMP_IF_ARG:
           if (frame.env.slots[code[ip++]] === UNINITIALIZED) ip++

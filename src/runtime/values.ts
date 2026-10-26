@@ -2,6 +2,7 @@
 // files that import them and also need the host built-ins use `globalThis.Object` etc.
 import type { Access } from '@/parser/ast'
 import type { ClassTemplate, FunctionProto, InterfaceMemberTemplate } from '@/compiler/function-proto'
+import type { ScriptStackFrame } from '@/errors'
 import type { ModuleRecord } from '@/modules/module-record'
 
 export type Value = undefined | null | boolean | number | string | Object
@@ -21,6 +22,8 @@ export interface AccessContext {
   homeClass: Class | null
   /** calls a script or native function (getters, setters, `toString()`), provided by the VM */
   callFunction(fn: Value, thisValue: Value, args: Value[]): Value
+  /** the current script stack, innermost first (for `Error.stack`) */
+  captureStack?(): ScriptStackFrame[]
 }
 
 export type NativeImpl = (ctx: AccessContext, thisValue: Value, args: Value[]) => Value

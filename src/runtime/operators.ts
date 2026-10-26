@@ -76,12 +76,62 @@ function arrayToString(array: ScriptArray): string {
   return array.items.map(item => (item === null || item === undefined ? '' : toString(item))).join(',')
 }
 
+/**
+ * Reads a data property along the prototype chain, without accessors or access checks.
+ *
+ * @param object the object
+ * @param key property name
+ * @returns the value, or undefined
+ */
+export function inheritedProperty(object: ScriptObject, key: string): Value {
+  for (let current: ScriptObject | null = object; current; current = current.proto) {
+    if (current.props.has(key)) return current.props.get(key) as Value
+  }
+
+  return undefined
+}
+
+function rootClass(klass: Class): Class {
+  let root = klass
+
+  while (root.superClass) root = root.superClass
+
+  return root
+}
+
+/**
+ * Whether an object was constructed by a built-in error class (or a subclass of one).
+ *
+ * @param object any object
+ * @returns true for error objects
+ */
+export function isErrorObject(object: ScriptObject): boolean {
+  return object.klass !== undefined && rootClass(object.klass).native !== undefined
+}
+
+/**
+ * `Name: message` (just the name when the message is empty), as JS `Error.prototype.toString`.
+ *
+ * @param error an error object
+ * @returns its string form
+ */
+export function errorToString(error: ScriptObject): string {
+  const name = String(inheritedProperty(error, 'name') ?? 'Error')
+  const message = String(inheritedProperty(error, 'message') ?? '')
+
+  return message === '' ? name : `${name}: ${message}`
+}
+
+function plainToString(object: ScriptObject): string {
+  return object instanceof Interface ? cannotConvert() : '[object Object]'
+}
+
 // Built-in string forms (§4.4.3). A script-defined `toString()` is honoured from M13 on.
 function objectToString(object: ScriptObject): string {
   if (object instanceof ScriptArray) return arrayToString(object)
   if (object instanceof ScriptFunction) return functionToString(object)
 
-  return object instanceof Interface ? cannotConvert() : '[object Object]'
+  return isErrorObject(object) ? errorToString(object) : plainToString(object)
 }
 
 /**

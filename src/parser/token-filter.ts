@@ -46,7 +46,7 @@ type Bracket = '(' | '(header)' | '[' | '{statement}' | '{block}' | '{object}'
 const BLOCK_LIKE = new Set<Bracket | undefined>(['{statement}', '{block}'])
 
 /** A `{` after one of these opens a block statement. */
-const STATEMENT_BRACE_PRECEDERS = new Set([';', 'BLOCK_LBRACE', '}', 'ELSE', 'TRY', 'FINALLY'])
+const STATEMENT_BRACE_PRECEDERS = new Set([';', 'BLOCK_LBRACE', '}', 'ELSE', 'TRY', 'CATCH', 'FINALLY'])
 
 /** A `{` after one of these opens a function, arrow or method body. */
 const BODY_BRACE_PRECEDERS = new Set([')', '=>'])

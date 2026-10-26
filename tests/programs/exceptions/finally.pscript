@@ -1,0 +1,47 @@
+function returns() {
+  try { return 'try' } finally { print('finally after return') }
+}
+print(returns())
+function overrides() {
+  try { return 'try' } finally { return 'finally' }
+}
+print(overrides())
+function swallows() {
+  try { throw new Error('lost') } finally { return 'finally wins' }
+}
+print(swallows())
+let log = ''
+for (let i = 0; i < 4; i++) {
+  try {
+    if (i == 1) continue
+    if (i == 3) break
+    log += i
+  } finally {
+    log += 'f'
+  }
+}
+print(log)
+let out = []
+for (const x of [1, 2, 3]) {
+  try {
+    try {
+      if (x == 2) break
+      out.push(x)
+    } finally {
+      out.push('inner' + x)
+    }
+  } finally {
+    out.push('outer' + x)
+  }
+}
+print(out.join(' '))
+function nestedReturn() {
+  let trace = ''
+  try {
+    try { return 'value' } finally { trace += 'a' }
+  } finally {
+    trace += 'b'
+    print(trace)
+  }
+}
+print(nestedReturn())

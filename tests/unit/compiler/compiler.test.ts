@@ -59,7 +59,7 @@ describe('compiler inputs', () => {
 
     const [{ loc }] = program.body
 
-    program.body[0] = { type: 'ThrowStatement', argument: { type: 'Literal', value: 1, raw: '1', loc }, loc }
-    expect(() => compile(program)).toThrow('ThrowStatement is not supported yet')
+    program.body[0] = { type: 'InterfaceDeclaration', id: { type: 'Identifier', name: 'I', loc }, extends: [], body: [], loc }
+    expect(() => compile(program)).toThrow('InterfaceDeclaration is not supported yet')
   })
 })

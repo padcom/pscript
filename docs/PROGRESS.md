@@ -17,7 +17,34 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M8 | Arrow functions | done (2026-10-26) |
 | M9 | Objects | done (2026-10-26) |
 | M10 | Arrays and for…of | done (2026-10-27) |
-| M11 | Exceptions | next |
+| M11 | Exceptions | done (2026-10-27) |
+| M12 | Callbacks and re-entrancy | next |
+
+## M11 — Exceptions
+
+Done: exception programs pass (`tests/programs/exceptions/`, incl. `finally` on `return`/`break`/`continue`, also against Node where JS-compatible); every §4.4.10 row passes against Node. `npm run check` and `npm run build` green; 645 tests + 1 todo.
+
+What exists:
+
+- Grammar: `throw expr`, `try` with `catch (e)`, `catch` without binding, `finally`, and both. `CATCH` is a header keyword and a statement-brace preceder in the filter.
+- Errors (§4.6.1): `src/stdlib/errors.ts` installs `Error`, `TypeError`, `RangeError`, `ReferenceError`, `SyntaxError`, `AccessError` as built-in **classes** (`Class` with `native.construct`), read-only globals; `name` lives on each prototype, `message` and `stack` are own properties; `Error.prototype.toString` → `Name: message`. `createError(ctx, cls, message)`; the stack string is `Name: message` + `    at fn (line:col)` lines from `ctx.captureStack()`. Calling a class without `new` → `TypeError: Class constructor Error cannot be invoked without 'new'`. `NEW` on a built-in class constructs natively (script classes still throw "not implemented" until M15).
+- `ToString` / `print` of error objects → `TypeError: msg` (class instances print through `toString()`, D35); `isErrorObject`, `errorToString`, `inheritedProperty` in `operators.ts`.
+- VM (§5.6.5):
+  - `run(entryDepth)` wraps `dispatch(entryDepth)` (the old loop) in `try`/`catch`; `unwind` turns the exception into a `ScriptThrow` (a `ScriptError` from the runtime becomes an instance of the matching error class, with the stack captured where it happened), pops handlers/frames of this dispatch loop, and either enters a handler (restoring stack height and environment; `catch` gets the value, `finally` a `FinallyRecord`) or rethrows to the caller — through natives into outer dispatch loops, or out of `execute`.
+  - Opcodes: `TRY catch finally` (pushes a handler with stack height and env), `END_TRY`, `THROW`, `ENTER_FINALLY` (pushes a normal record), `END_FINALLY` (rethrows a pending exception).
+  - Uncaught: `PScriptRuntimeError` with the thrown error's name/message (non-errors: `Error: Uncaught <value>`), the stack captured at the throw, and `value` = the script value (host conversion: M23).
+  - `AccessContext.captureStack()` (optional, contract addition) — the VM implements it.
+- Compiler:
+  - `try/catch`: `TRY catch -1; block; END_TRY; JUMP end; catch: bind; body; end`. `try/finally`: `TRY -1 finally; block (or the try/catch); END_TRY; ENTER_FINALLY; finally: body; END_FINALLY` — so a `catch` block runs inside the outer finally handler.
+  - **`break`/`continue`/`return` crossing a `try`** pop its handler (`END_TRY`) and **inline a copy of its `finally` block** (compiled in the try statement's scope, with only the outer regions active), innermost first; `return` computes its value first. This gives JS semantics (finally runs once, a `return`/`break` inside `finally` overrides) with no runtime completion records for jumps.
+  - `FunctionContext.regions` (active handler regions) and `stackItems` (values kept on the stack across statements: for-of iterators, finally records, saved completion values); loops record both, and `break`/`continue` drop the extra stack values first.
+  - Completion value: `try` resets it on entry; a `finally` block saves and restores it (`LOAD`/`STORE` around the block).
+
+Decisions / gaps:
+
+- `throw` followed by a newline is not rejected (JS: SyntaxError); `throw` is not an ENDER, so the expression on the next line is thrown.
+- Unexpected host exceptions from natives are not wrapped as `InternalError` yet (§5.6.5); they propagate unchanged and are not catchable.
+- Error `name` is a prototype property; M15 (`class ValidationError extends Error { override name = … }`) may need it as a declared field.
 
 ## M10 — Arrays and for…of
 

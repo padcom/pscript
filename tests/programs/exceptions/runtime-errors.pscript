@@ -1,0 +1,12 @@
+// @pscript-only: D5, D37, D38 runtime errors are catchable Error objects
+const tries = [
+  () => [1] + 1,
+  () => [1][5],
+  () => (function (a) {})(),
+  () => undefined.x,
+  () => print(),
+]
+for (const t of tries) {
+  try { t(); print('ok') } catch (e) { print(e.name + ': ' + e.message) }
+}
+try { Error('x') } catch (e) { print(e.message) }
