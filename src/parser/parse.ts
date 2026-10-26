@@ -2,7 +2,7 @@
 import pscriptParser from '@/grammar/pscript.jison'
 import type { JisonParseErrorHash } from '@/grammar/jison-types'
 import { PScriptSyntaxError, formatExcerpt } from '@/errors'
-import type { Program, Statement } from './ast'
+import type { AssignmentOperator, Expression, Program, SourceLocation, Statement, VariableDeclarator } from './ast'
 import { builders, sourceLoc, type JisonLoc } from './ast-builders'
 import { EscapeError, checkNumber } from './literals'
 import { createTokenFilter, type TokenState } from './token-filter'
@@ -52,14 +52,16 @@ function parseErrorMessage(hash: JisonParseErrorHash): string {
 class SyntaxErrorFactory {
   constructor(private source: string, private fileName?: string) {}
 
-  at(reason: string, line: number, column: number): PScriptSyntaxError {
+  at(reason: string, { start: { line, column } }: SourceLocation): PScriptSyntaxError {
     const excerpt = formatExcerpt(this.source, line, column)
 
     return new PScriptSyntaxError(reason, { fileName: this.fileName, line, column, excerpt })
   }
 
   atToken(reason: string, loc: JisonLoc, offset = 0): PScriptSyntaxError {
-    return this.at(reason, loc.first_line, loc.first_column + 1 + offset)
+    const position = { line: loc.first_line, column: loc.first_column + 1 + offset }
+
+    return this.at(reason, { start: position, end: position })
   }
 }
 
@@ -100,6 +102,24 @@ function lexerHelpers(errors: SyntaxErrorFactory, tokens: TokenState) {
   }
 }
 
+// Static checks that the grammar leaves to its actions.
+function checkedBuilders(errors: SyntaxErrorFactory) {
+  return {
+    assignment(operator: AssignmentOperator, left: Expression, right: Expression, loc: JisonLoc) {
+      if (left.type === 'Identifier' && left.name === 'undefined') throw errors.at("Cannot assign to 'undefined'", left.loc)
+      if (left.type !== 'Identifier') throw errors.at('Invalid assignment target', left.loc)
+
+      return builders.assignment(operator, left, right, loc)
+    },
+    variableDeclaration(kind: 'let' | 'const', declarations: VariableDeclarator[], loc: JisonLoc) {
+      const missing = kind === 'const' ? declarations.find(d => d.init === null) : undefined
+      if (missing) throw errors.at(`Missing initializer in const declaration '${missing.id.name}'`, missing.loc)
+
+      return builders.variableDeclaration(kind, declarations, loc)
+    },
+  }
+}
+
 function createYy(source: string, options: ParseOptions, tokens: TokenState) {
   const errors = new SyntaxErrorFactory(source, options.fileName)
 
@@ -107,6 +127,7 @@ function createYy(source: string, options: ParseOptions, tokens: TokenState) {
     ...builders,
     ...lexerHelpers(errors, tokens),
     ...LINE_HELPERS,
+    ...checkedBuilders(errors),
     program(body: Statement[]): Program {
       return { type: 'Program', sourceType: options.goal ?? 'script', body, loc: sourceLoc(source) }
     },

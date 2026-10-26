@@ -24,6 +24,7 @@ export class ProtoBuilder {
   readonly code: number[] = []
   readonly constants: unknown[] = []
   readonly locations: number[] = []
+  readonly names: Record<number, string> = {}
   scopeSize = 0
   private constantIndex = new Map<string, number>()
 
@@ -42,6 +43,34 @@ export class ProtoBuilder {
     this.code.push(op, ...operands)
 
     return offset
+  }
+
+  /**
+   * Appends a jump whose target is filled in later by `patch()`.
+   *
+   * @param op jump opcode
+   * @returns the operand position to patch
+   */
+  emitJump(op: Op): number {
+    return this.emit(op, -1) + 1
+  }
+
+  /**
+   * Points a jump emitted by `emitJump()` at the current end of the code.
+   *
+   * @param operand operand position returned by `emitJump()`
+   */
+  patch(operand: number) {
+    this.code[operand] = this.code.length
+  }
+
+  /**
+   * Records the binding name used by the next instruction.
+   *
+   * @param name binding name
+   */
+  nameNext(name: string) {
+    this.names[this.code.length] = name
   }
 
   /**
@@ -93,6 +122,7 @@ export class ProtoBuilder {
       locations: this.locations,
       usesThis: false,
       classDepth: 0,
+      names: this.names,
     }
   }
 }

@@ -1,0 +1,3 @@
+print(typeof undeclared)
+print(typeof later)
+let later = 1

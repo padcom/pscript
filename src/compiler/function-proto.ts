@@ -31,6 +31,8 @@ export interface FunctionProto {
   usesThis: boolean
   /** nesting of class bodies the function is lexically in (0 = none) */
   classDepth: number
+  /** debug table: offset of a LOAD/STORE/INIT instruction → binding name (for TDZ messages) */
+  names?: Record<number, string>
 }
 
 /**

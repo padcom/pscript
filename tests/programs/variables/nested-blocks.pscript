@@ -1,0 +1,22 @@
+let a = 'outer a'
+let b = 'outer b'
+{
+  let b = 'block b'
+  {
+    let c = 'inner c'
+    a = 'changed from inner'
+    print(a, b, c)
+    {
+      let a = 'shadow'
+      print(a)
+    }
+  }
+  print(b)
+}
+print(a, b)
+{
+  // a block without declarations needs no environment
+  b = b + '!'
+}
+print(b)
+{ let q = 1 } { let q = 2; print(q) }

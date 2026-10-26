@@ -12,7 +12,7 @@ export interface StdlibIO {
 }
 
 /**
- * Installs `print`.
+ * Installs `print` (read-only, like every stdlib global, §4.4.4).
  *
  * @param realm the realm
  * @param io host output
@@ -22,5 +22,5 @@ export function installGlobals(realm: Realm, io: StdlibIO) {
     io.stdout(args.map(formatValue).join(' '))
 
     return null
-  }))
+  }), true)
 }

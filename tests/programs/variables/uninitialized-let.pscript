@@ -1,0 +1,4 @@
+// @pscript-only: `let x` starts as null (D37)
+let x
+let y, z = 2
+print(x, y, z, typeof x)

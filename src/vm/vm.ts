@@ -1,6 +1,6 @@
 // The bytecode interpreter (§5.6).
 import type { CompiledScript, FunctionProto } from '@/compiler/function-proto'
-import { Op } from '@/compiler/opcodes'
+import { GlobalFlags, Op } from '@/compiler/opcodes'
 import { PScriptRuntimeError, formatExcerpt, type ScriptStackFrame } from '@/errors'
 import { add, arithmetic, toNumber, truthy, typeOf } from '@/runtime/operators'
 import { ScriptError, referenceError, typeError } from '@/runtime/script-error'
@@ -15,6 +15,7 @@ import {
   type Value,
 } from '@/runtime/values'
 import type { Frame } from './frame'
+import { Globals } from './globals'
 
 /**
  * Limits enforced by the VM (D14).
@@ -43,18 +44,29 @@ function lookupEnv(env: Environment, depth: number): Environment {
   return target
 }
 
-function initialized(slot: Slot): Value {
-  if (slot === UNINITIALIZED) throw referenceError('Cannot access a binding before initialization')
+function bindingName(frame: Frame): string {
+  return frame.proto.names?.[frame.opStart] ?? '<binding>'
+}
+
+function initialized(slot: Slot, frame: Frame): Value {
+  if (slot === UNINITIALIZED) throw referenceError(`Cannot access '${bindingName(frame)}' before initialization`)
 
   return slot
+}
+
+function nullish(value: Value): boolean {
+  return value === null || value === undefined
 }
 
 export class VM implements AccessContext {
   readonly stack: Value[] = []
   readonly frames: Frame[] = []
+  readonly globals: Globals
   private script: CompiledScript | null = null
 
-  constructor(readonly realm: Realm, readonly options: VMOptions) {}
+  constructor(readonly realm: Realm, readonly options: VMOptions) {
+    this.globals = new Globals(realm)
+  }
 
   get homeClass(): Class | null {
     return this.frames.at(-1)?.homeClass ?? null
@@ -136,19 +148,6 @@ export class VM implements AccessContext {
     return source === undefined ? undefined : formatExcerpt(source, line, column)
   }
 
-  private loadGlobal(name: string): Value {
-    const binding = this.realm.globals.get(name)
-    if (!binding) throw referenceError(`${name} is not defined`)
-
-    return binding.value
-  }
-
-  private typeofGlobal(name: string): string {
-    const binding = this.realm.globals.get(name)
-
-    return binding ? typeOf(binding.value) : 'undefined'
-  }
-
   private call(argc: number): Value {
     const { stack } = this
     const args = stack.splice(stack.length - argc, argc)
@@ -157,9 +156,10 @@ export class VM implements AccessContext {
     return this.callFunction(fn, null, args)
   }
 
-  /* eslint-disable complexity, max-lines-per-function -- §5.6.2: one switch dispatch loop */
+  // §5.6.2: one switch dispatch loop, with hot locals; exempt from the size and nesting rules.
+  /* eslint-disable complexity, max-lines-per-function, max-depth, @stylistic/max-statements-per-line */
   private run(): Value {
-    const { stack } = this
+    const { stack, globals } = this
     const frame = this.frames[this.frames.length - 1]
     const { code, constants } = frame.proto
     let { ip } = frame
@@ -177,22 +177,43 @@ export class VM implements AccessContext {
         case Op.POP: stack.pop(); break
         case Op.DUP: stack.push(stack[stack.length - 1]); break
         case Op.LOAD:
-          stack.push(initialized(lookupEnv(frame.env, code[ip++]).slots[code[ip++]]))
+          stack.push(initialized(lookupEnv(frame.env, code[ip++]).slots[code[ip++]], frame))
           break
 
         case Op.STORE: {
           const env = lookupEnv(frame.env, code[ip++])
           const slot = code[ip++]
 
-          initialized(env.slots[slot])
+          initialized(env.slots[slot], frame)
           env.slots[slot] = stack[stack.length - 1]
           break
         }
         case Op.INIT:
           lookupEnv(frame.env, code[ip++]).slots[code[ip++]] = stack.pop()
           break
-        case Op.LOAD_GLOBAL: stack.push(this.loadGlobal(constants[code[ip++]] as string)); break
-        case Op.TYPEOF_GLOBAL: stack.push(this.typeofGlobal(constants[code[ip++]] as string)); break
+        case Op.LOAD_GLOBAL: stack.push(globals.load(constants[code[ip++]] as string)); break
+        case Op.STORE_GLOBAL: globals.store(constants[code[ip++]] as string, stack[stack.length - 1]); break
+        case Op.DECLARE_GLOBAL:
+          globals.declare(constants[code[ip++]] as string, (code[ip++] & GlobalFlags.Const) !== 0)
+          break
+        case Op.INIT_GLOBAL: globals.initialize(constants[code[ip++]] as string, stack.pop()); break
+        case Op.TYPEOF_GLOBAL: stack.push(globals.typeOf(constants[code[ip++]] as string)); break
+        case Op.PUSH_ENV:
+          frame.env = new Environment(new globalThis.Array<Slot>(code[ip++]).fill(UNINITIALIZED), frame.env)
+          break
+        case Op.POP_ENV: frame.env = frame.env.parent as Environment; break
+        case Op.JUMP: ip = code[ip]; break
+        case Op.JUMP_IF_FALSE: ip = truthy(stack.pop()) ? ip + 1 : code[ip]; break
+        case Op.JUMP_IF_TRUE: ip = truthy(stack.pop()) ? code[ip] : ip + 1; break
+        case Op.AND_JUMP:
+          if (truthy(stack[stack.length - 1])) { stack.pop(); ip++ } else ip = code[ip]
+          break
+        case Op.OR_JUMP:
+          if (truthy(stack[stack.length - 1])) ip = code[ip]; else { stack.pop(); ip++ }
+          break
+        case Op.NULLISH_JUMP:
+          if (nullish(stack[stack.length - 1])) { stack.pop(); ip++ } else ip = code[ip]
+          break
         case Op.ADD:
           b = stack.pop()
           stack.push(add(stack.pop(), b))
@@ -228,5 +249,5 @@ export class VM implements AccessContext {
       }
     }
   }
-  /* eslint-enable complexity, max-lines-per-function */
+  /* eslint-enable complexity, max-lines-per-function, max-depth, @stylistic/max-statements-per-line */
 }

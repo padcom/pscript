@@ -81,15 +81,13 @@ export class Interpreter {
   }
 
   /**
-   * Reads a global.
+   * Reads a script-level binding (top-level declaration of an earlier `run`) or a global.
    *
    * @param name binding name
-   * @returns its value, or `undefined` when there is no such binding
+   * @returns its value, or `undefined` when there is no such binding or it is uninitialised
    */
   get(name: string): unknown {
-    const binding = this.realm.globals.get(name)
-
-    return binding && toHost(binding.value)
+    return toHost(this.vm.globals.peek(name))
   }
 
   /**

@@ -1,0 +1,1 @@
+variables/const-assignment.pscript:4:1 SyntaxError: Assignment to constant variable 'LIMIT'

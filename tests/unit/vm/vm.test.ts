@@ -37,14 +37,15 @@ describe('vm', () => {
   it('throws ReferenceError on reading an uninitialised slot (TDZ)', () => {
     const code = [Op.LOAD, 0, 0, Op.HALT]
 
-    expect(() => vm().execute({ main: proto(code, [], 1) }))
-      .toThrow('ReferenceError: Cannot access a binding before initialization')
+    const main = { ...proto(code, [], 1), names: { 0: 'x' } }
+
+    expect(() => vm().execute({ main })).toThrow("ReferenceError: Cannot access 'x' before initialization")
   })
 
   it('throws ReferenceError on storing into an uninitialised slot', () => {
     const code = [Op.NULL, Op.STORE, 0, 0, Op.HALT]
 
-    expect(() => vm().execute({ main: proto(code, [], 1) })).toThrow('Cannot access a binding before initialization')
+    expect(() => vm().execute({ main: proto(code, [], 1) })).toThrow("Cannot access '<binding>' before initialization")
   })
 
   it('reports unimplemented opcodes', () => {

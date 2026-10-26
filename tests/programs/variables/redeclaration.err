@@ -1,0 +1,1 @@
+variables/redeclaration.pscript:5:5 SyntaxError: Identifier 'a' has already been declared

@@ -97,16 +97,55 @@ StatementList
   ;
 
 Statement
-  : Expression ';'
+  : VariableDeclaration ';'
+  | Block
+  | Expression ';'
     { $$ = yy.expressionStatement($1, @$) }
   | ';'
     { $$ = yy.emptyStatement(@$) }
   ;
 
+Block
+  : '{' StatementList '}'
+    { $$ = yy.block($2, @$) }
+  ;
+
+VariableDeclaration
+  : LET DeclaratorList
+    { $$ = yy.variableDeclaration('let', $2, @$) }
+  | CONST DeclaratorList
+    { $$ = yy.variableDeclaration('const', $2, @$) }
+  ;
+
+DeclaratorList
+  : Declarator
+    { $$ = [$1] }
+  | DeclaratorList ',' Declarator
+    { $$ = $1.concat([$3]) }
+  ;
+
+Declarator
+  : IDENT
+    { $$ = yy.declarator(yy.identifier($1, @1), null, @$) }
+  | IDENT '=' AssignmentExpression
+    { $$ = yy.declarator(yy.identifier($1, @1), $3, @$) }
+  ;
+
 /* Expressions, lowest to highest precedence (§4.4.3). */
 
 Expression
+  : AssignmentExpression
+  ;
+
+/* The target is checked by yy.assignment (Identifier or, later, MemberExpression). */
+AssignmentExpression
   : AdditiveExpression
+  | CallExpression AssignmentOperator AssignmentExpression
+    { $$ = yy.assignment($2, $1, $3, @$) }
+  ;
+
+AssignmentOperator
+  : '=' | '+=' | '-=' | '*=' | '/=' | '%=' | '**=' | '&&=' | '||=' | '??='
   ;
 
 AdditiveExpression

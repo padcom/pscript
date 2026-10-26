@@ -1,0 +1,29 @@
+let n = 5
+n += 2
+n **= 2
+print(n)
+n -= 9
+n *= 2
+n /= 8
+n %= 7
+print(n)
+let s = 'a'
+s += 1
+s += true
+print(s)
+let p = 0
+let q = p = 3
+print(p, q, (p += 1) * 2)
+let a = null
+let b = 0
+let c = 1
+let d = 'kept'
+a ??= 'default'
+b ||= 'fallback'
+c &&= 'and'
+d ??= 'not used'
+print(a, b, c, d)
+let calls = 0
+let e = 'truthy'
+e ||= print('never printed')
+print(e)

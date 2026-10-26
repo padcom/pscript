@@ -1,0 +1,3 @@
+print('before')
+print(y)
+let y = 1

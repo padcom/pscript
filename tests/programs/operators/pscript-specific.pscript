@@ -1,0 +1,5 @@
+// @pscript-only: -2 ** 2 is -(2 ** 2) (D15; a SyntaxError in JS), typeof null is 'null' (D39),
+// functions convert to '[Function: name]' (JS would print the source)
+print(-2 ** 2, 2 ** -2 ** 2)
+print(typeof null)
+print('f: ' + print)

@@ -1,0 +1,4 @@
+// @pscript-only: compile-time SyntaxError (Node throws a TypeError at runtime)
+const LIMIT = 3
+print('never runs')
+LIMIT = 4

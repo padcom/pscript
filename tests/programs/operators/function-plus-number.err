@@ -1,1 +1,1 @@
-operators/function-plus-number.pscript:2:1 TypeError: Cannot apply '+' to function and number
+operators/function-plus-number.pscript:3:1 TypeError: Cannot apply '+' to function and number

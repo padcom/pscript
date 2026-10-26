@@ -1,3 +1,4 @@
+// @pscript-only: D5: print + 1 is a TypeError
 print('one')
 print
   + 1           // continues the previous line: print + 1

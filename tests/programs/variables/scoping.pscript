@@ -1,0 +1,8 @@
+// §10.4
+const LIMIT = 3
+let x = 1
+{
+  let x = 2
+  print(x)
+}
+print(x, LIMIT)

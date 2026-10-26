@@ -1,3 +1,4 @@
+// @pscript-only: D2: a line starting with ( is a new statement
 // Adapted from §10.3 to the features available so far.
 // line comment
 /* block

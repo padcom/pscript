@@ -1,6 +1,9 @@
 // AST node builders used by the grammar actions (`yy.*`, §5.3).
 import type {
+  AssignmentExpression,
+  AssignmentOperator,
   BinaryOperator,
+  BlockStatement,
   CallExpression,
   EmptyStatement,
   Expression,
@@ -11,6 +14,8 @@ import type {
   SourceLocation,
   Statement,
   UnaryExpression,
+  VariableDeclaration,
+  VariableDeclarator,
 } from './ast'
 import { cookString } from './literals'
 
@@ -59,6 +64,27 @@ export function sourceLoc(source: string): SourceLocation {
 export const builders = {
   expressionStatement(expression: Expression, loc: JisonLoc): ExpressionStatement {
     return { type: 'ExpressionStatement', expression, loc: toLoc(loc) }
+  },
+
+  block(body: Statement[], loc: JisonLoc): BlockStatement {
+    return { type: 'BlockStatement', body, loc: toLoc(loc) }
+  },
+
+  variableDeclaration(kind: 'let' | 'const', declarations: VariableDeclarator[], loc: JisonLoc): VariableDeclaration {
+    return { type: 'VariableDeclaration', kind, declarations, loc: toLoc(loc) }
+  },
+
+  declarator(id: Identifier, init: Expression | null, loc: JisonLoc): VariableDeclarator {
+    return { type: 'VariableDeclarator', id, init, loc: toLoc(loc) }
+  },
+
+  assignment(
+    operator: AssignmentOperator,
+    left: AssignmentExpression['left'],
+    right: Expression,
+    loc: JisonLoc,
+  ): AssignmentExpression {
+    return { type: 'AssignmentExpression', operator, left, right, loc: toLoc(loc) }
   },
 
   emptyStatement(loc: JisonLoc): EmptyStatement {
