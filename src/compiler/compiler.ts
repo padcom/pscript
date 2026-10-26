@@ -1,6 +1,7 @@
 // Single-pass compiler from AST to bytecode (§5.5).
 import { PScriptSyntaxError, formatExcerpt } from '@/errors'
 import type {
+  ArrowFunctionExpression,
   AssignmentExpression,
   AssignmentPattern,
   BinaryExpression,
@@ -51,10 +52,16 @@ function paramName(param: Pattern): Identifier {
   return param.type === 'AssignmentPattern' ? param.left : param.argument
 }
 
+function isFunction(node: Expression | null): node is FunctionExpression | ArrowFunctionExpression {
+  return node?.type === 'FunctionExpression' || node?.type === 'ArrowFunctionExpression'
+}
+
 // A `const` bound directly to a function expression has a compile-time signature (D38).
 function constSignature(kind: BindingKind, id: Identifier, init: Expression | null): Signature | undefined {
-  return kind === 'const' && init?.type === 'FunctionExpression' ? signatureOf(id.name, init.params) : undefined
+  return kind === 'const' && isFunction(init) ? signatureOf(id.name, init.params) : undefined
 }
+
+type AnyFunction = FunctionNode | ArrowFunctionExpression
 
 /** Slot of the completion value in the script's top environment (§4.4.10). */
 const COMPLETION_SLOT = 0
@@ -112,7 +119,8 @@ const EXPRESSIONS: { [K in Expression['type']]?: Handler<Extract<Expression, { t
   ConditionalExpression: (c, node) => c.conditional(node),
   UpdateExpression: (c, node) => c.update(node),
   FunctionExpression: (c, node) => c.functionExpression(node),
-  ThisExpression: c => c.out.emit(Op.THIS),
+  ArrowFunctionExpression: (c, node) => c.closure(c.functionProto(node, '')),
+  ThisExpression: c => c.thisExpression(),
   NewExpression: (c, node) => c.newExpression(node),
 }
 
@@ -154,6 +162,17 @@ interface FunctionContext {
   loops: Loop[]
   /** completion value (§4.4.10): tracked in top-level script code only, never in function bodies */
   tracksCompletion: boolean
+  /** enclosing function (null for the script) */
+  parent: FunctionContext | null
+  /** compiling an arrow function: `this` is lexical */
+  isArrow: boolean
+  /** an arrow (or an arrow nested in it) reads `this`, so its closure must capture it */
+  usesThis: boolean
+}
+
+// Arrows read the `this` of the enclosing function: mark the arrow and every arrow around it up to that function.
+function markArrowsUsingThis(fn: FunctionContext | null) {
+  for (let context = fn; context?.isArrow; context = context.parent) context.usesThis = true
 }
 
 class Compiler {
@@ -162,6 +181,9 @@ class Compiler {
     scope: new Scope(null, 'script'),
     loops: [],
     tracksCompletion: true,
+    parent: null,
+    isArrow: false,
+    usesThis: false,
   }
 
   constructor(private source: string | undefined, private fileName: string | undefined) {}
@@ -438,6 +460,7 @@ class Compiler {
   // `let f = function () {}` names the function `f`, as in JS.
   private namedExpression(node: Expression, name: string) {
     if (node.type === 'FunctionExpression') this.functionExpression(node, name)
+    else if (node.type === 'ArrowFunctionExpression') this.closure(this.functionProto(node, name))
     else this.expression(node)
   }
 
@@ -635,15 +658,23 @@ class Compiler {
     this.out.emit(Op.POP_ENV)
   }
 
-  private closure(proto: FunctionProto) {
+  // `this` is dynamic in functions and lexical in arrows (§4.4.5).
+  thisExpression() {
+    markArrowsUsingThis(this.fn)
+    this.out.emit(Op.THIS)
+  }
+
+  closure(proto: FunctionProto) {
     this.out.emit(Op.CLOSURE, this.out.constant(proto))
   }
 
-  private functionProto(node: FunctionNode, name: string): FunctionProto {
+  functionProto(node: AnyFunction, name: string): FunctionProto {
     const outer = this.fn
     const scope = new Scope(outer.scope, 'function')
+    const isArrow = node.type === 'ArrowFunctionExpression'
+    const out = new ProtoBuilder({ name, kind: isArrow ? 'arrow' : 'function' })
 
-    this.fn = { out: new ProtoBuilder({ name, kind: 'function' }), scope, loops: [], tracksCompletion: false }
+    this.fn = { out, scope, loops: [], tracksCompletion: false, parent: outer, isArrow, usesThis: false }
 
     try {
       return this.functionBody(node, signatureOf(name, node.params))
@@ -653,19 +684,32 @@ class Compiler {
   }
 
   // Function env layout: parameters (rest last), then the body's top-level declarations.
-  private functionBody({ params, body }: FunctionNode, signature: Signature): FunctionProto {
+  private functionBody({ params, body }: AnyFunction, signature: Signature): FunctionProto {
     for (const param of params) this.declareName(this.scope, paramName(param), 'let')
-    this.declare(body.body, this.scope)
     this.defaults(params)
-    this.hoistFunctions(body.body)
-    this.statements(body.body)
-    this.out.emit(Op.NULL) // falling off the end returns null (D37)
-    this.out.emit(Op.RETURN)
+
+    if (body.type === 'BlockStatement') this.blockBody(body)
+    else this.expressionBody(body)
     this.out.scopeSize = this.scope.bindings.size
 
     const { text, required, optional, hasRest } = signature
+    const proto = this.out.build()
 
-    return { ...this.out.build(), paramCount: required + optional, length: required, hasRest, signature: text }
+    return { ...proto, paramCount: required + optional, length: required, hasRest, signature: text, usesThis: this.fn.usesThis }
+  }
+
+  private blockBody({ body }: BlockStatement) {
+    this.declare(body, this.scope)
+    this.hoistFunctions(body)
+    this.statements(body)
+    this.out.emit(Op.NULL) // falling off the end returns null (D37)
+    this.out.emit(Op.RETURN)
+  }
+
+  // `x => expr`: the expression is the result.
+  private expressionBody(body: Expression) {
+    this.expression(body)
+    this.out.emit(Op.RETURN)
   }
 
   // Default values are evaluated at call time, left to right, only for omitted arguments (D38).

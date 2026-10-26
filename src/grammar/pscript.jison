@@ -222,8 +222,23 @@ Expression
 /* The target is checked by yy.assignment (Identifier or, later, MemberExpression). */
 AssignmentExpression
   : ConditionalExpression
+  | ArrowFunction
   | CallExpression AssignmentOperator AssignmentExpression
     { $$ = yy.assignment($2, $1, $3, @$) }
+  ;
+
+/* The token filter marks arrow starts: ARROW_IDENT for `x =>`, ARROW_LPAREN for `( … ) =>` (§4.2.3). */
+ArrowFunction
+  : ARROW_IDENT '=>' ArrowBody
+    { $$ = yy.arrow([yy.identifier($1, @1)], $3, @$) }
+  | ARROW_LPAREN FormalParameters ')' '=>' ArrowBody
+    { $$ = yy.arrow($2, $5, @$) }
+  ;
+
+ArrowBody
+  : '{' StatementList '}'
+    { $$ = yy.block($2, @$) }
+  | AssignmentExpression
   ;
 
 AssignmentOperator

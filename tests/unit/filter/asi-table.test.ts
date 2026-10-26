@@ -49,6 +49,8 @@ describe('§4.2.1 ASI consequences, continued', () => {
     expect(((body[0] as ExpressionStatement).expression as CallExpression).arguments).toHaveLength(2)
   })
 
-  it.todo('let f = () => {\\n}\\nf() → two statements (M8)')
+  it('let f = () => {\\n}\\nf() → two statements', () => {
+    expect(parse('let f = () => {\n}\nf()').body.map(s => s.type)).toEqual(['VariableDeclaration', 'ExpressionStatement'])
+  })
   it.todo('class A {\\n x = 1\\n m() {}\\n} → field x ends with an inserted ; (M15)')
 })

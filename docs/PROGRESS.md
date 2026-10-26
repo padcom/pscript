@@ -14,7 +14,24 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M5 | Operators | done (2026-10-26) |
 | M6 | Control flow | done (2026-10-26) |
 | M7 | Functions | done (2026-10-26) |
-| M8 | Arrow functions | next |
+| M8 | Arrow functions | done (2026-10-26) |
+| M9 | Objects | next |
+
+## M8 — Arrow functions
+
+Done: arrow programs pass (`tests/programs/arrows/`, also against Node). `npm run check` and `npm run build` green; 489 tests + 4 todo.
+
+What exists:
+
+- Token filter (§4.2.3): a lookahead buffer (`lookahead`, `peek(i)`, `readRaw()`); `read()` classifies each token through the `ARROW_STARTS` table: `IDENT` followed by `=>` → `ARROW_IDENT`; `(` whose matching `)` (depth counting over the lookahead) is followed by `=>` → `ARROW_LPAREN` (pushes a `(` bracket). A newline before `=>` → `SyntaxError: Line terminator not permitted before '=>'` via the new `TokenState.fail` hook. Worst case O(n²) over nested parentheses, no memoisation yet.
+- Grammar: `ArrowFunction` at the lowest level of `AssignmentExpression` (`ARROW_IDENT '=>' ArrowBody | ARROW_LPAREN FormalParameters ')' '=>' ArrowBody`); `ArrowBody` is a block or an `AssignmentExpression`. Parameters are checked like function parameters.
+- Compiler: arrows compile through `functionProto` with kind `'arrow'`; an expression body is `<expr> RETURN`. `FunctionContext` gained `parent`, `isArrow`, `usesThis`; `this` marks the current arrow and every enclosing arrow up to the nearest non-arrow function (`markArrowsUsingThis`), so `FunctionProto.usesThis` is true exactly for arrows that need the lexical `this`. `const f = () => …` gets a compile-time signature and the name `f`.
+- VM: `CLOSURE` of a proto with `usesThis` stores the frame's `this` in `closure.thisValue`; calling an arrow uses `closure.thisValue ?? null` instead of the call's `this`.
+
+Notes:
+
+- Lexical `this` is tested through a native that calls a function with an explicit `this` (`tests/unit/vm/arrows.test.ts`); real method calls come with M9.
+- Arrows will also capture the home class lexically (§4.4.5) — M15.
 
 ## M7 — Functions
 

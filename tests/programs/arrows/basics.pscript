@@ -1,0 +1,11 @@
+// §10.8 (object results and array methods arrive with M9/M10/M12)
+const double = x => x * 2
+const add = (a, b) => a + b
+const block = n => { const m = n + 1; return m * 2 }
+print(double(4), add(1, 2), block(2))
+const noArgs = () => 'none'
+const withDefault = (a, b = 10) => a + b
+print(noArgs(), withDefault(1), withDefault(1, 2))
+print(((x, y) => x * y)(6, 7))
+const trailing = (a, b,) => a - b
+print(trailing(5, 3))

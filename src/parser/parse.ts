@@ -187,6 +187,9 @@ function checkedBuilders(errors: SyntaxErrorFactory) {
     update(operator: '++' | '--', prefix: boolean, argument: Expression, loc: JisonLoc) {
       return builders.update(operator, prefix, checkTarget(errors, argument, `'${operator}'`), loc)
     },
+    arrow(params: Pattern[], body: BlockStatement | Expression, loc: JisonLoc) {
+      return builders.arrow(checkParams(errors, params), body, loc)
+    },
     functionNode(type: FunctionType, { id, params }: FunctionHead, body: BlockStatement, loc: JisonLoc) {
       return builders.functionNode(type, { id, params: checkParams(errors, params) }, body, loc)
     },
@@ -224,7 +227,8 @@ function createYy(source: string, options: ParseOptions, tokens: TokenState) {
 
 function createParser(source: string, options: ParseOptions) {
   const parser = new pscriptParser.Parser()
-  const tokens: TokenState = { current: null }
+  const errors = new SyntaxErrorFactory(source, options.fileName)
+  const tokens: TokenState = { current: null, fail: (reason, loc) => { throw errors.atToken(reason, loc) } }
 
   parser.yy = createYy(source, options, tokens)
   parser.lexer = createTokenFilter(pscriptParser, tokens)

@@ -1,0 +1,12 @@
+// §4.2.1: `let f = () => {\n}\nf()` is two statements
+let calls = 0
+let f = () => {
+  calls++
+}
+f()
+const g = x =>
+  x * 3
+print(calls, g(2))
+const h = (a,
+  b) => a + b
+print(h(1, 2))

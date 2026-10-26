@@ -10,6 +10,8 @@ import { CONTINUERS, ENDERS } from './tokens'
 export interface TokenState {
   /** location of the token the parser is currently looking at */
   current: JisonLocation | null
+  /** reports a syntax error found by the filter */
+  fail: (reason: string, loc: JisonLocation) => never
 }
 
 /**
@@ -34,6 +36,14 @@ interface Token {
 
 type Bracket = '(' | '(header)' | '[' | '{block}' | '{object}'
 
+const PAREN_DEPTH: Record<string, number> = { '(': 1, ')': -1 }
+
+/** Tokens that may start an arrow function (§4.2.3). */
+const ARROW_STARTS: Record<string, (filter: TokenFilter, token: Token) => void> = {
+  'IDENT': (filter, token) => filter.classifyIdent(token),
+  '(': (filter, token) => filter.classifyParen(token),
+}
+
 /** Tokens after which a statement starts (besides a control-flow header's `)`). */
 const STATEMENT_PRECEDERS = new Set([';', '{', '}', 'ELSE'])
 
@@ -41,7 +51,7 @@ const STATEMENT_PRECEDERS = new Set([';', '{', '}', 'ELSE'])
 const HEADER_KEYWORDS = new Set(['IF', 'WHILE', 'FOR'])
 
 // Object-literal braces are told apart from blocks in M9 (§4.2.2); until then every `{` is a block.
-const OPENERS: Record<string, Bracket> = { '(': '(', '[': '[', '{': '{block}' }
+const OPENERS: Record<string, Bracket> = { '(': '(', 'ARROW_LPAREN': '(', '[': '[', '{': '{block}' }
 const CLOSERS = new Set([')', ']', '}'])
 
 function endOf(loc: JisonLocation): JisonLocation {
@@ -73,6 +83,8 @@ export class TokenFilter {
   private prev: Token | null = null
   private pending: Token | null = null
   private brackets: Bracket[] = []
+  /** raw tokens read ahead (arrow detection), not yet seen by the parser */
+  private lookahead: Token[] = []
 
   constructor(private base: JisonLexer, private terminals: Record<number, string>, private state: TokenState) {
     this.options = base.options
@@ -86,6 +98,7 @@ export class TokenFilter {
     this.prev = null
     this.pending = null
     this.brackets = []
+    this.lookahead = []
 
     return this
   }
@@ -103,11 +116,59 @@ export class TokenFilter {
   }
 
   /**
-   * Reads the next significant token, skipping NEWLINEs.
+   * Reads the next significant token and classifies arrow-function starts (§4.2.3).
    *
    * @returns the token
    */
   private read(): Token {
+    const token = this.lookahead.shift() ?? this.readRaw()
+
+    ARROW_STARTS[token.name]?.(this, token)
+
+    return token
+  }
+
+  // `x =>`: an identifier immediately followed by `=>` is an arrow's only parameter.
+  classifyIdent(token: Token) {
+    const next = this.peek(0)
+
+    if (next.name === '=>') this.markArrow(token, 'ARROW_IDENT', next)
+  }
+
+  // `(` whose matching `)` is immediately followed by `=>` starts an arrow's parameter list.
+  classifyParen(token: Token) {
+    const close = this.matchingParen()
+    const arrow = close < 0 ? null : this.peek(close + 1)
+
+    if (arrow?.name === '=>') this.markArrow(token, 'ARROW_LPAREN', arrow)
+  }
+
+  private markArrow(token: Token, name: string, arrow: Token) {
+    if (arrow.afterNewline) this.state.fail("Line terminator not permitted before '=>'", arrow.loc)
+    token.name = name
+  }
+
+  // Index in the lookahead of the `)` matching a `(` just read, or -1 at EOF (depth counting).
+  private matchingParen(): number {
+    let depth = 1
+
+    for (let i = 0; this.peek(i).name !== 'EOF'; i++) {
+      depth += PAREN_DEPTH[this.peek(i).name] ?? 0
+
+      if (depth === 0) return i
+    }
+
+    return -1
+  }
+
+  private peek(i: number): Token {
+    while (this.lookahead.length <= i) this.lookahead.push(this.readRaw())
+
+    return this.lookahead[i]
+  }
+
+  // The next token from the generated lexer, skipping NEWLINEs (recorded as `afterNewline`).
+  private readRaw(): Token {
     let afterNewline = false
 
     for (;;) {

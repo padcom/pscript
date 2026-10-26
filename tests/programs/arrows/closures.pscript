@@ -1,0 +1,24 @@
+function counter() {
+  let n = 0
+  return () => ++n
+}
+const next = counter()
+next()
+next()
+print(next())
+const curry = a => b => c => a + b + c
+print(curry(1)(2)(3), curry('a')('b')('c'))
+const compose = (f, g) => x => f(g(x))
+const inc = x => x + 1
+const square = x => x * x
+print(compose(inc, square)(3), compose(square, inc)(3))
+let first = null
+let last = null
+for (let i = 0; i < 3; i++) {
+  const f = () => i
+  if (i == 0) first = f
+  last = f
+}
+print(first(), last())
+const apply = (fn, x) => fn(x)
+print(apply(n => n * 100, 2))

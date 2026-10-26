@@ -119,7 +119,8 @@ export class VM implements AccessContext {
     // frames[0] is the script, so frames.length is the depth of the call being made
     if (this.frames.length > this.options.maxCallDepth) throw rangeError('Maximum call stack size exceeded')
 
-    const frame = this.newFrame(proto, new Environment(this.bindArguments(proto, args), closure.env), thisValue)
+    const env = new Environment(this.bindArguments(proto, args), closure.env)
+    const frame = this.newFrame(proto, env, proto.kind === 'arrow' ? closure.thisValue ?? null : thisValue)
 
     frame.closure = closure
     this.frames.push(frame)
@@ -213,6 +214,15 @@ export class VM implements AccessContext {
     const source = this.script?.source
 
     return source === undefined ? undefined : formatExcerpt(source, line, column)
+  }
+
+  // Arrows that read `this` capture it from the creating frame (§4.4.5).
+  private closure(proto: FunctionProto, frame: Frame): Closure {
+    const closure = new Closure(this.realm.FunctionPrototype, proto, frame.env, null)
+
+    if (proto.usesThis) closure.thisValue = frame.thisValue
+
+    return closure
   }
 
   private notAClass(callee: Value): never {
@@ -374,9 +384,7 @@ export class VM implements AccessContext {
           stack.push(value)
           break
         }
-        case Op.CLOSURE:
-          stack.push(new Closure(this.realm.FunctionPrototype, constants[code[ip++]] as FunctionProto, frame.env, null))
-          break
+        case Op.CLOSURE: stack.push(this.closure(constants[code[ip++]] as FunctionProto, frame)); break
         case Op.THIS: stack.push(frame.thisValue); break
 
         case Op.NEW: {

@@ -1,5 +1,6 @@
 // AST node builders used by the grammar actions (`yy.*`, §5.3).
 import type {
+  ArrowFunctionExpression,
   AssignmentExpression,
   AssignmentPattern,
   AssignmentOperator,
@@ -119,6 +120,12 @@ export const builders = {
 
   functionNode(type: FunctionType, { id, params }: FunctionHead, body: BlockStatement, loc: JisonLoc): FunctionNode {
     return { type, id, params, body, loc: toLoc(loc) } as FunctionNode
+  },
+
+  arrow(params: Pattern[], body: BlockStatement | Expression, loc: JisonLoc): ArrowFunctionExpression {
+    const expression = body.type !== 'BlockStatement'
+
+    return { type: 'ArrowFunctionExpression', id: null, params, body, expression, loc: toLoc(loc) }
   },
 
   assignmentPattern(left: Identifier, right: Expression, loc: JisonLoc): AssignmentPattern {
