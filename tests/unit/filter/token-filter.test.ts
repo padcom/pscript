@@ -47,6 +47,22 @@ describe('statement starters after a newline', () => {
   })
 })
 
+describe('control-flow headers and else', () => {
+  it.each([
+    ['if (a)\nb', ['IF', '(', 'IDENT', ')', 'IDENT', ';', 'EOF']],
+    ['while (a)\nb', ['WHILE', '(', 'IDENT', ')', 'IDENT', ';', 'EOF']],
+    ['for (;;)\nb', ['FOR', '(', ';', ';', ')', 'IDENT', ';', 'EOF']],
+    ['if (f(a))\nb', ['IF', '(', 'IDENT', '(', 'IDENT', ')', ')', 'IDENT', ';', 'EOF']],
+    ['f(a)\nb', ['IDENT', '(', 'IDENT', ')', ';', 'IDENT', ';', 'EOF']],
+    ['if (a) b\nelse c', ['IF', '(', 'IDENT', ')', 'IDENT', ';', 'ELSE', 'IDENT', ';', 'EOF']],
+    ['if (a) { b }\nelse c', ['IF', '(', 'IDENT', ')', '{', 'IDENT', ';', '}', 'ELSE', 'IDENT', ';', 'EOF']],
+    ['if (a) b; else c', ['IF', '(', 'IDENT', ')', 'IDENT', ';', 'ELSE', 'IDENT', ';', 'EOF']],
+    ['if (a) b else c', ['IF', '(', 'IDENT', ')', 'IDENT', 'ELSE', 'IDENT', ';', 'EOF']],
+  ])('%j', (source, tokens) => {
+    expect(tokenize(source)).toEqual(tokens)
+  })
+})
+
 describe('blocks', () => {
   it('inserts before a } that closes a block, and after it at a newline', () => {
     expect(tokenize('{ a }\nb')).toEqual(['{', 'IDENT', ';', '}', ';', 'IDENT', ';', 'EOF'])

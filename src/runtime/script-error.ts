@@ -27,3 +27,13 @@ export function typeError(message: string): ScriptError {
 export function referenceError(message: string): ScriptError {
   return new ScriptError('ReferenceError', message)
 }
+
+/**
+ * Creates a RangeError.
+ *
+ * @param message error message
+ * @returns a RangeError
+ */
+export function rangeError(message: string): ScriptError {
+  return new ScriptError('RangeError', message)
+}

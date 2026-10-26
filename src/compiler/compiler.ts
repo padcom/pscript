@@ -4,10 +4,14 @@ import type {
   AssignmentExpression,
   BinaryExpression,
   BlockStatement,
+  BreakStatement,
   CallExpression,
   ConditionalExpression,
+  ContinueStatement,
   Expression,
+  ForStatement,
   Identifier,
+  IfStatement,
   Literal,
   LogicalExpression,
   Node,
@@ -17,6 +21,7 @@ import type {
   UnaryExpression,
   UpdateExpression,
   VariableDeclaration,
+  WhileStatement,
 } from '@/parser/ast'
 import { parse } from '@/parser/parse'
 import type { CompiledScript } from './function-proto'
@@ -93,12 +98,32 @@ const STATEMENTS: { [K in Statement['type']]?: Handler<Extract<Statement, { type
   ExpressionStatement: (c, node) => c.expressionStatement(node.expression),
   VariableDeclaration: (c, node) => c.variableDeclaration(node),
   BlockStatement: (c, node) => c.block(node),
+  IfStatement: (c, node) => c.ifStatement(node),
+  WhileStatement: (c, node) => c.whileStatement(node),
+  ForStatement: (c, node) => c.forStatement(node),
+  BreakStatement: (c, node) => c.jump(node, 'breaks'),
+  ContinueStatement: (c, node) => c.jump(node, 'continues'),
   EmptyStatement: () => {},
+}
+
+/**
+ * An enclosing loop: pending `break` / `continue` jumps.
+ */
+interface Loop {
+  /** operands of `break` jumps, patched to the loop exit */
+  breaks: number[]
+  /** operands of `continue` jumps, patched to the continue target */
+  continues: number[]
+  /** environment depth that `break` / `continue` unwind to */
+  envDepth: number
 }
 
 class Compiler {
   readonly out = new ProtoBuilder({ name: '', kind: 'script' })
   private scope = new Scope(null, 'script')
+  private loops: Loop[] = []
+  // Completion value (§4.4.10) is tracked in top-level script code only, never in function bodies.
+  private tracksCompletion = true
 
   constructor(private source: string | undefined, private fileName: string | undefined) {}
 
@@ -186,8 +211,141 @@ class Compiler {
 
   expressionStatement(expression: Expression) {
     this.expression(expression)
+
+    if (this.tracksCompletion) this.expressionStatementTail()
+    else this.out.emit(Op.POP)
+  }
+
+  // `if`, loops and `try` set the completion value to undefined on entry (§4.4.10).
+  private resetCompletion() {
+    if (!this.tracksCompletion) return
+    this.out.emit(Op.UNDEFINED)
+    this.expressionStatementTail()
+  }
+
+  private expressionStatementTail() {
     this.out.emit(Op.STORE, this.scope.envDepth, COMPLETION_SLOT)
     this.out.emit(Op.POP)
+  }
+
+  ifStatement(node: IfStatement) {
+    this.resetCompletion()
+    this.expression(node.test)
+    const otherwise = this.out.emitJump(Op.JUMP_IF_FALSE)
+
+    this.statement(node.consequent)
+
+    if (!node.alternate) {
+      this.out.patch(otherwise)
+
+      return
+    }
+    const end = this.out.emitJump(Op.JUMP)
+
+    this.out.patch(otherwise)
+    this.statement(node.alternate)
+    this.out.patch(end)
+  }
+
+  whileStatement(node: WhileStatement) {
+    this.resetCompletion()
+    const top = this.out.code.length
+
+    this.expression(node.test)
+    const exit = this.out.emitJump(Op.JUMP_IF_FALSE)
+    const loop = this.loopBody(node.body)
+
+    this.endLoop(loop, top, top)
+    this.out.patch(exit)
+    this.patchAll(loop.breaks)
+  }
+
+  // for-let: init env → loop: test, body, COPY_ENV, update (§5.5).
+  forStatement(node: ForStatement) {
+    this.resetCompletion()
+    const outer = this.scope
+    const head = this.forHead(node)
+
+    this.forLoop(node, head.hasEnv)
+    this.scope = outer
+
+    if (head.hasEnv) this.out.emit(Op.POP_ENV)
+  }
+
+  private forHead({ init }: ForStatement): Scope {
+    const head = new Scope(this.scope, 'block')
+
+    if (init?.type === 'VariableDeclaration') this.declareVariables(init, head)
+    this.enterScope(head)
+    this.forInit(init)
+
+    return head
+  }
+
+  // Makes `scope` current, with an environment when it declares something.
+  private enterScope(scope: Scope) {
+    if (scope.hasEnv) this.out.emit(Op.PUSH_ENV, scope.bindings.size)
+    this.scope = scope
+  }
+
+  private forInit(init: ForStatement['init']) {
+    if (init?.type === 'VariableDeclaration') this.variableDeclaration(init)
+    else if (init) this.discard(init)
+  }
+
+  private forLoop(node: ForStatement, perIterationEnv: boolean) {
+    const top = this.out.code.length
+    const exit = node.test ? this.condition(node.test) : -1
+    const loop = this.loopBody(node.body)
+    const next = this.out.code.length
+
+    if (perIterationEnv) this.out.emit(Op.COPY_ENV)
+    this.optionalDiscard(node.update)
+    this.endLoop(loop, top, next)
+    this.patchAll(exit < 0 ? loop.breaks : [exit, ...loop.breaks])
+  }
+
+  private condition(test: Expression): number {
+    this.expression(test)
+
+    return this.out.emitJump(Op.JUMP_IF_FALSE)
+  }
+
+  private optionalDiscard(expression: Expression | null) {
+    if (expression) this.discard(expression)
+  }
+
+  private discard(expression: Expression) {
+    this.expression(expression)
+    this.out.emit(Op.POP)
+  }
+
+  private loopBody(body: Statement): Loop {
+    const loop: Loop = { breaks: [], continues: [], envDepth: this.scope.envDepth }
+
+    this.loops.push(loop)
+    this.statement(body)
+    this.loops.pop()
+
+    return loop
+  }
+
+  private endLoop(loop: Loop, top: number, next: number) {
+    this.out.patch(this.out.emitJump(Op.JUMP), top)
+    this.patchAll(loop.continues, next)
+  }
+
+  private patchAll(operands: number[], target = this.out.code.length) {
+    for (const operand of operands) this.out.patch(operand, target)
+  }
+
+  // break / continue: unwind block environments down to the loop's, then jump (§5.5).
+  jump(node: BreakStatement | ContinueStatement, list: 'breaks' | 'continues') {
+    const loop = this.loops.at(-1)
+    if (!loop) throw this.error(`Illegal ${list === 'breaks' ? 'break' : 'continue'} statement`, node.loc)
+
+    for (let depth = this.scope.envDepth; depth > loop.envDepth; depth--) this.out.emit(Op.POP_ENV)
+    loop[list].push(this.out.emitJump(Op.JUMP))
   }
 
   variableDeclaration(node: VariableDeclaration) {

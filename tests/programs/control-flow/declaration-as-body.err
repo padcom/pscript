@@ -1,0 +1,1 @@
+control-flow/declaration-as-body.pscript:1:11 SyntaxError: Lexical declaration cannot appear in a single-statement context

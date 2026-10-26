@@ -56,12 +56,13 @@ export class ProtoBuilder {
   }
 
   /**
-   * Points a jump emitted by `emitJump()` at the current end of the code.
+   * Points a jump emitted by `emitJump()` at `target` (default: the current end of the code).
    *
    * @param operand operand position returned by `emitJump()`
+   * @param target absolute code offset
    */
-  patch(operand: number) {
-    this.code[operand] = this.code.length
+  patch(operand: number, target = this.code.length) {
+    this.code[operand] = target
   }
 
   /**

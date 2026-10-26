@@ -1,0 +1,22 @@
+let found = null
+for (let i = 1; i < 10; i++) {
+  let square = i * i
+  {
+    let label = 'square ' + square
+    if (square > 20) {
+      found = label
+      break
+    }
+  }
+}
+print(found)
+let count = 0
+while (count < 100) {
+  count++
+  {
+    let half = count / 2
+    if (half != 5) continue
+  }
+  break
+}
+print(count)

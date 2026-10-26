@@ -79,6 +79,10 @@ IDENT           [A-Za-z_$][A-Za-z0-9_$]*
 
 /lex
 
+/* Dangling else: an `else` binds to the nearest `if`. */
+%nonassoc IF_WITHOUT_ELSE
+%nonassoc ELSE
+
 %start Program
 
 %%
@@ -99,10 +103,47 @@ StatementList
 Statement
   : VariableDeclaration ';'
   | Block
+  | IfStatement
+  | WhileStatement
+  | ForStatement
+  | BREAK ';'
+    { $$ = yy.jump('BreakStatement', @$) }
+  | CONTINUE ';'
+    { $$ = yy.jump('ContinueStatement', @$) }
   | Expression ';'
     { $$ = yy.expressionStatement($1, @$) }
   | ';'
     { $$ = yy.emptyStatement(@$) }
+  ;
+
+IfStatement
+  : IF '(' Expression ')' Statement %prec IF_WITHOUT_ELSE
+    { $$ = yy.ifStatement($3, $5, null, @$) }
+  | IF '(' Expression ')' Statement ELSE Statement
+    { $$ = yy.ifStatement($3, $5, $7, @$) }
+  ;
+
+WhileStatement
+  : WHILE '(' Expression ')' Statement
+    { $$ = yy.whileStatement($3, $5, @$) }
+  ;
+
+ForStatement
+  : FOR '(' ForInit ';' OptionalExpression ';' OptionalExpression ')' Statement
+    { $$ = yy.forStatement({ init: $3, test: $5, update: $7 }, $9, @$) }
+  ;
+
+ForInit
+  : /* empty */
+    { $$ = null }
+  | VariableDeclaration
+  | Expression
+  ;
+
+OptionalExpression
+  : /* empty */
+    { $$ = null }
+  | Expression
   ;
 
 Block

@@ -1,0 +1,23 @@
+let n = 0
+for (;;) {
+  n++
+  if (n == 3) break
+}
+print(n)
+let k
+for (k = 10; k > 7; k--) print(k)
+print(k)
+for (let a = 0, b = 10; a < b; a += 3) print(a, b)
+for (let i = 0; i < 2; i++) {
+  for (let j = 0; j < 3; j++) {
+    if (j == 1) continue
+    if (i == 1) break
+    print(i, j)
+  }
+}
+let total = 0
+for (let i = 0; i < 5; i++) total += i
+print(total)
+let shadow = 'outer'
+for (let shadow = 0; shadow < 1; shadow++) print(shadow)
+print(shadow)

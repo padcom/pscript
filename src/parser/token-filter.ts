@@ -26,9 +26,16 @@ interface Token {
   lineno: number
   /** whether a line terminator (or a multi-line comment) came before the token */
   afterNewline: boolean
+  /** a `)` that closes the condition of `if` / `while` / `for`: the statement continues */
+  closesHeader?: boolean
+  /** a `}` that closes a block */
+  closesBlock?: boolean
 }
 
-type Bracket = '(' | '[' | '{block}' | '{object}'
+type Bracket = '(' | '(header)' | '[' | '{block}' | '{object}'
+
+/** Keywords whose `( … )` is followed by a statement, so their `)` does not end one. */
+const HEADER_KEYWORDS = new Set(['IF', 'WHILE', 'FOR'])
 
 // Object-literal braces are told apart from blocks in M9 (§4.2.2); until then every `{` is a block.
 const OPENERS: Record<string, Bracket> = { '(': '(', '[': '[', '{': '{block}' }
@@ -36,6 +43,18 @@ const CLOSERS = new Set([')', ']', '}'])
 
 function endOf(loc: JisonLocation): JisonLocation {
   return { first_line: loc.last_line, last_line: loc.last_line, first_column: loc.last_column, last_column: loc.last_column }
+}
+
+/**
+ * Tokens with their own insertion rule (when `prev` may end a statement):
+ * - EOF: insert at statement level (not inside open brackets, where a `;` can never help);
+ * - `}`: insert when it closes a block;
+ * - `else`: see `endsBranch`.
+ */
+const SPECIAL_TOKENS: Record<string, (filter: TokenFilter, token: Token) => boolean> = {
+  'EOF': filter => filter.atStatementLevel(),
+  '}': filter => filter.top() === '{block}',
+  'ELSE': (filter, token) => filter.endsBranch(token),
 }
 
 // Jison's parse() uses `Object.create(parser.lexer)`, so all per-parse state is reset in setInput().
@@ -107,28 +126,37 @@ export class TokenFilter {
   }
 
   private needsSemicolon(token: Token): boolean {
-    return this.prev !== null && ENDERS.has(this.prev.name) && this.insertsBefore(token)
+    return this.prevEnds() && this.insertsBefore(token)
+  }
+
+  private prevEnds(): boolean {
+    return this.prev !== null && ENDERS.has(this.prev.name) && !this.prev.closesHeader
   }
 
   // `prev` may end a statement: insert at EOF, before a block's `}`, or at a newline that
   // starts a new statement (§4.2.1). Not at EOF inside open brackets: a `;` can never fix
   // that, and "expected ')'" is the better error.
   private insertsBefore(token: Token): boolean {
-    if (token.name === 'EOF') return this.atStatementLevel()
-    if (token.name === '}') return this.top() === '{block}'
+    const rule = SPECIAL_TOKENS[token.name]
+    if (rule) return rule(this, token)
 
     return token.afterNewline && this.startsStatement(token)
+  }
+
+  // `if (c) a()\nelse …`: the then-branch statement needs its `;`, unless it was a block.
+  endsBranch(token: Token): boolean {
+    return token.afterNewline && !this.prev?.closesBlock
   }
 
   private startsStatement(token: Token): boolean {
     return this.atStatementLevel() && !CONTINUERS.has(token.name)
   }
 
-  private top(): Bracket | undefined {
+  top(): Bracket | undefined {
     return this.brackets[this.brackets.length - 1]
   }
 
-  private atStatementLevel(): boolean {
+  atStatementLevel(): boolean {
     const top = this.top()
 
     return top === undefined || top === '{block}'
@@ -141,7 +169,7 @@ export class TokenFilter {
   }
 
   private emit(token: Token): string {
-    this.track(token.name)
+    this.track(token)
     this.prev = token
     this.yytext = token.text
     this.match = token.text
@@ -153,9 +181,22 @@ export class TokenFilter {
     return token.name
   }
 
-  private track(name: string) {
-    if (name in OPENERS) this.brackets.push(OPENERS[name])
-    else if (CLOSERS.has(name)) this.brackets.pop()
+  private track(token: Token) {
+    if (token.name in OPENERS) this.brackets.push(this.opener(token.name))
+    else if (CLOSERS.has(token.name)) this.close(token, this.brackets.pop())
+  }
+
+  private close(token: Token, bracket: Bracket | undefined) {
+    token.closesHeader = bracket === '(header)'
+    token.closesBlock = bracket === '{block}'
+  }
+
+  private opener(name: string): Bracket {
+    return name === '(' && this.afterHeaderKeyword() ? '(header)' : OPENERS[name]
+  }
+
+  private afterHeaderKeyword(): boolean {
+    return HEADER_KEYWORDS.has(this.prev?.name ?? '')
   }
 }
 

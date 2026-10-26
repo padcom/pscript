@@ -4,6 +4,11 @@ import type {
   AssignmentOperator,
   BinaryOperator,
   BlockStatement,
+  BreakStatement,
+  ContinueStatement,
+  ForStatement,
+  IfStatement,
+  WhileStatement,
   ConditionalExpression,
   LogicalExpression,
   CallExpression,
@@ -64,9 +69,30 @@ export function sourceLoc(source: string): SourceLocation {
   }
 }
 
+/**
+ * The three clauses of a `for` header.
+ */
+export type ForHeader = Pick<ForStatement, 'init' | 'test' | 'update'>
+
 export const builders = {
   expressionStatement(expression: Expression, loc: JisonLoc): ExpressionStatement {
     return { type: 'ExpressionStatement', expression, loc: toLoc(loc) }
+  },
+
+  jump(type: 'BreakStatement' | 'ContinueStatement', loc: JisonLoc): BreakStatement | ContinueStatement {
+    return { type, label: null, loc: toLoc(loc) }
+  },
+
+  ifStatement(test: Expression, consequent: Statement, alternate: Statement | null, loc: JisonLoc): IfStatement {
+    return { type: 'IfStatement', test, consequent, alternate, loc: toLoc(loc) }
+  },
+
+  whileStatement(test: Expression, body: Statement, loc: JisonLoc): WhileStatement {
+    return { type: 'WhileStatement', test, body, loc: toLoc(loc) }
+  },
+
+  forStatement({ init, test, update }: ForHeader, body: Statement, loc: JisonLoc): ForStatement {
+    return { type: 'ForStatement', init, test, update, body, loc: toLoc(loc) }
   },
 
   block(body: Statement[], loc: JisonLoc): BlockStatement {

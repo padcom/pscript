@@ -57,7 +57,9 @@ describe('compiler inputs', () => {
   it('reports nodes it cannot compile yet', () => {
     const program = parse('1')
 
-    program.body[0] = { type: 'BreakStatement', label: null, loc: program.body[0].loc }
-    expect(() => compile(program)).toThrow('BreakStatement is not supported yet')
+    const [{ loc }] = program.body
+
+    program.body[0] = { type: 'ThrowStatement', argument: { type: 'Literal', value: 1, raw: '1', loc }, loc }
+    expect(() => compile(program)).toThrow('ThrowStatement is not supported yet')
   })
 })

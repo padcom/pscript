@@ -1,0 +1,2 @@
+// @pscript-only: compile-time SyntaxError (TypeError at runtime in JS)
+for (const i = 0; i < 3; i++) print(i)

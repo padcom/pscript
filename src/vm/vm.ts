@@ -13,7 +13,7 @@ import {
   truthy,
   typeOf,
 } from '@/runtime/operators'
-import { ScriptError, referenceError, typeError } from '@/runtime/script-error'
+import { ScriptError, rangeError, referenceError, typeError } from '@/runtime/script-error'
 import {
   Environment,
   NativeFunction,
@@ -72,6 +72,8 @@ export class VM implements AccessContext {
   readonly stack: Value[] = []
   readonly frames: Frame[] = []
   readonly globals: Globals
+  /** instructions executed by the current `execute()` (counted only when maxSteps is finite) */
+  steps = 0
   private script: CompiledScript | null = null
 
   constructor(readonly realm: Realm, readonly options: VMOptions) {
@@ -107,6 +109,7 @@ export class VM implements AccessContext {
     const env = new Environment(new globalThis.Array<Slot>(main.scopeSize).fill(UNINITIALIZED), null)
 
     this.script = script
+    this.steps = 0
     this.frames.push({
       closure: null,
       proto: main,
@@ -173,10 +176,14 @@ export class VM implements AccessContext {
     const frame = this.frames[this.frames.length - 1]
     const { code, constants } = frame.proto
     let { ip } = frame
+    const { maxSteps } = this.options
+    const limited = maxSteps !== Infinity
     let b: Value
 
     for (;;) {
       frame.opStart = ip
+
+      if (limited && ++this.steps > maxSteps) throw rangeError('Execution step limit exceeded')
 
       switch (code[ip++] as Op) {
         case Op.CONST: stack.push(constants[code[ip++]] as Value); break
@@ -212,6 +219,7 @@ export class VM implements AccessContext {
           frame.env = new Environment(new globalThis.Array<Slot>(code[ip++]).fill(UNINITIALIZED), frame.env)
           break
         case Op.POP_ENV: frame.env = frame.env.parent as Environment; break
+        case Op.COPY_ENV: frame.env = new Environment([...frame.env.slots], frame.env.parent); break
         case Op.JUMP: ip = code[ip]; break
         case Op.JUMP_IF_FALSE: ip = truthy(stack.pop()) ? ip + 1 : code[ip]; break
         case Op.JUMP_IF_TRUE: ip = truthy(stack.pop()) ? code[ip] : ip + 1; break

@@ -1,0 +1,19 @@
+let x = 5
+if (x > 3) print('big')
+if (x > 10) print('huge')
+else print('not huge')
+if (x > 0)
+  if (x > 100) print('very big')
+  else print('dangling else binds to the inner if')
+if (x == 5) {
+  print('block')
+}
+else {
+  print('never')
+}
+if (x)
+  print('condition on its own line')
+if (0) print('no'); else if ('') print('no'); else if (null) print('no'); else print('all falsy')
+while (x > 3)
+  x--
+print(x)

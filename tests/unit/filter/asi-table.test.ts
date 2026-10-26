@@ -28,7 +28,13 @@ describe('§4.2.1 ASI consequences', () => {
 })
 
 describe('§4.2.1 ASI consequences, continued', () => {
-  it.todo('if (c) {\\n}\\nelse {\\n} → if/else (M6)')
+  it('if (c) {\\n}\\nelse {\\n} → if/else', () => {
+    expect(parse('if (c) {\n}\nelse {\n}').body[0]).toMatchObject({
+      type: 'IfStatement',
+      consequent: { type: 'BlockStatement' },
+      alternate: { type: 'BlockStatement' },
+    })
+  })
   it.todo('return\\n42 → return; 42; (M7)')
   it.todo('let o = {\\n a: 1\\n} → object literal, no ; inside (M9)')
 

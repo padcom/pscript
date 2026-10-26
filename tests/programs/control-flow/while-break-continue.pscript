@@ -1,0 +1,9 @@
+// §10.6
+let i = 0
+while (true) {
+  i++
+  if (i == 2) continue
+  if (i > 4) break
+  print(i)
+}
+print('done', i)

@@ -3,7 +3,7 @@ import pscriptParser from '@/grammar/pscript.jison'
 import type { JisonParseErrorHash } from '@/grammar/jison-types'
 import { PScriptSyntaxError, formatExcerpt } from '@/errors'
 import type { AssignmentOperator, Expression, Identifier, Program, SourceLocation, Statement, VariableDeclarator } from './ast'
-import { builders, sourceLoc, type JisonLoc } from './ast-builders'
+import { builders, sourceLoc, type ForHeader, type JisonLoc } from './ast-builders'
 import { EscapeError, checkNumber } from './literals'
 import { createTokenFilter, type TokenState } from './token-filter'
 import { FUTURE_RESERVED_WORDS, KEYWORDS } from './tokens'
@@ -110,6 +110,30 @@ function checkTarget(errors: SyntaxErrorFactory, target: Expression, what: strin
   return target
 }
 
+// `if (x) let y = 1` is not allowed (as in JS): a declaration needs a block.
+function checkBody(errors: SyntaxErrorFactory, body: Statement): Statement {
+  if (body.type === 'VariableDeclaration') {
+    throw errors.at('Lexical declaration cannot appear in a single-statement context', body.loc)
+  }
+
+  return body
+}
+
+// Bodies of if/while/for, checked by checkBody.
+function controlFlowBuilders(errors: SyntaxErrorFactory) {
+  return {
+    ifStatement(test: Expression, consequent: Statement, alternate: Statement | null, loc: JisonLoc) {
+      return builders.ifStatement(test, checkBody(errors, consequent), alternate && checkBody(errors, alternate), loc)
+    },
+    whileStatement(test: Expression, body: Statement, loc: JisonLoc) {
+      return builders.whileStatement(test, checkBody(errors, body), loc)
+    },
+    forStatement(header: ForHeader, body: Statement, loc: JisonLoc) {
+      return builders.forStatement(header, checkBody(errors, body), loc)
+    },
+  }
+}
+
 // Static checks that the grammar leaves to its actions.
 function checkedBuilders(errors: SyntaxErrorFactory) {
   return {
@@ -136,6 +160,7 @@ function createYy(source: string, options: ParseOptions, tokens: TokenState) {
     ...lexerHelpers(errors, tokens),
     ...LINE_HELPERS,
     ...checkedBuilders(errors),
+    ...controlFlowBuilders(errors),
     program(body: Statement[]): Program {
       return { type: 'Program', sourceType: options.goal ?? 'script', body, loc: sourceLoc(source) }
     },
