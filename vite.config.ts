@@ -18,6 +18,7 @@ export default defineConfig(defineLibConfig(pkg, {
   test: {
     coverage: {
       include: ['src/**', 'build/**'],
+      exclude: ['**/*.jison'], // generated parser
     },
   },
 }))

@@ -1,2 +1,16 @@
-// Public API of PScript (§5.8). The interpreter is added in later milestones.
-export {}
+// Public API of PScript (§5.8).
+export { parse, type ParseOptions } from './parser/parse'
+
+export { compile, type CompileOptions } from './compiler/compiler'
+
+export { disassemble } from './compiler/disassembler'
+
+export { Interpreter, run, type InterpreterOptions, type RunOptions } from './interpreter'
+
+export { PScriptError, PScriptRuntimeError, PScriptSyntaxError } from './errors'
+
+export type { CompiledScript, FunctionProto } from './compiler/function-proto'
+
+export type { CompiledModule } from './modules/module-record'
+
+export type * from './parser/ast'
