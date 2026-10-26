@@ -1,0 +1,48 @@
+{
+  "name": "@padcom/pscript",
+  "version": "0.0.1",
+  "description": "PScript - a JavaScript-inspired scripting engine",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run lint && npm run typecheck && npm test"
+  },
+  "keywords": [
+    "interpreter"
+  ],
+  "author": "Matthias Hryniszak <padcom@gmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "@microsoft/api-extractor": "^7.59.4",
+    "@padcom/eslint-config-javascript": "^0.20.4",
+    "@padcom/eslint-config-typescript": "^0.20.2",
+    "@padcom/vite-config-default": "*",
+    "@padcom/vite-config-lib": "^0.13.1",
+    "@types/node": "^26.6.5",
+    "acorn": "^8.19.0",
+    "eslint": "^10.13.0",
+    "jison": "0.4.18",
+    "typescript": "~5.9",
+    "vite": "^8.3.5",
+    "vitest": "*"
+  }
+}
