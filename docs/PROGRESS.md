@@ -18,7 +18,20 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M9 | Objects | done (2026-10-26) |
 | M10 | Arrays and for…of | done (2026-10-27) |
 | M11 | Exceptions | done (2026-10-27) |
-| M12 | Callbacks and re-entrancy | next |
+| M12 | Callbacks and re-entrancy | done (2026-10-27) |
+| M13 | Standard library | next |
+
+## M12 — Callbacks and re-entrancy
+
+Done: `map`/`filter`/`reduce`/`sort` with throwing callbacks pass (`tests/programs/callbacks/`, also against Node). `npm run check` and `npm run build` green; 663 tests + 1 todo.
+
+What exists:
+
+- `src/stdlib/callbacks.ts`: `requireCallback` (`Array.prototype.map: number is not a function`), `callBack` (D38: a script closure receives as many of the offered arguments as it declares — all of them with a rest parameter; natives get all; a callback requiring more → the usual arity TypeError), `compareResult` (NaN → 0).
+- `src/stdlib/array-callbacks.ts`: `forEach map filter flatMap some every find findLast findIndex reduce reduceRight sort`. They delegate to the JS algorithms on the live `items` array (so mutation during iteration behaves as in JS); `find`/`findLast` not found → `null`, `forEach` → `null` (D37); `reduce` of an empty array without an initial value → TypeError; `sort` is stable, defaults to `ToString` order, and sorts a copy so a throwing comparator leaves the array unchanged; the optional `thisArg` is supported.
+- `Array.from(iterable | { length }, mapFn?)` (missing elements of an array-like are `undefined`, as JS).
+- VM: `callFunction` runs script functions in a nested dispatch loop (`runNested`); a host `RangeError` from stack exhaustion during deep native ⇄ script re-entrancy becomes the script `RangeError: Maximum call stack size exceeded` (catchable), even with `maxCallDepth: Infinity`.
+- `tsconfig.json` `lib` is now `ES2023` (`findLast`).
 
 ## M11 — Exceptions
 

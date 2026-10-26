@@ -95,6 +95,12 @@ function describeThrown(value: Value): [string, string] {
   return [String(inheritedProperty(value, 'name')), String(inheritedProperty(value, 'message') ?? '')]
 }
 
+// Deep native ⇄ script re-entrancy can exhaust the host stack even with maxCallDepth = Infinity (§4.4.5).
+function hostStackOverflow(e: unknown): boolean {
+  // (no regular expression here: compiling one needs stack, which is exactly what ran out)
+  return e instanceof globalThis.RangeError && e.message.includes('call stack')
+}
+
 function nullish(value: Value): boolean {
   return value === null || value === undefined
 }
@@ -129,7 +135,15 @@ export class VM implements AccessContext {
 
     this.enterClosure(fn, args, thisValue)
 
-    return this.run(this.frames.length)
+    return this.runNested()
+  }
+
+  private runNested(): Value {
+    try {
+      return this.run(this.frames.length)
+    } catch (e) {
+      throw hostStackOverflow(e) ? rangeError('Maximum call stack size exceeded') : e
+    }
   }
 
   // Pushes the frame of a script function call (§5.6.3) after the arity (D38) and depth (D14) checks.

@@ -1,0 +1,8 @@
+function depth(list) {
+  return list.map(item => Array.isArray(item) ? 1 + depth(item).reduce((a, b) => a > b ? a : b, 0) : 0)
+}
+print(depth([1, [2, [3, [4]]], [5]]).join())
+const matrix = [[1, 2], [3, 4]]
+print(matrix.map(row => row.map(x => x * 10).join('+')).join(' | '))
+const sum = (list) => list.reduce((total, x) => total + (Array.isArray(x) ? sum(x) : x), 0)
+print(sum([1, [2, [3, [4, 5]]], 6]))

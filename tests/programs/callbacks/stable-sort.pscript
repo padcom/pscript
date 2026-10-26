@@ -1,0 +1,12 @@
+const people = [
+  { name: 'Ann', age: 30 },
+  { name: 'Bob', age: 25 },
+  { name: 'Cid', age: 30 },
+  { name: 'Dee', age: 25 },
+  { name: 'Eve', age: 30 },
+]
+people.sort((a, b) => a.age - b.age)
+print(people.map(p => p.name).join(' '))
+const words = ['pear', 'fig', 'apple', 'kiwi', 'banana']
+words.sort((a, b) => a.length - b.length)
+print(words.join(' '))

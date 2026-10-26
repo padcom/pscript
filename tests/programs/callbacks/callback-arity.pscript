@@ -1,0 +1,6 @@
+// @pscript-only: callbacks receive as many arguments as they declare (D38); null for "not found" (D37)
+print([1, 2].map(() => 'no params').join(), [1, 2].map(x => x).join(), [1, 2].map((x, i) => i).join())
+print([1, 2].find(x => x > 5), [].find(x => true), [1, 2].forEach(x => x))
+try { [1].map((a, b, c, d) => 1) } catch (e) { print(e.message) }
+try { [1].map(42) } catch (e) { print(e.message) }
+try { [].reduce((a, b) => a) } catch (e) { print(e.message) }

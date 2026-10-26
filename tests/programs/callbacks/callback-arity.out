@@ -1,0 +1,5 @@
+no params,no params 1,2 0,1
+null null null
+anonymous(a, b, c, d) expects 4 arguments, got 3
+Array.prototype.map: number is not a function
+Reduce of empty array with no initial value

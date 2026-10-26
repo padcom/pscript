@@ -1,0 +1,8 @@
+map caught map 2
+filter caught filter
+reduce caught reduce at 3
+sort caught compare
+3,1,2
+nested caught inner 1
+forEach caught stop
+3

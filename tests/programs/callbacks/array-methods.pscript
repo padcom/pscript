@@ -1,0 +1,15 @@
+// §10.10 / §4.6.4
+const xs = [5, 3, 8]
+xs.push(1)
+print(xs.filter(x => x > 3).map(x => x * 2).join(','))
+print(xs.reduce((a, b) => a + b, 0), xs.reduce((a, b) => a * b), xs.reduceRight((acc, x) => acc + x, ''))
+print([3, 1, 2].sort((a, b) => a - b).join(','), [10, 9, 1, 100].sort().join(','), ['b', 'a', 'c'].sort().join(''))
+print(xs.find(x => x > 6), xs.findIndex(x => x == 8), xs.findLast(x => x < 5), xs.findIndex(x => x > 100))
+print(xs.some(x => x > 7), xs.some(x => x > 70), xs.every(x => x > 0), xs.every(x => x > 1))
+print([[1, 2], [3], 4].flatMap(x => x).length, [1, 2].flatMap(x => [x, x * 10]).join())
+let seen = []
+xs.forEach((x, i) => seen.push(i + ':' + x))
+print(seen.join(' '))
+print(xs.map((x, i, all) => all.length - i).join(''))
+print(Array.from('abc', (c, i) => c + i).join(), Array.from({ length: 4 }, (_, i) => i * i).join())
+print([1, 2, 3].map(function (x) { return this.offset + x }, { offset: 100 }).join())

@@ -1,0 +1,18 @@
+function attempt(label, fn) {
+  try {
+    fn()
+    print(label, 'ok')
+  } catch (e) {
+    print(label, 'caught', e.message)
+  }
+}
+attempt('map', () => [1, 2, 3].map(x => { if (x == 2) throw new Error('map ' + x); return x }))
+attempt('filter', () => [1, 2].filter(x => { throw new RangeError('filter') }))
+attempt('reduce', () => [1, 2, 3].reduce((a, b) => { if (b == 3) throw new Error('reduce at ' + a); return a + b }))
+const data = [3, 1, 2]
+attempt('sort', () => data.sort(() => { throw new Error('compare') }))
+print(data.join())
+attempt('nested', () => [[1], [2]].map(inner => inner.map(x => { throw new Error('inner ' + x) })))
+let count = 0
+attempt('forEach', () => [1, 2, 3].forEach(x => { count += x; if (x == 2) throw new Error('stop') }))
+print(count)

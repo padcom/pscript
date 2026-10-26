@@ -10,7 +10,7 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "allowImportingTsExtensions": true,
-    "lib": ["ES2022"],
+    "lib": ["ES2023"],
     "types": ["node"],
     "paths": {
       "@/*": ["./src/*"]
