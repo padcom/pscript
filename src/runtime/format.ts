@@ -1,11 +1,13 @@
 // print formatting (§4.6.2, D18). Class instances (D35) and accessors (M16) come later.
 import { IDENT_PATTERN } from '@/parser/tokens'
+import { toStringIn } from './conversions'
 import { toString } from './operators'
 import {
   Array as ScriptArray,
   Class,
   Function as ScriptFunction,
   Object as ScriptObject,
+  type AccessContext,
   type Value,
 } from './values'
 
@@ -34,6 +36,8 @@ function placeholder(object: ScriptObject): string {
 class Formatter {
   private seen = new Set<ScriptObject>()
 
+  constructor(private ctx?: AccessContext) {}
+
   value(value: Value, depth: number): string {
     if (typeof value === 'string') return JSON.stringify(value)
 
@@ -44,7 +48,9 @@ class Formatter {
   private object(object: ScriptObject, depth: number): string {
     if (object instanceof ScriptFunction) return formatFunction(object)
 
-    return object.klass ? toString(object) : this.container(object, depth)
+    if (!object.klass) return this.container(object, depth)
+
+    return this.ctx ? toStringIn(this.ctx, object) : toString(object)
   }
 
   private container(object: ScriptObject, depth: number): string {
@@ -75,18 +81,20 @@ class Formatter {
  * Formats a value nested in an array or object: strings are double-quoted.
  *
  * @param value any value
+ * @param ctx access context, to call script `toString()` methods of class instances
  * @returns the formatted text
  */
-export function formatNested(value: Value): string {
-  return new Formatter().value(value, 0)
+export function formatNested(value: Value, ctx?: AccessContext): string {
+  return new Formatter(ctx).value(value, 0)
 }
 
 /**
  * Formats a top-level `print` argument: strings are printed raw.
  *
  * @param value any value
+ * @param ctx access context, to call script `toString()` methods of class instances
  * @returns the formatted text
  */
-export function formatValue(value: Value): string {
-  return typeof value === 'string' ? value : formatNested(value)
+export function formatValue(value: Value, ctx?: AccessContext): string {
+  return typeof value === 'string' ? value : formatNested(value, ctx)
 }

@@ -34,7 +34,7 @@ describe('keywords as property names (§4.2.4)', () => {
     ['x = { if() {} }', ['IDENT', '=', 'OBJ_LBRACE', 'IDENT', '(', ')', 'BLOCK_LBRACE', '}', '}', ';', 'EOF']],
     ['x = { a: 1, new: 2 }', ['IDENT', '=', 'OBJ_LBRACE', 'IDENT', ':', 'NUMBER', ',', 'IDENT', ':', 'NUMBER', '}', ';', 'EOF']],
     ['x = { a: new F() }', ['IDENT', '=', 'OBJ_LBRACE', 'IDENT', ':', 'NEW', 'IDENT', '(', ')', '}', ';', 'EOF']],
-    ['{ class: 1 }', ['BLOCK_LBRACE', 'CLASS', ':', 'NUMBER', ';', '}', 'EOF']],
+    ['{ class: 1 }', ['BLOCK_LBRACE', 'CLASS_DECLARATION', ':', 'NUMBER', ';', '}', 'EOF']],
   ])('%j', (source, tokens) => {
     expect(tokenize(source)).toEqual(tokens)
   })

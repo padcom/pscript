@@ -60,5 +60,13 @@ describe('§4.2.1 ASI consequences, continued', () => {
   it('let f = () => {\\n}\\nf() → two statements', () => {
     expect(parse('let f = () => {\n}\nf()').body.map(s => s.type)).toEqual(['VariableDeclaration', 'ExpressionStatement'])
   })
-  it.todo('class A {\\n x = 1\\n m() {}\\n} → field x ends with an inserted ; (M15)')
+})
+
+describe('§4.2.1 ASI consequences, classes', () => {
+  it('class A {\\n x = 1\\n m() {}\\n} → field x ends with an inserted ;', () => {
+    expect(parse('class A {\n x = 1\n m() {}\n}').body[0]).toMatchObject({
+      type: 'ClassDeclaration',
+      body: { body: [{ type: 'PropertyDefinition', key: { name: 'x' } }, { type: 'MethodDefinition', key: { name: 'm' } }] },
+    })
+  })
 })

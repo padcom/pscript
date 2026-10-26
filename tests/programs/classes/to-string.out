@@ -1,0 +1,6 @@
+User(name = "Ann", age = 30, tags = ["admin", "x\"y"], address = Address(city = "Oslo"))
+User(name = "Ann", age = 30, tags = ["admin", "x\"y"], address = Address(city = "Oslo"))
+Empty() [Empty()]
+Total: $5.00 $1.00
+Loop(self = [Circular])
+W:Wrapper()

@@ -18,8 +18,8 @@ export interface StdlibIO {
 }
 
 function writer(output: (text: string) => void): NativeImpl {
-  return (_, __, args) => {
-    output(args.map(formatValue).join(' '))
+  return (ctx, __, args) => {
+    output(args.map(arg => formatValue(arg, ctx)).join(' '))
 
     return null // natives that return nothing give null (D37)
   }

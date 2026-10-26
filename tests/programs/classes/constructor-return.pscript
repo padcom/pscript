@@ -1,0 +1,2 @@
+// @pscript-only: D25-D29, D36, D38
+class Bad { constructor() { return {} } }

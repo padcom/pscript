@@ -21,7 +21,31 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M12 | Callbacks and re-entrancy | done (2026-10-27) |
 | M13 | Standard library | done (2026-10-27) |
 | M14 | Template literals | done (2026-10-27) |
-| M15 | Classes | next |
+| M15 | Classes | done (2026-10-27) |
+| M16 | Accessors | next |
+
+## M15 — Classes
+
+Done: class and construction programs pass (`tests/programs/classes/`; JS-compatible ones also against Node and acorn). `npm run check` and `npm run build` green; 783 tests, no todos.
+
+What exists:
+
+- Grammar: class declarations (`CLASS_DECLARATION`) and expressions, `final class`, `extends LeftHandSideExpression`, class bodies (`CLASS_LBRACE`) with fields (`name`, `name = expr`), methods and a constructor; **all member modifiers are already parsed** in the fixed order `(public|protected|private)? static? final? override?` and stored on the AST (`access`, `static`, `final`, `override`) — only `static` has semantics so far (access: M17, override/final: M18). `super(...)`, `super.x`, `super[k]`. `src/parser/class-members.ts` checks modifier order/duplicates, private + final/override, constructor modifiers, a field named `constructor`; one constructor per class.
+- Token filter: `class` at statement start (or after a statement-starting `final`) → `CLASS_DECLARATION`; the class body brace (tracked by depth, like function-declaration bodies) → `CLASS_LBRACE` with a `{class}` / `{class-statement}` bracket (ASI applies inside; a declaration's `}` ends the statement); in member position, `final`/`override` before a modifier or name → `FINAL`/`OVERRIDE`, `final` before `class` → `FINAL`; keywords followed by `(`, `=`, `;`, `}` or a newline are member names (`static() {}`, `if = 1`). Special emit handling lives in the `EMIT_HOOKS` table.
+- Compiler: `src/compiler/class-info.ts` keeps member names per class declaration (keyed by binding) so that `this.x` (methods, constructor, initialisers and arrows in them; not nested `function`s) and `C.x` are **SyntaxErrors at compile time** when the whole chain is visible (superclass named directly and declared in the same compilation); otherwise `this.x` references go to `template.memberRefs`, checked by `CLASS` (TypeError). Class declarations are **constant** bindings (TDZ until evaluated). A `ClassTemplate` holds: constructor proto (kind `constructor` / `derivedConstructor`; ends with `THIS RETURN`; `return expr` → `SyntaxError: Constructors cannot return a value`, D27), `instanceFieldInit` / `staticInit` protos (`THIS <value or NULL> DEFINE_PROP k POP` per field), methods (kind `method`), field names, `memberRefs`, `isFinal`, and `bindsName`. Code: `[PUSH_ENV 1] <superclass>? CLASS k [POP_ENV]` — a named class gets a one-slot environment for its name.
+- **Contract addition:** `ClassTemplate.bindsName` — `CLASS` stores the class in slot 0 of the current environment before static initialisers run (so `static x = C.y` works). The "no superclass" case is handled by `template.hasSuper` (CLASS pops a superclass only then) — no `PUSH_EMPTY` needed.
+- `src/vm/classes.ts`: `defineClass` (superclass must be a class: `TypeError: Class extends value f is not a class`; prototype chained to the superclass's / `Object.prototype`; flattened `memberIndex` / `staticMemberIndex` copied from the superclass then extended with this class's methods and fields; method closures get `homeClass` and `homeObject` = prototype or class; `memberRefs` check; name slot; `extensible = false`; static initialiser runs with `this` = class), `superMember` (`GET_SUPER`), `hasInstanceMember` / `hasStaticMember`.
+- VM: `CLASS`, `SUPER_CALL`, `GET_SUPER`, `GET_SUPER_INDEX`; `THIS` in a derived constructor before `super()` → `ReferenceError: Must call super constructor before accessing 'this'`. Construction: a base class creates the instance (`klass` = newTarget, prototype = newTarget.prototype), runs its field initialiser, then its constructor; a derived constructor runs with `this` uninitialised and `SUPER_CALL` constructs the superclass part with the same newTarget (built-in classes construct natively, so `class E extends Error` works), then runs this class's field initialiser; an implied derived constructor passes the arguments through; a base class without constructor takes no arguments (D38). Constructors run in a nested dispatch loop (`runNested`, like callbacks). Frames take `homeClass`/`homeObject` from the closure; arrows capture them lexically.
+- Properties (D29, D36): class instances read own fields, then the class's methods (member index), then built-in prototype data/methods, else `TypeError: Point has no member 'z'`; writes allowed only to declared fields and inherited built-in data (`Cannot assign to method 'm' of class 'A'`, `… has no member …`). Classes read their statics (own and inherited), `name`, `length`, `Function.prototype` members, else `TypeError: Class 'C' has no member …`; new statics → `Cannot add property 'x' to class 'C': classes are not extensible`. `in` sees class members and never throws.
+- D35: `Object.prototype.toString` gives `ClassName(field = value, …)` for class instances (own data properties; nested values formatted like `print`, nested instances through their own `toString()`, cycles `[Circular]`); `super.toString()` gives it back from an override. `print`/`formatValue` take the access context so instances print through their (possibly overridden) `toString()`.
+- `Error.prototype` declares `message`, `stack`, `cause` (so they are known members of error subclasses).
+- Acorn oracle ignores `override`, `final`, `implements` (PScript class extensions).
+
+Notes / gaps:
+
+- Programs using `override` are `@pscript-only` (not JS syntax); M18 will make `override` mandatory where a member redefines an inherited one, so write it now.
+- Arrows created in a derived constructor before `super()` capture the uninitialised `this`.
+- `Object.keys`/`JSON.stringify`/D35 list all own fields until access modifiers (M17) hide non-public ones.
 
 ## M14 — Template literals
 

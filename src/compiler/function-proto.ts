@@ -133,6 +133,8 @@ export interface ClassTemplate {
   interfaceCount: number
   /** bare names resolved by `LOAD/STORE/CALL_IMPLICIT` */
   implicitNames: ImplicitName[]
+  /** a named class: slot 0 of the current environment holds its name and is set before static initialisers run */
+  bindsName?: boolean
 }
 
 /**

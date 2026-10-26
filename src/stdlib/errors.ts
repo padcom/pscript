@@ -68,7 +68,8 @@ function errorClass(realm: Realm, name: string, superClass: Class | null, protot
 export function installErrors(realm: Realm) {
   const base = errorClass(realm, 'Error', null, realm.ErrorPrototype)
 
-  realm.ErrorPrototype.props.set('message', '')
+  // declared members of Error instances (§4.5.9): `message` and `stack` are set by the constructor
+  realm.ErrorPrototype.props.set('message', '').set('stack', '').set('cause', null)
   defineMethods(realm, realm.ErrorPrototype, {
     toString: method(0, (_, self) => errorToString(self as ScriptObject)),
   })

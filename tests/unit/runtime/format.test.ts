@@ -12,7 +12,7 @@ describe('print formatting (D18)', () => {
   })
 
   it('prints primitives with String()', () => {
-    expect([42, -0, 0.0015, true, null, undefined, NaN].map(formatValue))
+    expect([42, -0, 0.0015, true, null, undefined, NaN].map(value => formatValue(value)))
       .toEqual(['42', '0', '0.0015', 'true', 'null', 'undefined', 'NaN'])
   })
 

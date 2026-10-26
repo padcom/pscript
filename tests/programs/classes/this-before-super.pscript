@@ -1,0 +1,6 @@
+// @pscript-only: D25-D29, D36, D38
+class A { x = 1 }
+class B extends A {
+  constructor() { this.x; super() }
+}
+new B()

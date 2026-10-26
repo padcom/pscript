@@ -1,5 +1,5 @@
 // The bytecode interpreter (§5.6).
-import type { CompiledScript, FunctionProto } from '@/compiler/function-proto'
+import type { ClassTemplate, CompiledScript, FunctionProto } from '@/compiler/function-proto'
 import { GlobalFlags, Op } from '@/compiler/opcodes'
 import { PScriptRuntimeError, formatExcerpt, type ScriptStackFrame } from '@/errors'
 import { addIn, toStringIn } from '@/runtime/conversions'
@@ -37,6 +37,7 @@ import {
   type Slot,
   type Value,
 } from '@/runtime/values'
+import { defineClass, superMember } from './classes'
 import type { Frame, Handler } from './frame'
 import { Globals } from './globals'
 
@@ -101,6 +102,16 @@ function hostStackOverflow(e: unknown): boolean {
   return e instanceof globalThis.RangeError && e.message.includes('call stack')
 }
 
+/** `this` of a derived constructor before `super(...)` */
+const NO_THIS = UNINITIALIZED as unknown as Value
+
+// In a derived constructor `this` is uninitialised until `super(...)` returns (§4.5.1).
+function initializedThis(frame: Frame): Value {
+  if (frame.thisValue === NO_THIS) throw referenceError("Must call super constructor before accessing 'this'")
+
+  return frame.thisValue
+}
+
 function nullish(value: Value): boolean {
   return value === null || value === undefined
 }
@@ -159,6 +170,8 @@ export class VM implements AccessContext {
     const frame = this.newFrame(proto, env, proto.kind === 'arrow' ? closure.thisValue ?? null : thisValue)
 
     frame.closure = closure
+    frame.homeClass = closure.homeClass
+    frame.homeObject = closure.homeObject
     this.frames.push(frame)
 
     return frame
@@ -317,10 +330,15 @@ export class VM implements AccessContext {
   }
 
   // Arrows that read `this` capture it from the creating frame (§4.4.5).
+  // Arrows capture `this` (when they read it) and the home class/object (for `super`, private access) lexically.
   private closure(proto: FunctionProto, frame: Frame): Closure {
     const closure = new Closure(this.realm.FunctionPrototype, proto, frame.env, null)
 
     if (proto.usesThis) closure.thisValue = frame.thisValue
+    if (proto.kind === 'arrow') {
+      closure.homeClass = frame.homeClass
+      closure.homeObject = frame.homeObject
+    }
 
     return closure
   }
@@ -340,9 +358,69 @@ export class VM implements AccessContext {
   // `new C(...)` (§5.6.3): built-in classes construct natively; script classes arrive with M15.
   private construct(callee: Value, args: Value[]): Value {
     if (!(callee instanceof ClassValue)) this.notAClass(callee)
-    if (!callee.native) throw new Error('Script classes are not implemented yet')
 
-    return callee.native.construct(this, callee, args)
+    return this.constructAs(callee, args, callee)
+  }
+
+  // Construction (§5.6.3): `newTarget` is the class `new` was applied to; `cls` the class whose part runs now.
+  private constructAs(cls: ClassValue, args: Value[], newTarget: ClassValue): ScriptObject {
+    if (cls.native) return cls.native.construct(this, newTarget, args)
+    if (!cls.superClass) return this.constructBase(cls, args, newTarget)
+    if (cls.ctor) return this.runConstructor(cls.ctor, NO_THIS, args, newTarget)
+
+    // implied `constructor(...args) { super(...args) }`
+    return this.initializeFields(cls, this.constructAs(cls.superClass, args, newTarget))
+  }
+
+  // A base class creates the instance (brand = newTarget), runs its field initialisers, then its constructor.
+  private constructBase(cls: ClassValue, args: Value[], newTarget: ClassValue): ScriptObject {
+    const instance = new ScriptObject(newTarget.prototype)
+
+    instance.klass = newTarget
+    this.initializeFields(cls, instance)
+
+    if (cls.ctor) return this.runConstructor(cls.ctor, instance, args, newTarget)
+    if (args.length > 0) throw typeError(`${cls.name || 'anonymous'}() expects 0 arguments, got ${args.length}`) // D38
+
+    return instance
+  }
+
+  private initializeFields(cls: ClassValue, instance: ScriptObject): ScriptObject {
+    if (cls.fieldInit) this.callFunction(cls.fieldInit, instance, [])
+
+    return instance
+  }
+
+  // Constructors end with `THIS RETURN`, so the nested run yields the instance.
+  private runConstructor(ctor: Closure, thisValue: Value, args: Value[], newTarget: ClassValue): ScriptObject {
+    const frame = this.enterClosure(ctor, args, thisValue)
+
+    frame.isConstruct = true
+    frame.newTarget = newTarget
+
+    return this.runNested() as ScriptObject
+  }
+
+  // `super(...)` in a derived constructor: construct the superclass part with the same newTarget, then this class's fields.
+  private superCall(frame: Frame, args: Value[]): ScriptObject {
+    const cls = frame.homeClass as ClassValue
+    if (frame.thisValue !== NO_THIS) throw referenceError('Super constructor may only be called once')
+
+    const instance = this.constructAs(cls.superClass as ClassValue, args, frame.newTarget as ClassValue)
+
+    frame.thisValue = instance
+
+    return this.initializeFields(cls, instance)
+  }
+
+  // `super.x`: the superclass's member (instance or static, by context), with the current `this` unaffected.
+  private superProperty(frame: Frame, key: string): Value {
+    const home = frame.homeClass
+    if (!home) throw typeError("'super' keyword unexpected here")
+
+    const isStatic = frame.homeObject === home
+
+    return superMember(this.realm, home, key, isStatic)
   }
 
   private notAClass(callee: Value): never {
@@ -582,7 +660,26 @@ export class VM implements AccessContext {
           break
         }
         case Op.CLOSURE: stack.push(this.closure(constants[code[ip++]] as FunctionProto, frame)); break
-        case Op.THIS: stack.push(frame.thisValue); break
+        case Op.THIS:
+          stack.push(initializedThis(frame))
+          break
+        case Op.CLASS: {
+          const template = constants[code[ip++]] as ClassTemplate
+          const superClass = template.hasSuper ? stack.pop() : undefined
+
+          frame.ip = ip
+          stack.push(defineClass(this, template, superClass, { env: frame.env, homeClass: frame.homeClass, constants }))
+          break
+        }
+        case Op.SUPER_CALL: {
+          const argc = code[ip++]
+
+          frame.ip = ip
+          stack.push(this.superCall(frame, stack.splice(stack.length - argc, argc)))
+          break
+        }
+        case Op.GET_SUPER: stack.push(this.superProperty(frame, constants[code[ip++]] as string)); break
+        case Op.GET_SUPER_INDEX: stack.push(this.superProperty(frame, propertyKey(stack.pop()))); break
 
         case Op.NEW: {
           const argc = code[ip++]

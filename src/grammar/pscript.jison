@@ -110,6 +110,7 @@ StatementList
 Statement
   : VariableDeclaration ';'
   | FunctionDeclaration
+  | ClassDeclaration
   | Block
   | RETURN ';'
     { $$ = yy.returnStatement(null, @$) }
@@ -166,6 +167,81 @@ Parameter
     { $$ = yy.assignmentPattern(yy.identifier($1, @1), $3, @$) }
   | '...' IDENT
     { $$ = yy.restElement(yy.identifier($2, @2), @$) }
+  ;
+
+/* Classes (§4.5). The token filter marks `class` at the start of a statement as CLASS_DECLARATION,
+   the class body brace as CLASS_LBRACE, and contextual modifiers (final, override) as keywords. */
+ClassDeclaration
+  : CLASS_DECLARATION IDENT ClassTail
+    { $$ = yy.classNode('ClassDeclaration', { id: yy.identifier($2, @2), final: false }, $3, @$) }
+  | FINAL CLASS_DECLARATION IDENT ClassTail
+    { $$ = yy.classNode('ClassDeclaration', { id: yy.identifier($3, @3), final: true }, $4, @$) }
+  ;
+
+ClassExpression
+  : CLASS ClassTail
+    { $$ = yy.classNode('ClassExpression', { id: null, final: false }, $2, @$) }
+  | CLASS IDENT ClassTail
+    { $$ = yy.classNode('ClassExpression', { id: yy.identifier($2, @2), final: false }, $3, @$) }
+  | FINAL CLASS ClassTail
+    { $$ = yy.classNode('ClassExpression', { id: null, final: true }, $3, @$) }
+  | FINAL CLASS IDENT ClassTail
+    { $$ = yy.classNode('ClassExpression', { id: yy.identifier($3, @3), final: true }, $4, @$) }
+  ;
+
+ClassTail
+  : ClassBody
+    { $$ = { superClass: null, body: $1 } }
+  | EXTENDS LeftHandSideExpression ClassBody
+    { $$ = { superClass: $2, body: $3 } }
+  ;
+
+ClassBody
+  : CLASS_LBRACE ClassElementList '}'
+    { $$ = yy.classBody($2, @$) }
+  ;
+
+ClassElementList
+  : /* empty */
+    { $$ = [] }
+  | ClassElementList ClassElement
+    { $$ = $2 ? $1.concat([$2]) : $1 }
+  ;
+
+ClassElement
+  : ';'
+    { $$ = null }
+  | MemberModifiers ClassMember
+    { $$ = yy.classMember($1, $2, @$) }
+  ;
+
+MemberModifiers
+  : /* empty */
+    { $$ = [] }
+  | MemberModifiers MemberModifier
+    { $$ = $1.concat([{ name: $2.toLowerCase(), loc: @2 }]) }
+  ;
+
+MemberModifier
+  : PUBLIC | PROTECTED | PRIVATE | STATIC | FINAL | OVERRIDE
+  ;
+
+ClassMember
+  : ClassMemberName '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
+    { $$ = { kind: 'method', key: $1, params: $3, body: yy.block($6, @5), loc: @$ } }
+  | ClassMemberName ';'
+    { $$ = { kind: 'field', key: $1, value: null, loc: @$ } }
+  | ClassMemberName '=' AssignmentExpression ';'
+    { $$ = { kind: 'field', key: $1, value: $3, loc: @$ } }
+  ;
+
+ClassMemberName
+  : IDENT
+    { $$ = yy.identifier($1, @$) }
+  | STRING
+    { $$ = yy.stringLiteral($1, @$) }
+  | NUMBER
+    { $$ = yy.numberLiteral($1, @$) }
   ;
 
 IfStatement
@@ -394,11 +470,17 @@ MemberExpression
     { $$ = yy.member($1, $3, true, @$) }
   | NEW MemberExpression Arguments
     { $$ = yy.newExpression($2, $3, @$) }
+  | SUPER '.' IDENT
+    { $$ = yy.member(yy.superNode(@1), yy.identifier($3, @3), false, @$) }
+  | SUPER '[' Expression ']'
+    { $$ = yy.member(yy.superNode(@1), $3, true, @$) }
   ;
 
 CallExpression
   : MemberExpression Arguments
     { $$ = yy.call($1, $2, @$) }
+  | SUPER Arguments
+    { $$ = yy.call(yy.superNode(@1), $2, @$) }
   | CallExpression Arguments
     { $$ = yy.call($1, $2, @$) }
   | CallExpression '.' IDENT
@@ -442,6 +524,7 @@ PrimaryExpression
   | THIS
     { $$ = yy.thisExpression(@$) }
   | FunctionExpression
+  | ClassExpression
   | ObjectLiteral
   | ArrayLiteral
   | '(' Expression ')'

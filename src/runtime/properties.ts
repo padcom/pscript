@@ -5,9 +5,11 @@ import { isObject, kindOf, toString } from './operators'
 import { rangeError, typeError } from './script-error'
 import {
   Array as ScriptArray,
+  Class,
   Function as ScriptFunction,
   Object as ScriptObject,
   type AccessContext,
+  type MemberEntry,
   type Realm,
   type Value,
 } from './values'
@@ -68,11 +70,42 @@ function getArray(array: ScriptArray, key: string): Value {
   return array.items[index]
 }
 
-function getFunction(fn: ScriptFunction, key: string): Value {
-  if (fn.props.has(key)) return fn.props.get(key) as Value
-  if (key === 'name') return fn.name
+// A found property: `[value]`, or null when the key is not there (undefined is a valid value).
+type Found = [Value] | null
 
-  return key === 'length' ? fn.length : lookup(fn.proto, key)
+function find(object: ScriptObject | null, key: string): Found {
+  for (let current = object; current; current = current.proto) {
+    if (current.props.has(key)) return [current.props.get(key) as Value]
+  }
+
+  return null
+}
+
+function own(object: ScriptObject, key: string): Found {
+  return object.props.has(key) ? [object.props.get(key) as Value] : null
+}
+
+function className(cls: Class): string {
+  return cls.name || 'anonymous'
+}
+
+function noMember(owner: string, key: string): never {
+  throw typeError(`${owner} has no member '${key}'`)
+}
+
+function orNoMember(found: Found, owner: string, key: string): Value {
+  return (found ?? noMember(owner, key))[0]
+}
+
+function functionProperty(fn: ScriptFunction, key: string): Found {
+  if (key === 'name') return [fn.name]
+
+  return key === 'length' ? [fn.length] : null
+}
+
+// Functions are open objects: own properties, name/length, Function.prototype; anything else is undefined.
+function getFunction(fn: ScriptFunction, key: string): Value {
+  return (own(fn, key) ?? functionProperty(fn, key) ?? find(fn.proto, key) ?? [undefined])[0]
 }
 
 function getGlobal(object: GlobalObject, key: string): Value {
@@ -81,10 +114,43 @@ function getGlobal(object: GlobalObject, key: string): Value {
   return binding ? binding.value : lookup(object.proto, key)
 }
 
+// A declared member: methods give their function; a declared field not initialised yet reads as null (D37).
+function memberValue(entry: MemberEntry | undefined): Found {
+  return entry ? [entry.fn ?? null] : null
+}
+
+// Class instances have exactly their declared members (D36): own fields, the class's methods, built-in prototype members.
+function getInstance(object: ScriptObject, klass: Class, key: string): Value {
+  const found = own(object, key) ?? memberValue(klass.memberIndex.get(key)) ?? find(object.proto, key)
+
+  return orNoMember(found, className(klass), key)
+}
+
+// Static fields live on the class that declares them and are inherited by subclasses.
+function ownStatic(cls: Class, key: string): Found {
+  let found: Found = null
+
+  for (let current: Class | null = cls; current && !found; current = current.superClass) found = own(current, key)
+
+  return found
+}
+
+// Classes have their statics, `name`, `length` and Function.prototype members, nothing else (D29, D36).
+function getClass(cls: Class, key: string): Value {
+  const found = ownStatic(cls, key) ?? memberValue(cls.staticMemberIndex.get(key)) ?? functionProperty(cls, key)
+
+  return orNoMember(found ?? find(cls.proto, key), `Class '${cls.name}'`, key)
+}
+
+function getPlain(object: ScriptObject, key: string): Value {
+  return object instanceof ScriptFunction ? getFunction(object, key) : lookup(object, key)
+}
+
 function getExotic(object: ScriptObject, key: string): Value {
   if (object instanceof GlobalObject) return getGlobal(object, key)
+  if (object instanceof Class) return getClass(object, key)
 
-  return object instanceof ScriptFunction ? getFunction(object, key) : lookup(object, key)
+  return object.klass ? getInstance(object, object.klass, key) : getPlain(object, key)
 }
 
 function getObject(object: ScriptObject, key: string): Value {
@@ -154,14 +220,49 @@ function setArrayElement(array: ScriptArray, key: string, value: Value) {
   else setArray(array, key, value)
 }
 
-function setObject(object: ScriptObject, key: string, value: Value) {
-  if (object instanceof ScriptArray) {
-    setArrayElement(object, key, value)
+// An own field, or inherited built-in data (e.g. an error's `name`) that the instance may shadow.
+function hasData(object: ScriptObject, key: string): boolean {
+  return object.props.has(key) || find(object.proto, key) !== null
+}
 
-    return
+function cannotAssignMethod(entry: MemberEntry | undefined, key: string) {
+  if (entry?.kind === 'method') throw typeError(`Cannot assign to method '${key}' of class '${entry.owner.name}'`)
+}
+
+// Instances: declared fields (and inherited built-in data such as an error's `name`) are writable; methods and
+// undeclared names are not (D29, D36).
+function setInstance(object: ScriptObject, klass: Class, key: string, value: Value) {
+  const entry = klass.memberIndex.get(key)
+
+  cannotAssignMethod(entry, key)
+
+  if (!entry && !hasData(object, key)) noMember(className(klass), key)
+  checkFrozen(object, key)
+  object.props.set(key, value)
+}
+
+// Classes: static fields (own or inherited) are writable; static methods, name/length and new names are not (D29).
+function setClass(cls: Class, key: string, value: Value) {
+  const entry = cls.staticMemberIndex.get(key)
+
+  cannotAssignMethod(entry, key)
+
+  if (!(cls.props.has(key) || entry)) {
+    throw typeError(`Cannot add property '${key}' to class '${cls.name}': classes are not extensible`)
   }
+  cls.props.set(key, value)
+}
+
+function setOrdinary(object: ScriptObject, key: string, value: Value) {
   checkWritable(object, key)
   object.props.set(key, value)
+}
+
+function setObject(object: ScriptObject, key: string, value: Value) {
+  if (object instanceof ScriptArray) setArrayElement(object, key, value)
+  else if (object instanceof Class) setClass(object, key, value)
+  else if (object.klass) setInstance(object, object.klass, key, value)
+  else setOrdinary(object, key, value)
 }
 
 /**

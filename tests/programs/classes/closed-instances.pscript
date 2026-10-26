@@ -1,0 +1,16 @@
+// @pscript-only: closed class instances (D36) and sealed classes (D29)
+class Point {
+  x = 0
+  move(dx) { this.x += dx }
+}
+const p = new Point()
+p.move(5)
+print(p.x, 'z' in p, 'x' in p, 'move' in p)
+try { p.color = 'red' } catch (e) { print(e.message) }
+try { print(p.z) } catch (e) { print(e.message) }
+try { p.move = null } catch (e) { print(e.message) }
+const P = Point
+try { P.extra = 1 } catch (e) { print(e.message) }
+const bag = { x: 1 }
+bag.color = 'red'
+print(bag.color, bag.size)

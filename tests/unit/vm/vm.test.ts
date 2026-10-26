@@ -50,7 +50,9 @@ describe('vm', () => {
   })
 
   it('reports unimplemented opcodes', () => {
-    expect(() => vm().execute({ main: proto([Op.CLASS, 0, Op.HALT]) })).toThrow('Opcode CLASS is not implemented')
+    const main = proto([Op.GET_PROP_PRIV, 0, 0, Op.HALT])
+
+    expect(() => vm().execute({ main })).toThrow('Opcode GET_PROP_PRIV is not implemented')
   })
 })
 

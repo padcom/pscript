@@ -7,7 +7,10 @@ import { describe, expect, it } from 'vitest'
 import { parse } from '@/parser/parse'
 
 const root = join(import.meta.dirname, 'programs')
-const IGNORED_KEYS = new Set(['start', 'end', 'loc', 'range', 'access', 'generator', 'async', 'directive'])
+// positions, PScript's class extensions (access, override, final, implements), and acorn-only flags
+const IGNORED_KEYS = new Set(['start', 'end', 'loc', 'range', 'access', 'override', 'final', 'implements', 'generator', 'async'])
+
+IGNORED_KEYS.add('directive')
 
 const programs = readdirSync(root, { recursive: true, encoding: 'utf8' })
   .filter(file => file.endsWith('.pscript'))

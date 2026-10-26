@@ -1,0 +1,1 @@
+classes/undeclared-this-member.pscript:4:12 SyntaxError: Class 'Point' has no member 'z'

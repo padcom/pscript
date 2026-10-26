@@ -1,0 +1,24 @@
+// @pscript-only: default toString of class instances (D35) and print formatting
+class Address { city = 'Oslo' }
+class User {
+  name = 'Ann'
+  age = 30
+  tags = ['admin', "x\"y"]
+  address = new Address()
+}
+print(`${new User()}`)
+print(new User())
+class Empty {}
+print(new Empty(), [new Empty()])
+class Money {
+  amount
+  constructor(amount) { this.amount = amount }
+  override toString() { return `$${this.amount.toFixed(2)}` }
+}
+print(`Total: ${new Money(5)}`, new Money(1))
+class Loop { self = null }
+const loop = new Loop()
+loop.self = loop
+print(loop)
+class Wrapper { override toString() { return 'W:' + super.toString() } }
+print(new Wrapper())

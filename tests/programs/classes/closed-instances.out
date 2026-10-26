@@ -1,0 +1,6 @@
+5 false true true
+Point has no member 'color'
+Point has no member 'z'
+Cannot assign to method 'move' of class 'Point'
+Cannot add property 'extra' to class 'Point': classes are not extensible
+red undefined

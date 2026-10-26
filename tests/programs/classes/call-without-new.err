@@ -1,0 +1,1 @@
+classes/call-without-new.pscript:3:1 TypeError: Class constructor Point cannot be invoked without 'new'

@@ -9,6 +9,9 @@ import type {
   BlockStatement,
   BreakStatement,
   CatchClause,
+  ClassBody,
+  ClassDeclaration,
+  ClassExpression,
   ContinueStatement,
   ForOfStatement,
   ForStatement,
@@ -34,6 +37,7 @@ import type {
   ReturnStatement,
   SourceLocation,
   Statement,
+  Super,
   TemplateElement,
   TemplateLiteral,
   ThisExpression,
@@ -94,6 +98,28 @@ export function sourceLoc(source: string): SourceLocation {
 export type ForHeader = Pick<ForStatement, 'init' | 'test' | 'update'>
 
 export type FunctionNode = FunctionDeclaration | FunctionExpression
+
+export type ClassNode = ClassDeclaration | ClassExpression
+
+/**
+ * Name and `final` flag of a class.
+ */
+export interface ClassHead {
+  /** class name, if any */
+  id: Identifier | null
+  /** `final class` */
+  final: boolean
+}
+
+/**
+ * `extends` clause and body of a class.
+ */
+export interface ClassTail {
+  /** the `extends` expression */
+  superClass: Expression | null
+  /** the class body */
+  body: ClassBody
+}
 
 export type FunctionType = FunctionNode['type']
 
@@ -156,6 +182,18 @@ export const builders = {
 
   member(object: Expression, property: Expression, computed: boolean, loc: JisonLoc): MemberExpression {
     return { type: 'MemberExpression', object, property, computed, optional: false, loc: toLoc(loc) }
+  },
+
+  classNode(type: ClassNode['type'], { id, final }: ClassHead, { superClass, body }: ClassTail, loc: JisonLoc): ClassNode {
+    return { type, id, superClass, body, final, implements: [], loc: toLoc(loc) } as ClassNode
+  },
+
+  classBody(body: ClassBody['body'], loc: JisonLoc): ClassBody {
+    return { type: 'ClassBody', body, loc: toLoc(loc) }
+  },
+
+  superNode(loc: JisonLoc): Super {
+    return { type: 'Super', loc: toLoc(loc) }
   },
 
   template(quasis: TemplateElement[], expressions: Expression[], loc: JisonLoc): TemplateLiteral {

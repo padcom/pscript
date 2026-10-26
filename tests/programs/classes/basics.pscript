@@ -1,0 +1,12 @@
+// @pscript-only (the override modifier, D28): §10.14
+class Point {
+  x = 0
+  y = 0
+  constructor(x, y) { this.x = x; this.y = y }
+  plus(other) { return new Point(this.x + other.x, this.y + other.y) }
+  override toString() { return '(' + this.x + ', ' + this.y + ')' }
+  static of(x, y) { return new Point(x, y) }
+}
+const p = Point.of(1, 2).plus(new Point(3, 4))
+print(p.toString(), p instanceof Point, typeof Point)
+print(`${p}`, p.x, p.y)

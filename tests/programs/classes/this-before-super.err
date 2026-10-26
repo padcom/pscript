@@ -1,0 +1,1 @@
+ReferenceError: Must call super constructor before accessing 'this'

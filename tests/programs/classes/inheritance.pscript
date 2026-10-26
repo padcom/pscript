@@ -1,0 +1,20 @@
+// @pscript-only (the override modifier, D28): §10.15
+class Animal {
+  name
+  constructor(name) { this.name = name }
+  speak() { return this.name + ' makes a sound' }
+}
+class Dog extends Animal {
+  tricks = []
+  constructor(name) {
+    super(name)
+    this.tricks.push('sit')
+  }
+  override speak() { return super.speak() + ': woof' }
+}
+const d = new Dog('Rex')
+print(d.speak())
+print(d instanceof Dog, d instanceof Animal, ({}) instanceof Animal, new Animal('x') instanceof Dog)
+class Puppy extends Dog {}
+const pup = new Puppy('Bit')
+print(pup.speak(), pup.tricks.join(), pup instanceof Animal)

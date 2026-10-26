@@ -9,6 +9,8 @@ import type {
   BlockStatement,
   BreakStatement,
   CatchClause,
+  ClassDeclaration,
+  ClassExpression,
   CallExpression,
   ConditionalExpression,
   ContinueStatement,
@@ -22,16 +24,19 @@ import type {
   Literal,
   LogicalExpression,
   MemberExpression,
+  MethodDefinition,
   NewExpression,
   Node,
   ObjectExpression,
   Pattern,
   Program,
   Property,
+  PropertyDefinition,
   ReturnStatement,
   SourceLocation,
   Statement,
   TemplateLiteral,
+  ThisExpression,
   ThrowStatement,
   TryStatement,
   UnaryExpression,
@@ -41,7 +46,16 @@ import type {
 } from '@/parser/ast'
 import type { FunctionNode } from '@/parser/ast-builders'
 import { parse } from '@/parser/parse'
-import type { CompiledScript, FunctionKind, FunctionProto } from './function-proto'
+import { classInfoOf, hasMember, keyName, type ClassInfo } from './class-info'
+import type {
+  ClassFieldTemplate,
+  ClassMemberRef,
+  ClassMethodTemplate,
+  ClassTemplate,
+  CompiledScript,
+  FunctionKind,
+  FunctionProto,
+} from './function-proto'
 import { GlobalFlags, Op } from './opcodes'
 import { ProtoBuilder } from './proto-builder'
 import { Scope, type Binding, type BindingKind } from './scope'
@@ -61,6 +75,10 @@ function paramName(param: Pattern): Identifier {
   return param.type === 'AssignmentPattern' ? param.left : param.argument
 }
 
+function fieldTemplate({ key, access, static: isStatic, override, final, loc }: PropertyDefinition): ClassFieldTemplate {
+  return { key: keyName(key), access, isStatic, override, final, loc }
+}
+
 function isFunction(node: Expression | null): node is FunctionExpression | ArrowFunctionExpression {
   return node?.type === 'FunctionExpression' || node?.type === 'ArrowFunctionExpression'
 }
@@ -71,6 +89,8 @@ function constSignature(kind: BindingKind, id: Identifier, init: Expression | nu
 }
 
 type AnyFunction = FunctionNode | ArrowFunctionExpression
+
+type ClassNode = ClassDeclaration | ClassExpression
 
 /** Slot of the completion value in the script's top environment (§4.4.10). */
 const COMPLETION_SLOT = 0
@@ -129,12 +149,13 @@ const EXPRESSIONS: { [K in Expression['type']]?: Handler<Extract<Expression, { t
   UpdateExpression: (c, node) => c.update(node),
   FunctionExpression: (c, node) => c.functionExpression(node),
   ArrowFunctionExpression: (c, node) => c.closure(c.functionProto(node, '')),
-  ThisExpression: c => c.thisExpression(),
+  ThisExpression: (c, node) => c.thisExpression(node),
   NewExpression: (c, node) => c.newExpression(node),
   MemberExpression: (c, node) => c.member(node),
   ObjectExpression: (c, node) => c.object(node),
   ArrayExpression: (c, node) => c.array(node),
   TemplateLiteral: (c, node) => c.template(node),
+  ClassExpression: (c, node) => c.classExpression(node),
 }
 
 /**
@@ -167,6 +188,7 @@ const STATEMENTS: { [K in Statement['type']]?: Handler<Extract<Statement, { type
   BreakStatement: (c, node) => c.jump(node, 'breaks'),
   ContinueStatement: (c, node) => c.jump(node, 'continues'),
   ReturnStatement: (c, node) => c.returnStatement(node),
+  ClassDeclaration: (c, node) => c.classDeclaration(node),
   ThrowStatement: (c, node) => c.throwStatement(node),
   TryStatement: (c, node) => c.tryStatement(node),
   FunctionDeclaration: () => {}, // hoisted to the start of its scope
@@ -221,11 +243,48 @@ interface FunctionContext {
   regions: HandlerRegion[]
   /** values the compiler keeps on the stack across statements (for-of iterators, finally records) */
   stackItems: number
+  /** the class body this code belongs to (methods, constructor, initialisers and arrows inside them) */
+  classContext: ClassContext | null
+  /** compiling a constructor (its own body, not arrows inside it) */
+  isConstructor: boolean
+  /** `super(...)` is allowed: a derived constructor, or an arrow inside one */
+  superCall: boolean
+}
+
+/**
+ * The class a piece of code belongs to (§4.5.9).
+ */
+interface ClassContext {
+  /** what the compiler knows about the class */
+  info: ClassInfo
+  /** static context (`this` is the class) */
+  isStatic: boolean
+  /** unproven `this.x` references, checked by CLASS */
+  memberRefs: ClassMemberRef[]
+}
+
+/**
+ * Class-related settings for a function being compiled.
+ */
+interface FunctionOptions {
+  /** the class the function belongs to */
+  classContext?: ClassContext | null
+  /** a constructor */
+  isConstructor?: boolean
+  /** a derived constructor (`super(...)` allowed) */
+  superCall?: boolean
 }
 
 // Arrows read the `this` of the enclosing function: mark the arrow and every arrow around it up to that function.
 function markArrowsUsingThis(fn: FunctionContext | null) {
   for (let context = fn; context?.isArrow; context = context.parent) context.usesThis = true
+}
+
+/** Pre-scan (§5.5): the lexical declarations of a statement list. Classes are constant bindings. */
+const DECLARATIONS: Partial<Record<Statement['type'], (c: Compiler, node: any, scope: Scope) => void>> = {
+  VariableDeclaration: (c, node, scope) => c.declareVariables(node, scope),
+  FunctionDeclaration: (c, node, scope) => c.declareFunction(node, scope),
+  ClassDeclaration: (c, node: ClassDeclaration, scope) => c.declareName(scope, node.id, 'const'),
 }
 
 class Compiler {
@@ -239,7 +298,13 @@ class Compiler {
     usesThis: false,
     regions: [],
     stackItems: 0,
+    classContext: null,
+    isConstructor: false,
+    superCall: false,
   }
+
+  /** compile-time knowledge of class declarations, by binding (§4.5.9) */
+  private classInfos = new Map<Binding, ClassInfo>()
 
   constructor(private source: string | undefined, private fileName: string | undefined) {}
 
@@ -288,21 +353,18 @@ class Compiler {
 
   // Pre-scan of a statement list: collects its lexical declarations (§5.5).
   private declare(body: Statement[], scope: Scope) {
-    for (const statement of body) {
-      if (statement.type === 'VariableDeclaration') this.declareVariables(statement, scope)
-      if (statement.type === 'FunctionDeclaration') this.declareFunction(statement, scope)
-    }
+    for (const statement of body) DECLARATIONS[statement.type]?.(this, statement, scope)
   }
 
-  private declareFunction({ id, params }: FunctionDeclaration, scope: Scope) {
+  declareFunction({ id, params }: FunctionDeclaration, scope: Scope) {
     this.declareName(scope, id, 'function', signatureOf(id.name, params))
   }
 
-  private declareVariables(node: VariableDeclaration, scope: Scope) {
+  declareVariables(node: VariableDeclaration, scope: Scope) {
     for (const { id, init } of node.declarations) this.declareName(scope, id, node.kind, constSignature(node.kind, id, init))
   }
 
-  private declareName(scope: Scope, id: Identifier, kind: BindingKind, signature?: Signature) {
+  declareName(scope: Scope, id: Identifier, kind: BindingKind, signature?: Signature) {
     if (!scope.declare(id.name, kind, signature)) throw this.error(`Identifier '${id.name}' has already been declared`, id.loc)
   }
 
@@ -591,6 +653,207 @@ class Compiler {
   }
 
   // ---------------------------------------------------------------------------
+  // Classes (§4.5)
+
+  classDeclaration(node: ClassDeclaration) {
+    this.compileClass(node, node.id.name)
+    this.initialize(node.id.name)
+    const resolution = this.scope.resolve(node.id.name)
+
+    if (resolution.where !== 'global') this.classInfos.set(resolution.binding, this.lastClassInfo as ClassInfo)
+  }
+
+  classExpression(node: ClassExpression, name = '') {
+    this.compileClass(node, node.id?.name ?? name)
+  }
+
+  private lastClassInfo: ClassInfo | null = null
+
+  // <superclass> CLASS k; a named class gets a one-slot environment holding its name (set by CLASS).
+  private compileClass(node: ClassNode, name: string) {
+    const info = classInfoOf(node, name, this.knownSuperClass(node))
+    const outer = this.scope
+    const named = Boolean(node.id)
+
+    this.lastClassInfo = info
+
+    if (named) this.enterClassScope(node.id as Identifier, info)
+    const template = this.classTemplate(node, info)
+
+    if (node.superClass) this.expression(node.superClass)
+    this.emitAt(node.loc, Op.CLASS, this.out.constant(template))
+
+    if (!named) return
+    this.scope = outer
+    this.out.emit(Op.POP_ENV)
+  }
+
+  private enterClassScope(id: Identifier, info: ClassInfo) {
+    const scope = new Scope(this.scope, 'block')
+    const binding = scope.declare(id.name, 'const') as Binding
+
+    this.classInfos.set(binding, info)
+    this.enterScope(scope)
+  }
+
+  // null: no superclass; undefined: a superclass the compiler cannot see.
+  private knownSuperClass({ superClass }: ClassNode): ClassInfo | null | undefined {
+    if (!superClass) return null
+
+    return superClass.type === 'Identifier' ? this.classNamed(superClass.name) : undefined
+  }
+
+  // The class a name refers to, when it is a class declaration the compiler knows.
+  private classNamed(name: string): ClassInfo | undefined {
+    const resolution = this.scope.resolve(name)
+
+    return resolution.where === 'global' ? undefined : this.classInfos.get(resolution.binding)
+  }
+
+  private classTemplate(node: ClassNode, info: ClassInfo): ClassTemplate {
+    const members = node.body.body
+    const memberRefs: ClassMemberRef[] = []
+    const context = (isStatic: boolean): ClassContext => ({ info, isStatic, memberRefs })
+    const methods = members.filter((m): m is MethodDefinition => m.type === 'MethodDefinition')
+    const fields = members.filter((m): m is PropertyDefinition => m.type === 'PropertyDefinition')
+    const constructorNode = methods.find(method => method.kind === 'constructor')
+
+    return {
+      name: info.name,
+      hasSuper: node.superClass !== null,
+      constructor: constructorNode ? this.constructorProto(constructorNode, node.superClass !== null, context(false)) : null,
+      instanceFieldInit: this.initializerProto(fields.filter(f => !f.static), 'fieldInit', context(false)),
+      staticInit: this.initializerProto(fields.filter(f => f.static), 'staticInit', context(true)),
+      isFinal: node.final,
+      methods: methods.filter(m => m.kind !== 'constructor').map(method => this.methodTemplate(method, context(method.static))),
+      memberRefs,
+      fields: fields.map(fieldTemplate),
+      interfaceCount: 0,
+      implicitNames: [],
+      bindsName: node.id !== null,
+    }
+  }
+
+  private constructorProto(node: MethodDefinition, derived: boolean, classContext: ClassContext): FunctionProto {
+    const kind = derived ? 'derivedConstructor' : 'constructor'
+
+    return this.functionProto(node.value, classContext.info.name, kind, { classContext, isConstructor: true, superCall: derived })
+  }
+
+  private methodTemplate(node: MethodDefinition, classContext: ClassContext): ClassMethodTemplate {
+    const key = keyName(node.key)
+    const proto = this.functionProto(node.value, key, 'method', { classContext })
+
+    return {
+      key,
+      kind: 'method',
+      access: node.access,
+      isStatic: node.static,
+      protoIndex: this.out.constant(proto),
+      override: node.override,
+      final: node.final,
+      loc: node.loc,
+    }
+  }
+
+  // Field initialisers run with `this` = the instance (or the class for statics): THIS <value> DEFINE_PROP k POP …
+  private initializerProto(fields: PropertyDefinition[], kind: FunctionKind, classContext: ClassContext): FunctionProto | null {
+    if (fields.length === 0) return null
+
+    const outer = this.fn
+
+    this.fn = this.functionContext(new ProtoBuilder({ name: '<initializer>', kind }), false, { classContext })
+
+    try {
+      for (const field of fields) this.fieldInitializer(field)
+      this.out.emit(Op.NULL)
+      this.out.emit(Op.RETURN)
+      this.out.scopeSize = this.scope.bindings.size
+
+      return this.out.build()
+    } finally {
+      this.fn = outer
+    }
+  }
+
+  private fieldInitializer({ key, value, loc }: PropertyDefinition) {
+    const name = keyName(key)
+
+    this.out.emit(Op.THIS)
+
+    if (value) this.namedExpression(value, name)
+    else this.out.emit(Op.NULL) // fields without initialiser start as null (D37)
+    this.emitAt(loc, Op.DEFINE_PROP, this.out.constant(name))
+    this.out.emit(Op.POP)
+  }
+
+  // `this.x` / `C.x` with a name the class chain does not declare (D36): SyntaxError when the chain is
+  // visible, otherwise recorded for the CLASS instruction (this.x only).
+  private checkMember({ object, property, computed, loc }: MemberExpression, use: ClassMemberRef['kind']) {
+    if (computed) return
+
+    const { name } = property as Identifier
+
+    if (object.type === 'ThisExpression') this.checkThisMember(name, use, loc)
+    else if (object.type === 'Identifier') this.checkStaticMember(object.name, name, loc)
+  }
+
+  private checkThisMember(name: string, kind: ClassMemberRef['kind'], loc: SourceLocation) {
+    const context = this.fn.classContext
+    if (!context || hasMember(context.info, name, context.isStatic)) return
+    if (context.info.visible) throw this.error(`Class '${context.info.name}' has no member '${name}'`, loc)
+    context.memberRefs.push({ name, isStatic: context.isStatic, kind, loc })
+  }
+
+  private checkStaticMember(className: string, name: string, loc: SourceLocation) {
+    const info = this.classNamed(className)
+
+    if (info?.visible && !hasMember(info, name, true)) throw this.error(`Class '${info.name}' has no member '${name}'`, loc)
+  }
+
+  // `super(...)` in a derived constructor (or an arrow inside one): SUPER_CALL argc → this.
+  private superCall(node: CallExpression) {
+    if (!this.fn.superCall) throw this.error("'super' keyword unexpected here", node.callee.loc)
+    for (const argument of node.arguments) this.expression(argument)
+    this.emitAt(node.loc, Op.SUPER_CALL, node.arguments.length)
+  }
+
+  private requireSuperProperty(loc: SourceLocation) {
+    if (!this.fn.classContext) throw this.error("'super' keyword unexpected here", loc)
+  }
+
+  // `super.x` / `super[k]`: read-only lookups on the superclass (GET_SUPER / GET_SUPER_INDEX).
+  private superReference(target: MemberExpression): Reference {
+    this.requireSuperProperty(target.loc)
+
+    return {
+      baseSize: 0,
+      prepare: () => {},
+      get: () => this.superGet(target),
+      set: () => {
+        throw this.error("Assignment to 'super' properties is not supported", target.loc)
+      },
+    }
+  }
+
+  private superGet({ property, computed, loc }: MemberExpression) {
+    if (!computed) {
+      this.emitAt(loc, Op.GET_SUPER, this.out.constant((property as Identifier).name))
+
+      return
+    }
+    this.expression(property)
+    this.emitAt(loc, Op.GET_SUPER_INDEX)
+  }
+
+  // `super.m(x)` → THIS GET_SUPER m <x> CALL_METHOD 1 (§5.5).
+  private superMethodCallee(callee: MemberExpression) {
+    this.requireSuperProperty(callee.loc)
+    this.out.emit(Op.THIS)
+    this.superGet(callee)
+  }
+
+  // ---------------------------------------------------------------------------
   // Exceptions (§4.4.9, §5.6.5)
 
   throwStatement(node: ThrowStatement) {
@@ -687,6 +950,7 @@ class Compiler {
   private namedExpression(node: Expression, name: string) {
     if (node.type === 'FunctionExpression') this.functionExpression(node, name)
     else if (node.type === 'ArrowFunctionExpression') this.closure(this.functionProto(node, name))
+    else if (node.type === 'ClassExpression') this.classExpression(node, name)
     else this.expression(node)
   }
 
@@ -774,7 +1038,11 @@ class Compiler {
 
   call(node: CallExpression) {
     const { callee } = node
-    if (callee.type === 'Super') throw this.unsupported(node)
+    if (callee.type === 'Super') {
+      this.superCall(node)
+
+      return
+    }
     this.checkArity(callee, node.arguments.length, node.loc)
 
     const isMethod = this.callee(callee)
@@ -796,8 +1064,15 @@ class Compiler {
   }
 
   // `o.m(x)` → <o> DUP GET_PROP m <x> CALL_METHOD 1: the receiver stays below the function (§5.5).
-  private methodCallee({ object, property, computed, loc }: MemberExpression) {
-    if (object.type === 'Super') throw this.unsupported(object)
+  private methodCallee(callee: MemberExpression) {
+    const { object, property, computed, loc } = callee
+
+    if (object.type === 'Super') {
+      this.superMethodCallee(callee)
+
+      return
+    }
+    this.checkMember(callee, 'call')
     this.expression(object)
     this.out.emit(Op.DUP)
 
@@ -867,9 +1142,13 @@ class Compiler {
   // Assignment targets
 
   // An assignment target: a name, `o.k` (the object stays on the stack) or `o[k]` (object and key stay).
-  private reference(target: Identifier | MemberExpression): Reference {
-    if (target.type === 'Identifier') return this.nameReference(target)
-    if (target.object.type === 'Super') throw this.unsupported(target)
+  private reference(target: Identifier | MemberExpression, use: ClassMemberRef['kind'] = 'read'): Reference {
+    return target.type === 'Identifier' ? this.nameReference(target) : this.memberReference(target, use)
+  }
+
+  private memberReference(target: MemberExpression, use: ClassMemberRef['kind']): Reference {
+    if (target.object.type === 'Super') return this.superReference(target)
+    this.checkMember(target, use)
 
     return target.computed ? this.indexReference(target, target.object) : this.propertyReference(target, target.object)
   }
@@ -913,7 +1192,7 @@ class Compiler {
 
   assignment(node: AssignmentExpression) {
     const { left, right, operator } = node
-    const reference = this.reference(left)
+    const reference = this.reference(left, 'write')
     const base = operator.slice(0, -1)
 
     if (base in LOGICAL_JUMPS) this.logicalAssignment(reference, right, LOGICAL_JUMPS[base])
@@ -960,7 +1239,7 @@ class Compiler {
 
   // `++x`: <target> POS INC <set>; `x++` additionally keeps the old number below the base (DUP, ROT3/ROT4).
   update(node: UpdateExpression) {
-    const reference = this.reference(node.argument)
+    const reference = this.reference(node.argument, 'write')
     const step = node.operator === '++' ? Op.INC : Op.DEC
 
     reference.prepare()
@@ -1009,12 +1288,22 @@ class Compiler {
   // The value is computed first, then enclosing finally blocks run (inlined), then RETURN (§4.4.9).
   returnStatement(node: ReturnStatement) {
     if (this.tracksCompletion) throw this.error('Illegal return statement', node.loc)
-    if (node.argument) this.expression(node.argument)
-    else this.out.emit(Op.NULL) // bare return gives null (D37)
+    this.returnValue(node)
     this.fn.stackItems++
     this.leaveRegions(0)
     this.fn.stackItems--
     this.out.emit(Op.RETURN)
+  }
+
+  // The returned value: the argument, null for a bare return (D37), `this` in constructors (which cannot return a value, D27).
+  private returnValue({ argument, loc }: ReturnStatement) {
+    if (!argument) {
+      this.out.emit(this.fn.isConstructor ? Op.THIS : Op.NULL)
+
+      return
+    }
+    if (this.fn.isConstructor) throw this.error('Constructors cannot return a value', loc)
+    this.expression(argument)
   }
 
   functionExpression(node: FunctionExpression, name = '') {
@@ -1037,24 +1326,36 @@ class Compiler {
   }
 
   // `this` is dynamic in functions and lexical in arrows (§4.4.5).
-  thisExpression() {
+  thisExpression(node: ThisExpression) {
     markArrowsUsingThis(this.fn)
-    this.out.emit(Op.THIS)
+    this.emitAt(node.loc, Op.THIS)
   }
 
   closure(proto: FunctionProto) {
     this.out.emit(Op.CLOSURE, this.out.constant(proto))
   }
 
-  functionProto(node: AnyFunction, name: string, kind?: FunctionKind): FunctionProto {
+  functionProto(node: AnyFunction, name: string, kind?: FunctionKind, options: FunctionOptions = {}): FunctionProto {
     const outer = this.fn
-    const scope = new Scope(outer.scope, 'function')
     const isArrow = node.type === 'ArrowFunctionExpression'
-    const out = new ProtoBuilder({ name, kind: kind ?? (isArrow ? 'arrow' : 'function') })
 
-    this.fn = {
+    this.fn = this.functionContext(new ProtoBuilder({ name, kind: kind ?? (isArrow ? 'arrow' : 'function') }), isArrow, options)
+
+    try {
+      return this.functionBody(node, signatureOf(name, node.params))
+    } finally {
+      this.fn = outer
+    }
+  }
+
+  // Arrows keep the class context and `super(...)` permission of their surroundings (lexical `this`/`super`).
+  private functionContext(out: ProtoBuilder, isArrow: boolean, options: FunctionOptions): FunctionContext {
+    const outer = this.fn
+    const inherited = isArrow ? { classContext: outer.classContext, superCall: outer.superCall } : {}
+
+    return {
       out,
-      scope,
+      scope: new Scope(outer.scope, 'function'),
       loops: [],
       tracksCompletion: false,
       parent: outer,
@@ -1062,12 +1363,11 @@ class Compiler {
       usesThis: false,
       regions: [],
       stackItems: 0,
-    }
-
-    try {
-      return this.functionBody(node, signatureOf(name, node.params))
-    } finally {
-      this.fn = outer
+      classContext: null,
+      isConstructor: false,
+      superCall: false,
+      ...inherited,
+      ...options,
     }
   }
 
@@ -1090,7 +1390,7 @@ class Compiler {
     this.declare(body, this.scope)
     this.hoistFunctions(body)
     this.statements(body)
-    this.out.emit(Op.NULL) // falling off the end returns null (D37)
+    this.out.emit(this.fn.isConstructor ? Op.THIS : Op.NULL) // falling off the end returns null (D37); constructors `this`
     this.out.emit(Op.RETURN)
   }
 

@@ -1,0 +1,8 @@
+const Anonymous = class { value = 1 }
+const Named = class Inner { static who() { return Inner.name } }
+print(new Anonymous().value, Anonymous.name, Named.who(), Named.name)
+function make(base) { return class extends base { extra = 'yes' } }
+class Root { root = true }
+const Made = make(Root)
+const m = new Made()
+print(m.root, m.extra, m instanceof Root)

@@ -1,0 +1,22 @@
+class Counter {
+  static count = 0
+  static instances = []
+  id
+  constructor() {
+    Counter.count++
+    this.id = Counter.count
+    Counter.instances.push(this.id)
+  }
+  static reset() { Counter.count = 0 }
+  static create() { return new this() }
+}
+new Counter()
+new Counter()
+print(Counter.count, Counter.instances.join(), Counter.create().id)
+Counter.reset()
+print(Counter.count)
+class Sub extends Counter {
+  static label = 'sub'
+  static describe() { return Sub.label + ':' + Sub.count + ':' + super.create().id }
+}
+print(Sub.describe(), Sub.name, Counter.name, Sub.count)

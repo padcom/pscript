@@ -1,0 +1,19 @@
+const log = []
+class Base {
+  a = log.push('Base field')
+  constructor() { log.push('Base constructor') }
+}
+class Derived extends Base {
+  b = log.push('Derived field')
+  constructor() {
+    log.push('Derived before super')
+    super()
+    log.push('Derived after super')
+  }
+}
+new Derived()
+print(log.join(' | '))
+class Implied extends Base { c = log.push('Implied field') }
+log.length = 0
+new Implied()
+print(log.join(' | '))

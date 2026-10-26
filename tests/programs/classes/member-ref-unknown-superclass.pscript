@@ -1,0 +1,5 @@
+// @pscript-only: D25-D29, D36, D38
+function base() { return class { a = 1 } }
+class C extends base() {
+  m() { return this.b }
+}

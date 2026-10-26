@@ -1,0 +1,5 @@
+// @pscript-only: D25-D29, D36, D38
+class Point {
+  x = 0
+  move() { this.z = 1 }
+}

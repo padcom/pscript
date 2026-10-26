@@ -34,6 +34,8 @@ interface Token {
   closesBlock?: boolean
   /** a `}` that closes a block statement or a function declaration's body: no `;` needed after it */
   closesStatement?: boolean
+  /** a `final` that starts a statement (`final class …` is a declaration) */
+  startsStatement?: boolean
 }
 
 /**
@@ -41,9 +43,38 @@ interface Token {
  * bodies), `{block}` (bodies of function expressions, arrows and methods: the expression goes on
  * after the `}`) or `{object}` (object literals).
  */
-type Bracket = '(' | '(header)' | '[' | '{statement}' | '{block}' | '{object}' | '{template}'
+type Bracket = '(' | '(header)' | '[' | '{statement}' | '{block}' | '{object}' | '{template}' | '{class}' | '{class-statement}'
 
-const BLOCK_LIKE = new Set<Bracket | undefined>(['{statement}', '{block}'])
+/** Brackets whose contents are statements or class members: ASI applies inside them. */
+const BLOCK_LIKE = new Set<Bracket | undefined>(['{statement}', '{block}', '{class}', '{class-statement}'])
+const CLASS_BODIES = new Set<Bracket | undefined>(['{class}', '{class-statement}'])
+
+const KEYWORD_TOKENS = new Set(KEYWORDS.map(keyword => keyword.toUpperCase()))
+
+/** Modifier keywords of class members (§4.5.1); `final` and `override` are contextual. */
+const MODIFIERS = new Set(['PUBLIC', 'PROTECTED', 'PRIVATE', 'STATIC', 'FINAL', 'OVERRIDE'])
+const CONTEXTUAL_MODIFIERS: Record<string, string> = { final: 'FINAL', override: 'OVERRIDE' }
+
+/** Tokens after which a class member starts. */
+const MEMBER_PRECEDERS = new Set(['CLASS_LBRACE', ';', '}', ...MODIFIERS])
+
+/** After a member name: a method, a field initialiser, the end of a field. */
+const MEMBER_NAME_FOLLOWERS = new Set(['(', '=', ';', '}'])
+
+/** Tokens that can be a member name (keywords become IDENT there). */
+const NAME_TOKENS = new Set(['IDENT', 'STRING', 'NUMBER'])
+
+function isName(name: string): boolean {
+  return NAME_TOKENS.has(name) || KEYWORD_TOKENS.has(name)
+}
+
+/** Context-dependent renaming when a token is handed to the parser. */
+const EMIT_HOOKS: Record<string, (filter: TokenFilter, token: Token) => void> = {
+  'FUNCTION': (filter, token) => filter.functionStart(token),
+  'FINAL': (filter, token) => filter.finalStart(token),
+  'CLASS': (filter, token) => filter.classStart(token),
+  '{': (filter, token) => filter.classifyBrace(token),
+}
 
 /** A `{` after one of these opens a block statement. */
 const STATEMENT_BRACE_PRECEDERS = new Set([';', 'BLOCK_LBRACE', '}', 'ELSE', 'TRY', 'CATCH', 'FINALLY'])
@@ -51,7 +82,14 @@ const STATEMENT_BRACE_PRECEDERS = new Set([';', 'BLOCK_LBRACE', '}', 'ELSE', 'TR
 /** A `{` after one of these opens a function, arrow or method body. */
 const BODY_BRACE_PRECEDERS = new Set([')', '=>'])
 
-const KEYWORD_TOKENS = new Set(KEYWORDS.map(keyword => keyword.toUpperCase()))
+const BRACE_TOKENS: Partial<Record<Bracket, string>> = {
+  '{object}': 'OBJ_LBRACE',
+  '{class}': 'CLASS_LBRACE',
+  '{class-statement}': 'CLASS_LBRACE',
+}
+
+/** Brackets whose `}` completes a statement (no `;` needed after it). */
+const STATEMENT_BRACKETS = new Set<Bracket | undefined>(['{statement}', '{class-statement}'])
 
 /** In an object literal, a key follows `{` or `,` and is followed by one of these (§4.2.4). */
 const KEY_PRECEDERS = new Set(['OBJ_LBRACE', ','])
@@ -110,6 +148,9 @@ export class TokenFilter {
   private lookahead: Token[] = []
   /** bracket depth of a function declaration whose body brace is still to come, or -1 */
   private declarationDepth = -1
+  /** bracket depth of a class whose body brace is still to come, or -1; and whether it is a declaration */
+  private classDepth = -1
+  private classIsStatement = false
 
   constructor(private base: JisonLexer, private terminals: Record<number, string>, private state: TokenState) {
     this.options = base.options
@@ -125,6 +166,7 @@ export class TokenFilter {
     this.brackets = []
     this.lookahead = []
     this.declarationDepth = -1
+    this.classDepth = -1
 
     return this
   }
@@ -150,6 +192,7 @@ export class TokenFilter {
   private read(): Token {
     const token = this.lookahead.shift() ?? this.readRaw()
 
+    this.contextualKeyword(token)
     this.keywordAsName(token)
     ARROW_STARTS[token.name]?.(this, token)
 
@@ -167,13 +210,41 @@ export class TokenFilter {
     return this.prevEnds() && !STATEMENT_ENDERS.has(this.prev?.name ?? '')
   }
 
+  // `final class …`; `final` / `override` before another modifier or a member name (§4.2.5).
+  private contextualKeyword(token: Token) {
+    const keyword = token.name === 'IDENT' ? CONTEXTUAL_MODIFIERS[token.text] : undefined
+
+    if (keyword && this.isModifier(keyword, this.peek(0))) token.name = keyword
+  }
+
+  private isModifier(keyword: string, next: Token): boolean {
+    if (keyword === 'FINAL' && next.name === 'CLASS') return true
+
+    return this.inMemberPosition() && this.startsMember(next)
+  }
+
+  private startsMember(next: Token): boolean {
+    return !next.afterNewline && (MODIFIERS.has(next.name) || isName(next.name))
+  }
+
+  private inMemberPosition(): boolean {
+    return CLASS_BODIES.has(this.top()) && MEMBER_PRECEDERS.has(this.prev?.name ?? '')
+  }
+
+  // A keyword in member position followed by `(`, `=`, `;`, `}` or a newline is a member name (§4.2.4).
+  private memberName(): boolean {
+    const next = this.peek(0)
+
+    return this.inMemberPosition() && (next.afterNewline || MEMBER_NAME_FOLLOWERS.has(next.name))
+  }
+
   // Keywords are property names after `.` and as object-literal keys (§4.2.4).
   private keywordAsName(token: Token) {
     if (KEYWORD_TOKENS.has(token.name) && this.inNamePosition()) token.name = 'IDENT'
   }
 
   private inNamePosition(): boolean {
-    return this.prev?.name === '.' || this.inKeyPosition()
+    return this.prev?.name === '.' || this.inKeyPosition() || this.memberName()
   }
 
   private inKeyPosition(): boolean {
@@ -291,9 +362,8 @@ export class TokenFilter {
   }
 
   private emit(token: Token): string {
-    if (token.name === 'FUNCTION' && this.atStatementStart()) this.declarationStart(token)
-    if (token.name === '{') this.classifyBrace(token)
-    else this.track(token)
+    EMIT_HOOKS[token.name]?.(this, token)
+    this.track(token)
     this.prev = token
     this.yytext = token.text
     this.match = token.text
@@ -313,20 +383,37 @@ export class TokenFilter {
     return prev === null || STATEMENT_BRACE_PRECEDERS.has(prev.name) || Boolean(prev.closesHeader)
   }
 
+  functionStart(token: Token) {
+    if (this.atStatementStart()) this.declarationStart(token)
+  }
+
+  finalStart(token: Token) {
+    token.startsStatement = this.atStatementStart()
+  }
+
+  // `class` (or `final class`) at the start of a statement is a declaration; its body brace comes at this depth.
+  classStart(token: Token) {
+    this.classIsStatement = this.atStatementStart() || Boolean(this.prev?.startsStatement)
+
+    if (this.classIsStatement) token.name = 'CLASS_DECLARATION'
+    this.classDepth = this.brackets.length
+  }
+
   private declarationStart(token: Token) {
     token.name = 'FUNCTION_DECLARATION'
     this.declarationDepth = this.brackets.length
   }
 
   // Brace classification (§4.2.2): BLOCK_LBRACE or OBJ_LBRACE, with the matching stack entry.
-  private classifyBrace(token: Token) {
+  classifyBrace(token: Token) {
     const kind = this.braceKind()
 
-    token.name = kind === '{object}' ? 'OBJ_LBRACE' : 'BLOCK_LBRACE'
+    token.name = BRACE_TOKENS[kind] ?? 'BLOCK_LBRACE'
     this.brackets.push(kind)
   }
 
   private braceKind(): Bracket {
+    if (this.classDepth === this.brackets.length) return this.classBody()
     if (this.declarationDepth === this.brackets.length) {
       this.declarationDepth = -1
 
@@ -334,6 +421,12 @@ export class TokenFilter {
     }
 
     return this.atStatementStart() ? '{statement}' : this.bodyOrObject()
+  }
+
+  private classBody(): Bracket {
+    this.classDepth = -1
+
+    return this.classIsStatement ? '{class-statement}' : '{class}'
   }
 
   private bodyOrObject(): Bracket {
@@ -348,7 +441,7 @@ export class TokenFilter {
   private close(token: Token, bracket: Bracket | undefined) {
     token.closesHeader = bracket === '(header)'
     token.closesBlock = BLOCK_LIKE.has(bracket)
-    token.closesStatement = bracket === '{statement}'
+    token.closesStatement = STATEMENT_BRACKETS.has(bracket)
   }
 
   private opener(name: string): Bracket {

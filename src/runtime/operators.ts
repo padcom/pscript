@@ -271,6 +271,16 @@ function hasInChain(object: ScriptObject, name: string): boolean {
   return false
 }
 
+function isClassMember(object: ScriptObject, name: string): boolean {
+  if (object instanceof Class) return object.staticMemberIndex.has(name)
+
+  return object.klass?.memberIndex.has(name) ?? false
+}
+
+function isOwnKey(object: ScriptObject, name: string): boolean {
+  return object instanceof ScriptArray ? isArrayKey(object, name) : isClassMember(object, name)
+}
+
 /**
  * `key in object`: the property exists on the object or its prototype chain (arrays: indices and `length`).
  * Hidden members (§4.5.2) arrive with access modifiers.
@@ -284,5 +294,5 @@ export function hasProperty(key: Value, object: Value): boolean {
 
   const name = toString(key)
 
-  return (object instanceof ScriptArray && isArrayKey(object, name)) || hasInChain(object, name)
+  return isOwnKey(object, name) || hasInChain(object, name)
 }

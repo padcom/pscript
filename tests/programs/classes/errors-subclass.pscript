@@ -1,0 +1,15 @@
+// @pscript-only (the override modifier, D28): §10.12
+class ValidationError extends Error {
+  override name = 'ValidationError'
+}
+try { throw new ValidationError('bad input') } catch (e) { print(e.name, e.message) }
+class HttpError extends Error {
+  status
+  constructor(status, message) {
+    super(message)
+    this.status = status
+  }
+}
+try { throw new HttpError(404, 'not found') } catch (e) {
+  print(e.status, e.message, e instanceof HttpError, e instanceof Error, '' + e)
+}

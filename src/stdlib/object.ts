@@ -1,6 +1,7 @@
 // Object.prototype methods and the Object namespace (§4.6.1). Keys are listed in insertion order
 // (integer-like keys are not reordered, a documented deviation from JS, §4.4.6).
 import { toStringIn } from '@/runtime/conversions'
+import { formatNested } from '@/runtime/format'
 import { errorToString, isErrorObject } from '@/runtime/operators'
 import { defineGlobal } from '@/runtime/realm'
 import { typeError } from '@/runtime/script-error'
@@ -45,8 +46,29 @@ function freeze(value: Value): Value {
   return value
 }
 
-function objectToString(self: Value): string {
-  return self instanceof ScriptObject && isErrorObject(self) ? errorToString(self) : '[object Object]'
+/** Instances being converted by the default toString, so that cycles print as [Circular]. */
+const converting = new Set<ScriptObject>()
+
+// D35: `ClassName(field = value, …)` with the instance's own data properties (public ones from M17 on).
+function instanceToString(ctx: AccessContext, instance: ScriptObject): string {
+  if (converting.has(instance)) return '[Circular]'
+
+  converting.add(instance)
+
+  try {
+    const fields = [...instance.props].map(([key, value]) => `${key} = ${formatNested(value as Value, ctx)}`)
+
+    return `${instance.klass?.name || 'anonymous'}(${fields.join(', ')})`
+  } finally {
+    converting.delete(instance)
+  }
+}
+
+function objectToString(ctx: AccessContext, self: Value): string {
+  if (!(self instanceof ScriptObject)) return '[object Object]'
+  if (isErrorObject(self)) return errorToString(self)
+
+  return self.klass ? instanceToString(ctx, self) : '[object Object]'
 }
 
 function hasOwn(ctx: AccessContext, self: Value, key: Value): boolean {
@@ -65,7 +87,7 @@ export function installObject(realm: Realm) {
   const namespace = new ScriptObject(realm.ObjectPrototype)
 
   defineMethods(realm, realm.ObjectPrototype, {
-    toString: method(0, (_, self) => objectToString(self)),
+    toString: method(0, (ctx, self) => objectToString(ctx, self)),
     hasOwnProperty: method(1, (ctx, self, [key]) => hasOwn(ctx, self, key)),
   })
   defineMethods(realm, namespace, {

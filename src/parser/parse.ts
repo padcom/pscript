@@ -5,6 +5,7 @@ import { PScriptSyntaxError, formatExcerpt } from '@/errors'
 import type {
   AssignmentOperator,
   BlockStatement,
+  ClassBody,
   Expression,
   ForOfStatement,
   Identifier,
@@ -17,6 +18,7 @@ import type {
 } from './ast'
 import { builders, sourceLoc, type ForHeader, type FunctionHead, type FunctionType, type JisonLoc } from './ast-builders'
 import { EscapeError, checkNumber } from './literals'
+import { classMember, type Modifier, type RawMember } from './class-members'
 import { TemplateBraces, templateElement } from './templates'
 import { createTokenFilter, type TokenState } from './token-filter'
 import { FUTURE_RESERVED_WORDS, KEYWORDS } from './tokens'
@@ -209,6 +211,25 @@ function objectBuilders(errors: SyntaxErrorFactory) {
   }
 }
 
+// Class nodes: member modifiers and constructor rules (class-members.ts), parameters, one constructor per class.
+function classBuilders(errors: SyntaxErrorFactory) {
+  const fail = (reason: string, loc: JisonLoc): never => { throw errors.atToken(reason, loc) }
+
+  return {
+    classMember(modifiers: Modifier[], member: RawMember) {
+      if (member.kind === 'method') checkParams(errors, member.params)
+
+      return classMember(modifiers, member, fail)
+    },
+    classBody(body: ClassBody['body'], loc: JisonLoc) {
+      const constructors = body.filter(member => member.type === 'MethodDefinition' && member.kind === 'constructor')
+      if (constructors.length > 1) throw errors.at('A class may only have one constructor', constructors[1].loc)
+
+      return builders.classBody(body, loc)
+    },
+  }
+}
+
 // Static checks that the grammar leaves to its actions.
 function checkedBuilders(errors: SyntaxErrorFactory) {
   return {
@@ -264,6 +285,7 @@ function createYy(source: string, options: ParseOptions, tokens: TokenState) {
     ...checkedBuilders(errors),
     ...controlFlowBuilders(errors),
     ...objectBuilders(errors),
+    ...classBuilders(errors),
     program(body: Statement[]): Program {
       return { type: 'Program', sourceType: options.goal ?? 'script', body, loc: sourceLoc(source) }
     },

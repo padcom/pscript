@@ -1,0 +1,85 @@
+// What the compiler knows about classes (§4.5.9): member names per class, so that `this.x` and
+// `C.x` can be rejected at compile time when the whole class chain is visible.
+import type { ClassDeclaration, ClassExpression, Identifier, Literal, MethodDefinition, PropertyDefinition } from '@/parser/ast'
+
+/**
+ * Compile-time view of a class.
+ */
+export interface ClassInfo {
+  /** class name */
+  name: string
+  /** own instance member names (fields, methods) */
+  instance: Set<string>
+  /** own static member names */
+  statics: Set<string>
+  /** the superclass, when it is a class known to the compiler */
+  superClass: ClassInfo | null
+  /** whether every class in the chain is known (members can be proven absent) */
+  visible: boolean
+}
+
+/** Inherited by every class instance from Object.prototype. */
+const INSTANCE_BUILTINS = new Set(['toString', 'hasOwnProperty'])
+
+/** Every class object has these (Function.prototype and the function properties). */
+const STATIC_BUILTINS = new Set(['name', 'length', 'toString', 'bind', 'call', 'apply'])
+
+/**
+ * The name of a class member or property key.
+ *
+ * @param key identifier or literal key
+ * @returns the name
+ */
+export function keyName(key: Identifier | Literal): string {
+  return key.type === 'Identifier' ? key.name : String(key.value)
+}
+
+function isConstructor(member: MethodDefinition | PropertyDefinition): boolean {
+  return member.type === 'MethodDefinition' && member.kind === 'constructor'
+}
+
+type ClassNode = ClassDeclaration | ClassExpression
+
+function memberNames(node: ClassNode, isStatic: boolean): Set<string> {
+  const members = node.body.body.filter(member => !isConstructor(member) && member.static === isStatic)
+
+  return new Set(members.map(member => keyName(member.key)))
+}
+
+/**
+ * Builds the compile-time view of a class.
+ *
+ * @param node the class
+ * @param name its name
+ * @param superClass the superclass's info; `undefined` when there is a superclass the compiler cannot see
+ * @returns the class info
+ */
+export function classInfoOf(node: ClassNode, name: string, superClass: ClassInfo | null | undefined): ClassInfo {
+  const visible = superClass === null || Boolean(superClass?.visible)
+
+  return { name, instance: memberNames(node, false), statics: memberNames(node, true), superClass: superClass ?? null, visible }
+}
+
+function declares(info: ClassInfo, name: string, isStatic: boolean): boolean {
+  return (isStatic ? info.statics : info.instance).has(name)
+}
+
+function declaredInChain(info: ClassInfo, name: string, isStatic: boolean): boolean {
+  let current: ClassInfo | null = info
+
+  while (current && !declares(current, name, isStatic)) current = current.superClass
+
+  return current !== null
+}
+
+/**
+ * Whether a class (or its known chain) declares a member.
+ *
+ * @param info the class
+ * @param name member name
+ * @param isStatic static member (on the class) or instance member
+ * @returns true when declared
+ */
+export function hasMember(info: ClassInfo, name: string, isStatic: boolean): boolean {
+  return declaredInChain(info, name, isStatic) || (isStatic ? STATIC_BUILTINS : INSTANCE_BUILTINS).has(name)
+}
