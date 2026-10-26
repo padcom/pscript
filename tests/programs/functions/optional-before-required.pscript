@@ -1,0 +1,2 @@
+// @pscript-only: D38/D25 errors
+function f(a = 1, b) {}

@@ -1,0 +1,3 @@
+// @pscript-only: D38/D25 errors
+function log(level, ...parts) {}
+log()

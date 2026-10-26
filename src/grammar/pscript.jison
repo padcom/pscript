@@ -102,7 +102,12 @@ StatementList
 
 Statement
   : VariableDeclaration ';'
+  | FunctionDeclaration
   | Block
+  | RETURN ';'
+    { $$ = yy.returnStatement(null, @$) }
+  | RETURN Expression ';'
+    { $$ = yy.returnStatement($2, @$) }
   | IfStatement
   | WhileStatement
   | ForStatement
@@ -114,6 +119,42 @@ Statement
     { $$ = yy.expressionStatement($1, @$) }
   | ';'
     { $$ = yy.emptyStatement(@$) }
+  ;
+
+/* The token filter turns `function` at the start of a statement into FUNCTION_DECLARATION. */
+FunctionDeclaration
+  : FUNCTION_DECLARATION IDENT '(' FormalParameters ')' '{' StatementList '}'
+    { $$ = yy.functionNode('FunctionDeclaration', { id: yy.identifier($2, @2), params: $4 }, yy.block($7, @6), @$) }
+  ;
+
+FunctionExpression
+  : FUNCTION '(' FormalParameters ')' '{' StatementList '}'
+    { $$ = yy.functionNode('FunctionExpression', { id: null, params: $3 }, yy.block($6, @5), @$) }
+  | FUNCTION IDENT '(' FormalParameters ')' '{' StatementList '}'
+    { $$ = yy.functionNode('FunctionExpression', { id: yy.identifier($2, @2), params: $4 }, yy.block($7, @6), @$) }
+  ;
+
+FormalParameters
+  : /* empty */
+    { $$ = [] }
+  | ParameterList
+  | ParameterList ','
+  ;
+
+ParameterList
+  : Parameter
+    { $$ = [$1] }
+  | ParameterList ',' Parameter
+    { $$ = $1.concat([$3]) }
+  ;
+
+Parameter
+  : IDENT
+    { $$ = yy.identifier($1, @$) }
+  | IDENT '=' AssignmentExpression
+    { $$ = yy.assignmentPattern(yy.identifier($1, @1), $3, @$) }
+  | '...' IDENT
+    { $$ = yy.restElement(yy.identifier($2, @2), @$) }
   ;
 
 IfStatement
@@ -290,6 +331,8 @@ PostfixExpression
 
 CallExpression
   : PrimaryExpression
+  | NEW PrimaryExpression Arguments
+    { $$ = yy.newExpression($2, $3, @$) }
   | CallExpression Arguments
     { $$ = yy.call($1, $2, @$) }
   ;
@@ -325,6 +368,9 @@ PrimaryExpression
     { $$ = yy.identifier($1, @$) }
   | IDENT
     { $$ = yy.identifier($1, @$) }
+  | THIS
+    { $$ = yy.thisExpression(@$) }
+  | FunctionExpression
   | '(' Expression ')'
     { $$ = $2 }
   ;

@@ -1,0 +1,1 @@
+functions/arity-too-many.pscript:3:1 SyntaxError: square(x) expects 1 argument, got 2

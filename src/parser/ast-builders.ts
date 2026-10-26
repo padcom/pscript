@@ -1,6 +1,7 @@
 // AST node builders used by the grammar actions (`yy.*`, §5.3).
 import type {
   AssignmentExpression,
+  AssignmentPattern,
   AssignmentOperator,
   BinaryOperator,
   BlockStatement,
@@ -15,11 +16,18 @@ import type {
   EmptyStatement,
   Expression,
   ExpressionStatement,
+  FunctionDeclaration,
+  FunctionExpression,
   Identifier,
   Literal,
+  NewExpression,
+  Pattern,
   Program,
+  RestElement,
+  ReturnStatement,
   SourceLocation,
   Statement,
+  ThisExpression,
   UnaryExpression,
   UpdateExpression,
   VariableDeclaration,
@@ -74,6 +82,20 @@ export function sourceLoc(source: string): SourceLocation {
  */
 export type ForHeader = Pick<ForStatement, 'init' | 'test' | 'update'>
 
+export type FunctionNode = FunctionDeclaration | FunctionExpression
+
+export type FunctionType = FunctionNode['type']
+
+/**
+ * Name and parameters of a function.
+ */
+export interface FunctionHead {
+  /** function name, if any */
+  id: Identifier | null
+  /** formal parameters */
+  params: Pattern[]
+}
+
 export const builders = {
   expressionStatement(expression: Expression, loc: JisonLoc): ExpressionStatement {
     return { type: 'ExpressionStatement', expression, loc: toLoc(loc) }
@@ -93,6 +115,30 @@ export const builders = {
 
   forStatement({ init, test, update }: ForHeader, body: Statement, loc: JisonLoc): ForStatement {
     return { type: 'ForStatement', init, test, update, body, loc: toLoc(loc) }
+  },
+
+  functionNode(type: FunctionType, { id, params }: FunctionHead, body: BlockStatement, loc: JisonLoc): FunctionNode {
+    return { type, id, params, body, loc: toLoc(loc) } as FunctionNode
+  },
+
+  assignmentPattern(left: Identifier, right: Expression, loc: JisonLoc): AssignmentPattern {
+    return { type: 'AssignmentPattern', left, right, loc: toLoc(loc) }
+  },
+
+  restElement(argument: Identifier, loc: JisonLoc): RestElement {
+    return { type: 'RestElement', argument, loc: toLoc(loc) }
+  },
+
+  returnStatement(argument: Expression | null, loc: JisonLoc): ReturnStatement {
+    return { type: 'ReturnStatement', argument, loc: toLoc(loc) }
+  },
+
+  thisExpression(loc: JisonLoc): ThisExpression {
+    return { type: 'ThisExpression', loc: toLoc(loc) }
+  },
+
+  newExpression(callee: Expression, args: Expression[], loc: JisonLoc): NewExpression {
+    return { type: 'NewExpression', callee, arguments: args, loc: toLoc(loc) }
   },
 
   block(body: Statement[], loc: JisonLoc): BlockStatement {

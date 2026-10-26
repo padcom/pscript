@@ -63,6 +63,7 @@ export enum Op {
   AND_JUMP,
   OR_JUMP,
   NULLISH_JUMP,
+  JUMP_IF_ARG,
   ARRAY,
   OBJECT,
   DEFINE_PROP,
@@ -185,6 +186,7 @@ export const OPCODES: Readonly<Record<Op, OpcodeInfo>> = {
   [Op.AND_JUMP]: info('target', 'v → v | (popped)'), // if falsy: keep and jump; else pop
   [Op.OR_JUMP]: info('target', 'v → v | (popped)'), // if truthy: keep and jump; else pop
   [Op.NULLISH_JUMP]: info('target', 'v → v | (popped)'), // if NOT nullish: keep and jump; else pop
+  [Op.JUMP_IF_ARG]: info('slot target', '→'), // jump when parameter `slot` was passed (defaults, D38)
   [Op.ARRAY]: info('n', 'v1…vn → arr'),
   [Op.OBJECT]: info('', '→ obj'),
   [Op.DEFINE_PROP]: info('k', 'obj v → obj'), // object literal init; sets home object for methods

@@ -1,0 +1,24 @@
+function makeAdder(a) {
+  return function (b) { return a + b }
+}
+const add5 = makeAdder(5)
+const add10 = makeAdder(10)
+print(add5(1), add10(1), add5(add10(0)))
+
+function account(balance) {
+  function deposit(amount) { balance += amount; return balance }
+  function withdraw(amount) { balance -= amount; return balance }
+  return function (op, amount) { return op == 'deposit' ? deposit(amount) : withdraw(amount) }
+}
+const acc = account(100)
+print(acc('deposit', 50), acc('withdraw', 30), acc('deposit', 0))
+
+let shared = 'before'
+function readShared() { return shared }
+shared = 'after'
+print(readShared())
+
+function capture(i) { return function () { return i * 10 } }
+const f0 = capture(0)
+const f1 = capture(1)
+print(f0(), f1())

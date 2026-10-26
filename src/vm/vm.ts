@@ -8,18 +8,23 @@ import {
   compare,
   hasProperty,
   instanceOf,
+  kindOf,
   strictEquals,
   toNumber,
   truthy,
   typeOf,
 } from '@/runtime/operators'
 import { ScriptError, rangeError, referenceError, typeError } from '@/runtime/script-error'
+import { arityError } from '@/compiler/signature'
 import {
+  Array as ScriptArray,
+  Class as ClassValue,
+  Closure,
   Environment,
+  Function as ScriptFunction,
   NativeFunction,
   UNINITIALIZED,
   type AccessContext,
-  type Class,
   type Realm,
   type Slot,
   type Value,
@@ -64,6 +69,10 @@ function initialized(slot: Slot, frame: Frame): Value {
   return slot
 }
 
+function functionName({ kind, name }: FunctionProto): string {
+  return kind === 'script' ? '<script>' : name || '<anonymous>'
+}
+
 function nullish(value: Value): boolean {
   return value === null || value === undefined
 }
@@ -80,12 +89,12 @@ export class VM implements AccessContext {
     this.globals = new Globals(realm)
   }
 
-  get homeClass(): Class | null {
+  get homeClass(): ClassValue | null {
     return this.frames.at(-1)?.homeClass ?? null
   }
 
   /**
-   * Calls a function from native code (§5.6.4). Only native functions so far.
+   * Calls a function from native code (§5.6.4): script functions run in a nested dispatch loop.
    *
    * @param fn the function
    * @param thisValue `this`
@@ -94,8 +103,66 @@ export class VM implements AccessContext {
    */
   callFunction(fn: Value, thisValue: Value, args: Value[]): Value {
     if (fn instanceof NativeFunction) return fn.impl(this, thisValue, args)
+    if (!(fn instanceof Closure)) throw typeError(`${typeOf(fn)} is not a function`)
 
-    throw typeError(`${typeOf(fn)} is not a function`)
+    this.enterClosure(fn, args, thisValue)
+
+    return this.run(this.frames.length)
+  }
+
+  // Pushes the frame of a script function call (§5.6.3) after the arity (D38) and depth (D14) checks.
+  private enterClosure(closure: Closure, args: Value[], thisValue: Value): Frame {
+    const { fnProto: proto } = closure
+
+    this.checkArity(proto, args.length)
+
+    // frames[0] is the script, so frames.length is the depth of the call being made
+    if (this.frames.length > this.options.maxCallDepth) throw rangeError('Maximum call stack size exceeded')
+
+    const frame = this.newFrame(proto, new Environment(this.bindArguments(proto, args), closure.env), thisValue)
+
+    frame.closure = closure
+    this.frames.push(frame)
+
+    return frame
+  }
+
+  private checkArity(proto: FunctionProto, argc: number) {
+    const problem = arityError({
+      text: proto.signature ?? `${proto.name}()`,
+      required: proto.length,
+      optional: proto.paramCount - proto.length,
+      hasRest: proto.hasRest,
+    }, argc)
+    if (problem) throw typeError(problem)
+  }
+
+  // Parameters take the first slots; omitted ones stay UNINITIALIZED for JUMP_IF_ARG (defaults).
+  private bindArguments({ scopeSize, paramCount, hasRest }: FunctionProto, args: Value[]): Slot[] {
+    const slots = new globalThis.Array<Slot>(scopeSize).fill(UNINITIALIZED)
+
+    for (let i = 0; i < Math.min(args.length, paramCount); i++) slots[i] = args[i]
+
+    if (hasRest) slots[paramCount] = new ScriptArray(this.realm.ArrayPrototype, args.slice(paramCount))
+
+    return slots
+  }
+
+  private newFrame(proto: FunctionProto, env: Environment, thisValue: Value): Frame {
+    return {
+      closure: null,
+      proto,
+      ip: 0,
+      opStart: 0,
+      base: this.stack.length,
+      env,
+      thisValue,
+      homeClass: null,
+      homeObject: null,
+      handlers: [],
+      isConstruct: false,
+      newTarget: null,
+    }
   }
 
   /**
@@ -110,23 +177,10 @@ export class VM implements AccessContext {
 
     this.script = script
     this.steps = 0
-    this.frames.push({
-      closure: null,
-      proto: main,
-      ip: 0,
-      opStart: 0,
-      base: this.stack.length,
-      env,
-      thisValue: null,
-      homeClass: null,
-      homeObject: null,
-      handlers: [],
-      isConstruct: false,
-      newTarget: null,
-    })
+    this.frames.push(this.newFrame(main, env, null))
 
     try {
-      return this.run()
+      return this.run(1)
     } catch (e) {
       throw this.uncaught(e)
     } finally {
@@ -141,7 +195,7 @@ export class VM implements AccessContext {
     const scriptStack: ScriptStackFrame[] = this.frames.map(frame => {
       const [line, column] = location(frame.proto, frame.opStart)
 
-      return { functionName: frame.proto.name || '<script>', line, column }
+      return { functionName: functionName(frame.proto), line, column }
     }).reverse()
     const [{ line, column }] = scriptStack
     const value = { name: e.scriptName, message: e.message }
@@ -161,20 +215,17 @@ export class VM implements AccessContext {
     return source === undefined ? undefined : formatExcerpt(source, line, column)
   }
 
-  private call(argc: number): Value {
-    const { stack } = this
-    const args = stack.splice(stack.length - argc, argc)
-    const fn = stack.pop()
-
-    return this.callFunction(fn, null, args)
+  private notAClass(callee: Value): never {
+    throw typeError(`${callee instanceof ScriptFunction ? callee.name || 'anonymous function' : kindOf(callee)} is not a class`)
   }
 
   // §5.6.2: one switch dispatch loop, with hot locals; exempt from the size and nesting rules.
-  /* eslint-disable complexity, max-lines-per-function, max-depth, @stylistic/max-statements-per-line */
-  private run(): Value {
+  /* eslint-disable complexity, max-lines-per-function, max-depth, prefer-destructuring, @stylistic/max-statements-per-line */
+  // Runs until the frame at depth `entryDepth` returns (or the script halts).
+  private run(entryDepth: number): Value {
     const { stack, globals } = this
-    const frame = this.frames[this.frames.length - 1]
-    const { code, constants } = frame.proto
+    let frame = this.frames[this.frames.length - 1]
+    let { code, constants } = frame.proto
     let { ip } = frame
     const { maxSteps } = this.options
     const limited = maxSteps !== Infinity
@@ -294,12 +345,55 @@ export class VM implements AccessContext {
         case Op.POS: stack.push(toNumber(stack.pop(), '+')); break
         case Op.NOT: stack.push(!truthy(stack.pop())); break
         case Op.TYPEOF: stack.push(typeOf(stack.pop())); break
-        case Op.CALL: stack.push(this.call(code[ip++])); break
+
+        case Op.CALL: {
+          const argc = code[ip++]
+          const args = stack.splice(stack.length - argc, argc)
+          const callee = stack.pop()
+
+          if (callee instanceof Closure) {
+            frame.ip = ip
+            frame = this.enterClosure(callee, args, null) // plain call: this = null (D37)
+            code = frame.proto.code
+            constants = frame.proto.constants
+            ip = 0
+          } else stack.push(this.callFunction(callee, null, args))
+          break
+        }
+
+        case Op.RETURN: {
+          const value = stack.pop()
+
+          this.frames.pop()
+          stack.length = frame.base
+
+          if (this.frames.length < entryDepth) return value
+          frame = this.frames[this.frames.length - 1];
+          ({ code, constants } = frame.proto)
+          ip = frame.ip
+          stack.push(value)
+          break
+        }
+        case Op.CLOSURE:
+          stack.push(new Closure(this.realm.FunctionPrototype, constants[code[ip++]] as FunctionProto, frame.env, null))
+          break
+        case Op.THIS: stack.push(frame.thisValue); break
+
+        case Op.NEW: {
+          const callee = stack[stack.length - code[ip] - 1]
+
+          if (!(callee instanceof ClassValue)) this.notAClass(callee)
+          throw new Error('Classes are not implemented yet')
+        }
+        case Op.JUMP_IF_ARG:
+          if (frame.env.slots[code[ip++]] === UNINITIALIZED) ip++
+          else ip = code[ip]
+          break
         case Op.HALT: return stack.pop()
         default:
           throw new Error(`Opcode ${Op[code[frame.opStart]]} is not implemented`)
       }
     }
   }
-  /* eslint-enable complexity, max-lines-per-function, max-depth, @stylistic/max-statements-per-line */
+  /* eslint-enable complexity, max-lines-per-function, max-depth, prefer-destructuring, @stylistic/max-statements-per-line */
 }

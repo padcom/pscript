@@ -34,6 +34,9 @@ interface Token {
 
 type Bracket = '(' | '(header)' | '[' | '{block}' | '{object}'
 
+/** Tokens after which a statement starts (besides a control-flow header's `)`). */
+const STATEMENT_PRECEDERS = new Set([';', '{', '}', 'ELSE'])
+
 /** Keywords whose `( … )` is followed by a statement, so their `)` does not end one. */
 const HEADER_KEYWORDS = new Set(['IF', 'WHILE', 'FOR'])
 
@@ -169,6 +172,7 @@ export class TokenFilter {
   }
 
   private emit(token: Token): string {
+    if (token.name === 'FUNCTION' && this.atStatementStart()) token.name = 'FUNCTION_DECLARATION'
     this.track(token)
     this.prev = token
     this.yytext = token.text
@@ -179,6 +183,13 @@ export class TokenFilter {
     this.state.current = token.loc
 
     return token.name
+  }
+
+  // A statement may start here: beginning of input, after `;`, a block brace, a control-flow header or `else`.
+  private atStatementStart(): boolean {
+    const { prev } = this
+
+    return prev === null || STATEMENT_PRECEDERS.has(prev.name) || Boolean(prev.closesHeader)
   }
 
   private track(token: Token) {

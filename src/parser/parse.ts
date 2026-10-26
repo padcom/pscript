@@ -2,8 +2,18 @@
 import pscriptParser from '@/grammar/pscript.jison'
 import type { JisonParseErrorHash } from '@/grammar/jison-types'
 import { PScriptSyntaxError, formatExcerpt } from '@/errors'
-import type { AssignmentOperator, Expression, Identifier, Program, SourceLocation, Statement, VariableDeclarator } from './ast'
-import { builders, sourceLoc, type ForHeader, type JisonLoc } from './ast-builders'
+import type {
+  AssignmentOperator,
+  BlockStatement,
+  Expression,
+  Identifier,
+  Pattern,
+  Program,
+  SourceLocation,
+  Statement,
+  VariableDeclarator,
+} from './ast'
+import { builders, sourceLoc, type ForHeader, type FunctionHead, type FunctionType, type JisonLoc } from './ast-builders'
 import { EscapeError, checkNumber } from './literals'
 import { createTokenFilter, type TokenState } from './token-filter'
 import { FUTURE_RESERVED_WORDS, KEYWORDS } from './tokens'
@@ -110,11 +120,15 @@ function checkTarget(errors: SyntaxErrorFactory, target: Expression, what: strin
   return target
 }
 
-// `if (x) let y = 1` is not allowed (as in JS): a declaration needs a block.
+// `if (x) let y = 1` is not allowed (as in JS strict mode): a declaration needs a block.
+const SINGLE_STATEMENT_ERRORS: Partial<Record<Statement['type'], string>> = {
+  VariableDeclaration: 'Lexical declaration cannot appear in a single-statement context',
+  FunctionDeclaration: 'Functions can only be declared at top level or inside a block',
+}
+
 function checkBody(errors: SyntaxErrorFactory, body: Statement): Statement {
-  if (body.type === 'VariableDeclaration') {
-    throw errors.at('Lexical declaration cannot appear in a single-statement context', body.loc)
-  }
+  const problem = SINGLE_STATEMENT_ERRORS[body.type]
+  if (problem) throw errors.at(problem, body.loc)
 
   return body
 }
@@ -134,6 +148,36 @@ function controlFlowBuilders(errors: SyntaxErrorFactory) {
   }
 }
 
+function paramName(param: Pattern): Identifier {
+  if (param.type === 'Identifier') return param
+
+  return param.type === 'AssignmentPattern' ? param.left : param.argument
+}
+
+const PARAMETER_ORDER = { Identifier: 0, AssignmentPattern: 1, RestElement: 2 }
+
+function checkParamOrder(errors: SyntaxErrorFactory, param: Pattern, next: Pattern) {
+  if (param.type === 'RestElement') throw errors.at('A rest parameter must be last', next.loc)
+  if (PARAMETER_ORDER[next.type] < PARAMETER_ORDER[param.type]) {
+    throw errors.at(`Required parameter '${paramName(next).name}' cannot follow an optional parameter`, next.loc)
+  }
+}
+
+// Parameter lists (D38): required, then optional, then at most one rest; no duplicates.
+function checkParams(errors: SyntaxErrorFactory, params: Pattern[]): Pattern[] {
+  const seen = new Set<string>()
+
+  params.forEach((param, i) => {
+    const { name, loc } = paramName(param)
+    if (seen.has(name)) throw errors.at(`Duplicate parameter name '${name}'`, loc)
+    seen.add(name)
+
+    if (i + 1 < params.length) checkParamOrder(errors, param, params[i + 1])
+  })
+
+  return params
+}
+
 // Static checks that the grammar leaves to its actions.
 function checkedBuilders(errors: SyntaxErrorFactory) {
   return {
@@ -142,6 +186,9 @@ function checkedBuilders(errors: SyntaxErrorFactory) {
     },
     update(operator: '++' | '--', prefix: boolean, argument: Expression, loc: JisonLoc) {
       return builders.update(operator, prefix, checkTarget(errors, argument, `'${operator}'`), loc)
+    },
+    functionNode(type: FunctionType, { id, params }: FunctionHead, body: BlockStatement, loc: JisonLoc) {
+      return builders.functionNode(type, { id, params: checkParams(errors, params) }, body, loc)
     },
     variableDeclaration(kind: 'let' | 'const', declarations: VariableDeclarator[], loc: JisonLoc) {
       const missing = kind === 'const' ? declarations.find(d => d.init === null) : undefined

@@ -1,0 +1,1 @@
+SyntaxError: log(level, ...parts) expects at least 1 argument, got 0

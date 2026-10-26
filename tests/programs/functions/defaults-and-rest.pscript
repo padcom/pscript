@@ -1,0 +1,13 @@
+// @pscript-only: rest parameters print as arrays only from M10; strict arity (D38)
+function point(x, y = 0, z = x + y) { return x + ',' + y + ',' + z }
+print(point(1), point(1, 2), point(1, 2, 3), point(1, undefined))
+function defaultsSeeEarlierParams(a, b = a * 2) { return b }
+print(defaultsSeeEarlierParams(4))
+let calls = 0
+function counted(x = ++calls) { return x }
+counted()
+counted(100)
+counted()
+print(calls)
+function tail(first, ...rest) { return typeof rest }
+print(tail(1), tail(1, 2, 3))

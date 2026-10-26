@@ -33,6 +33,8 @@ export interface FunctionProto {
   classDepth: number
   /** debug table: offset of a LOAD/STORE/INIT instruction → binding name (for TDZ messages) */
   names?: Record<number, string>
+  /** display form of the parameter list, e.g. `greet(name, greeting?)`, for arity errors (D38) */
+  signature?: string
 }
 
 /**

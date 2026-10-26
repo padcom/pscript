@@ -1,0 +1,17 @@
+// §4.4.4: each iteration of `for (let …)` has a fresh binding
+let first = null
+let second = null
+let third = null
+for (let i = 0; i < 3; i++) {
+  const f = function () { return i }
+  if (i == 0) first = f
+  if (i == 1) second = f
+  if (i == 2) third = f
+}
+print(first(), second(), third())
+let late = null
+for (let j = 0; j < 3; j++) {
+  late = function () { return j }
+  j++
+}
+print(late())

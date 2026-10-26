@@ -35,7 +35,11 @@ describe('§4.2.1 ASI consequences, continued', () => {
       alternate: { type: 'BlockStatement' },
     })
   })
-  it.todo('return\\n42 → return; 42; (M7)')
+  it('return\\n42 → return; 42;', () => {
+    expect(parse('function f() {\n  return\n  42\n}').body[0]).toMatchObject({
+      body: { body: [{ type: 'ReturnStatement', argument: null }, { type: 'ExpressionStatement', expression: { value: 42 } }] },
+    })
+  })
   it.todo('let o = {\\n a: 1\\n} → object literal, no ; inside (M9)')
 
   it('f(\\n a,\\n b\\n) → one call', () => {

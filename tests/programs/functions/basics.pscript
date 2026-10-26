@@ -1,0 +1,15 @@
+// §10.7 (arrows arrive in M8, fn.name / fn.length in M9)
+print(square(4))
+function square(x) { return x * x }
+
+function greet(name, greeting = 'Hello') { return greeting + ', ' + name }
+print(greet('Ann'), '/', greet('Bob', 'Hi'))
+
+function counter() {
+  let n = 0
+  return function () { return ++n }
+}
+const next = counter()
+next()
+next()
+print(next())

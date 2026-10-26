@@ -28,7 +28,11 @@ describe('§4.4.10 rows', () => {
   })
 
   it.todo('try { 1 } finally { 2 } → 1 (M11)')
-  it.todo('function f() {} → undefined (M7)')
+  it('function f() {} → undefined', () => {
+    expect(both('function f() {}')).toEqual([undefined, undefined])
+    expect(both("'a'; function f() {}")).toEqual(['a', 'a'])
+    expect(both('function f() { return 1 }\nf() + 1')).toEqual([2, 2])
+  })
 })
 
 describe('more completion values, compared with Node', () => {

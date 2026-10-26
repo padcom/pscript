@@ -2,6 +2,7 @@
 import { PScriptSyntaxError, formatExcerpt } from '@/errors'
 import type {
   AssignmentExpression,
+  AssignmentPattern,
   BinaryExpression,
   BlockStatement,
   BreakStatement,
@@ -10,12 +11,17 @@ import type {
   ContinueStatement,
   Expression,
   ForStatement,
+  FunctionDeclaration,
+  FunctionExpression,
   Identifier,
   IfStatement,
   Literal,
   LogicalExpression,
+  NewExpression,
   Node,
+  Pattern,
   Program,
+  ReturnStatement,
   SourceLocation,
   Statement,
   UnaryExpression,
@@ -23,11 +29,13 @@ import type {
   VariableDeclaration,
   WhileStatement,
 } from '@/parser/ast'
+import type { FunctionNode } from '@/parser/ast-builders'
 import { parse } from '@/parser/parse'
-import type { CompiledScript } from './function-proto'
+import type { CompiledScript, FunctionProto } from './function-proto'
 import { GlobalFlags, Op } from './opcodes'
 import { ProtoBuilder } from './proto-builder'
-import { Scope } from './scope'
+import { Scope, type Binding, type BindingKind } from './scope'
+import { arityError, signatureOf, type Signature } from './signature'
 
 /**
  * Options of `compile()`.
@@ -35,6 +43,17 @@ import { Scope } from './scope'
 export interface CompileOptions {
   /** file name used in error messages */
   fileName?: string
+}
+
+function paramName(param: Pattern): Identifier {
+  if (param.type === 'Identifier') return param
+
+  return param.type === 'AssignmentPattern' ? param.left : param.argument
+}
+
+// A `const` bound directly to a function expression has a compile-time signature (D38).
+function constSignature(kind: BindingKind, id: Identifier, init: Expression | null): Signature | undefined {
+  return kind === 'const' && init?.type === 'FunctionExpression' ? signatureOf(id.name, init.params) : undefined
 }
 
 /** Slot of the completion value in the script's top environment (§4.4.10). */
@@ -92,6 +111,9 @@ const EXPRESSIONS: { [K in Expression['type']]?: Handler<Extract<Expression, { t
   LogicalExpression: (c, node) => c.logical(node),
   ConditionalExpression: (c, node) => c.conditional(node),
   UpdateExpression: (c, node) => c.update(node),
+  FunctionExpression: (c, node) => c.functionExpression(node),
+  ThisExpression: c => c.out.emit(Op.THIS),
+  NewExpression: (c, node) => c.newExpression(node),
 }
 
 const STATEMENTS: { [K in Statement['type']]?: Handler<Extract<Statement, { type: K }>> } = {
@@ -103,6 +125,8 @@ const STATEMENTS: { [K in Statement['type']]?: Handler<Extract<Statement, { type
   ForStatement: (c, node) => c.forStatement(node),
   BreakStatement: (c, node) => c.jump(node, 'breaks'),
   ContinueStatement: (c, node) => c.jump(node, 'continues'),
+  ReturnStatement: (c, node) => c.returnStatement(node),
+  FunctionDeclaration: () => {}, // hoisted to the start of its scope
   EmptyStatement: () => {},
 }
 
@@ -118,14 +142,49 @@ interface Loop {
   envDepth: number
 }
 
+/**
+ * State of the function (or script) being compiled.
+ */
+interface FunctionContext {
+  /** code being generated */
+  out: ProtoBuilder
+  /** innermost scope */
+  scope: Scope
+  /** enclosing loops (they never cross function boundaries) */
+  loops: Loop[]
+  /** completion value (§4.4.10): tracked in top-level script code only, never in function bodies */
+  tracksCompletion: boolean
+}
+
 class Compiler {
-  readonly out = new ProtoBuilder({ name: '', kind: 'script' })
-  private scope = new Scope(null, 'script')
-  private loops: Loop[] = []
-  // Completion value (§4.4.10) is tracked in top-level script code only, never in function bodies.
-  private tracksCompletion = true
+  private fn: FunctionContext = {
+    out: new ProtoBuilder({ name: '', kind: 'script' }),
+    scope: new Scope(null, 'script'),
+    loops: [],
+    tracksCompletion: true,
+  }
 
   constructor(private source: string | undefined, private fileName: string | undefined) {}
+
+  get out(): ProtoBuilder {
+    return this.fn.out
+  }
+
+  private get scope(): Scope {
+    return this.fn.scope
+  }
+
+  private set scope(scope: Scope) {
+    this.fn.scope = scope
+  }
+
+  private get loops(): Loop[] {
+    return this.fn.loops
+  }
+
+  private get tracksCompletion(): boolean {
+    return this.fn.tracksCompletion
+  }
 
   script(program: Program): CompiledScript {
     const { out } = this
@@ -134,11 +193,12 @@ class Compiler {
     this.declare(body, this.scope)
 
     for (const binding of this.scope.bindings.values()) {
-      out.emit(Op.DECLARE_GLOBAL, out.constant(binding.name), binding.kind === 'const' ? GlobalFlags.Const : GlobalFlags.None)
+      out.emit(Op.DECLARE_GLOBAL, out.constant(binding.name), binding.kind === 'let' ? GlobalFlags.None : GlobalFlags.Const)
     }
     out.scopeSize = 1
     out.emit(Op.UNDEFINED)
     out.emit(Op.INIT, 0, COMPLETION_SLOT)
+    this.hoistFunctions(body)
     this.statements(body)
     out.emit(Op.LOAD, 0, COMPLETION_SLOT)
     out.emit(Op.HALT)
@@ -153,12 +213,28 @@ class Compiler {
   private declare(body: Statement[], scope: Scope) {
     for (const statement of body) {
       if (statement.type === 'VariableDeclaration') this.declareVariables(statement, scope)
+      if (statement.type === 'FunctionDeclaration') this.declareFunction(statement, scope)
     }
   }
 
+  private declareFunction({ id, params }: FunctionDeclaration, scope: Scope) {
+    this.declareName(scope, id, 'function', signatureOf(id.name, params))
+  }
+
   private declareVariables(node: VariableDeclaration, scope: Scope) {
-    for (const { id } of node.declarations) {
-      if (!scope.declare(id.name, node.kind)) throw this.error(`Identifier '${id.name}' has already been declared`, id.loc)
+    for (const { id, init } of node.declarations) this.declareName(scope, id, node.kind, constSignature(node.kind, id, init))
+  }
+
+  private declareName(scope: Scope, id: Identifier, kind: BindingKind, signature?: Signature) {
+    if (!scope.declare(id.name, kind, signature)) throw this.error(`Identifier '${id.name}' has already been declared`, id.loc)
+  }
+
+  // Function declarations are initialised at the start of their scope, so mutual recursion works (§4.4.4).
+  private hoistFunctions(body: Statement[]) {
+    for (const statement of body) {
+      if (statement.type !== 'FunctionDeclaration') continue
+      this.closure(this.functionProto(statement, statement.id.name))
+      this.initialize(statement.id.name)
     }
   }
 
@@ -173,14 +249,17 @@ class Compiler {
 
   private store(name: string, loc: SourceLocation) {
     const resolution = this.scope.resolve(name)
-    if (resolution.where !== 'global' && resolution.binding.kind === 'const') {
-      throw this.error(`Assignment to constant variable '${name}'`, loc)
-    }
+    if (resolution.where !== 'global') this.checkAssignable(resolution.binding, loc)
 
     this.out.mark(loc)
 
     if (resolution.where === 'lexical') this.lexical(Op.STORE, name, resolution)
     else this.out.emit(Op.STORE_GLOBAL, this.out.constant(name))
+  }
+
+  private checkAssignable({ name, kind }: Binding, loc: SourceLocation) {
+    if (kind === 'const') throw this.error(`Assignment to constant variable '${name}'`, loc)
+    if (kind === 'function') throw this.error(`Cannot assign to function '${name}': function declarations are constant`, loc)
   }
 
   // Initialises a binding declared in the current scope.
@@ -350,10 +429,16 @@ class Compiler {
 
   variableDeclaration(node: VariableDeclaration) {
     for (const { id, init } of node.declarations) {
-      if (init) this.expression(init)
+      if (init) this.namedExpression(init, id.name)
       else this.out.emit(Op.NULL) // `let x` starts as null (D37)
       this.initialize(id.name)
     }
+  }
+
+  // `let f = function () {}` names the function `f`, as in JS.
+  private namedExpression(node: Expression, name: string) {
+    if (node.type === 'FunctionExpression') this.functionExpression(node, name)
+    else this.expression(node)
   }
 
   block(node: BlockStatement) {
@@ -361,9 +446,8 @@ class Compiler {
     const scope = new Scope(outer, 'block')
 
     this.declare(node.body, scope)
-
-    if (scope.hasEnv) this.out.emit(Op.PUSH_ENV, scope.bindings.size)
-    this.scope = scope
+    this.enterScope(scope)
+    this.hoistFunctions(node.body)
     this.statements(node.body)
     this.scope = outer
 
@@ -461,6 +545,7 @@ class Compiler {
 
   call(node: CallExpression) {
     if (node.callee.type === 'Super') throw this.unsupported(node)
+    this.checkArity(node.callee, node.arguments.length, node.loc)
     this.expression(node.callee)
 
     for (const argument of node.arguments) this.expression(argument)
@@ -498,6 +583,105 @@ class Compiler {
     this.expression(right)
     this.store(left.name, left.loc)
     this.out.patch(end)
+  }
+
+  // Compile-time arity check when the callee is a known function (D38, §4.4.13).
+  private checkArity(callee: Expression, argc: number, loc: SourceLocation) {
+    const signature = callee.type === 'Identifier' ? this.knownSignature(callee.name) : undefined
+    const problem = signature && arityError(signature, argc)
+    if (problem) throw this.error(problem, loc)
+  }
+
+  private knownSignature(name: string): Signature | undefined {
+    const resolution = this.scope.resolve(name)
+
+    return resolution.where === 'global' ? undefined : resolution.binding.signature
+  }
+
+  newExpression(node: NewExpression) {
+    this.expression(node.callee)
+
+    for (const argument of node.arguments) this.expression(argument)
+    this.out.mark(node.loc)
+    this.out.emit(Op.NEW, node.arguments.length)
+  }
+
+  // ---------------------------------------------------------------------------
+  // Functions
+
+  returnStatement(node: ReturnStatement) {
+    if (this.tracksCompletion) throw this.error('Illegal return statement', node.loc)
+    if (node.argument) this.expression(node.argument)
+    else this.out.emit(Op.NULL) // bare return gives null (D37)
+    this.out.emit(Op.RETURN)
+  }
+
+  functionExpression(node: FunctionExpression, name = '') {
+    if (node.id) this.namedFunctionExpression(node, node.id)
+    else this.closure(this.functionProto(node, name))
+  }
+
+  // The name of a named function expression is a constant binding visible only inside it.
+  private namedFunctionExpression(node: FunctionExpression, id: Identifier) {
+    const outer = this.scope
+    const scope = new Scope(outer, 'block')
+
+    this.declareName(scope, id, 'function', signatureOf(id.name, node.params))
+    this.enterScope(scope)
+    this.closure(this.functionProto(node, id.name))
+    this.out.emit(Op.DUP)
+    this.initialize(id.name)
+    this.scope = outer
+    this.out.emit(Op.POP_ENV)
+  }
+
+  private closure(proto: FunctionProto) {
+    this.out.emit(Op.CLOSURE, this.out.constant(proto))
+  }
+
+  private functionProto(node: FunctionNode, name: string): FunctionProto {
+    const outer = this.fn
+    const scope = new Scope(outer.scope, 'function')
+
+    this.fn = { out: new ProtoBuilder({ name, kind: 'function' }), scope, loops: [], tracksCompletion: false }
+
+    try {
+      return this.functionBody(node, signatureOf(name, node.params))
+    } finally {
+      this.fn = outer
+    }
+  }
+
+  // Function env layout: parameters (rest last), then the body's top-level declarations.
+  private functionBody({ params, body }: FunctionNode, signature: Signature): FunctionProto {
+    for (const param of params) this.declareName(this.scope, paramName(param), 'let')
+    this.declare(body.body, this.scope)
+    this.defaults(params)
+    this.hoistFunctions(body.body)
+    this.statements(body.body)
+    this.out.emit(Op.NULL) // falling off the end returns null (D37)
+    this.out.emit(Op.RETURN)
+    this.out.scopeSize = this.scope.bindings.size
+
+    const { text, required, optional, hasRest } = signature
+
+    return { ...this.out.build(), paramCount: required + optional, length: required, hasRest, signature: text }
+  }
+
+  // Default values are evaluated at call time, left to right, only for omitted arguments (D38).
+  private defaults(params: Pattern[]) {
+    params.forEach(param => {
+      if (param.type === 'AssignmentPattern') this.defaultValue(param)
+    })
+  }
+
+  private defaultValue({ left, right }: AssignmentPattern) {
+    const resolution = this.scope.resolve(left.name) as { slot: number }
+    const skip = this.out.emit(Op.JUMP_IF_ARG, resolution.slot, -1) + 2
+
+    this.expression(right)
+    this.initialize(left.name)
+    this.out.patch(skip)
   }
 
   // ---------------------------------------------------------------------------

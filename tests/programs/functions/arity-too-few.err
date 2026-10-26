@@ -1,0 +1,1 @@
+functions/arity-too-few.pscript:3:1 SyntaxError: greet(name, greeting?) expects 1-2 arguments, got 0

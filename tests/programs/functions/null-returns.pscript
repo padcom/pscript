@@ -1,0 +1,4 @@
+// @pscript-only: bare return and falling off the end give null (D37)
+function nothing() {}
+function bare() { return }
+print(nothing(), bare(), typeof nothing())

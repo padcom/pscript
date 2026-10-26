@@ -1,0 +1,23 @@
+function fact(n) { return n <= 1 ? 1 : n * fact(n - 1) }
+function fib(n) { return n < 2 ? n : fib(n - 1) + fib(n - 2) }
+print(fact(10), fib(20))
+
+function isEven(n) { return n == 0 ? true : isOdd(n - 1) }
+function isOdd(n) { return n == 0 ? false : isEven(n - 1) }
+print(isEven(10), isOdd(7), isEven(7))
+
+const fibonacci = function fibo(n) { return n < 2 ? n : fibo(n - 1) + fibo(n - 2) }
+print(fibonacci(15))
+
+function sum(n) {
+  let total = 0
+  for (let i = 1; i <= n; i++) total += i
+  return total
+}
+print(sum(100))
+
+function countdown(n) {
+  if (n == 0) return 'liftoff'
+  return countdown(n - 1)
+}
+print(countdown(1000))
