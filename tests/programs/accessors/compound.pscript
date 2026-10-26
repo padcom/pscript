@@ -1,0 +1,15 @@
+let reads = 0
+let writes = 0
+class Counter {
+  value = 0
+  get count() { reads++; return this.value }
+  set count(v) { writes++; this.value = v }
+}
+const c = new Counter()
+c.count += 5
+c.count++
+++c.count
+print(c.count, reads, writes)
+const o = { v: 1, get x() { return this.v }, set x(n) { this.v = n * 2 } }
+o.x += 1
+print(o.x, o.v)

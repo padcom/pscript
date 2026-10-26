@@ -1,0 +1,5 @@
+// @pscript-only: print shows own accessors without calling them (§4.6.2); class accessors are not own properties
+const o = { a: 1, get g() { return 1 }, set s(v) {}, get gs() { return 1 }, set gs(v) {} }
+print(o)
+class P { x = 1; get y() { return 2 } }
+print(new P(), Object.keys(new P()).join(), 'y' in new P())

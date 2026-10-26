@@ -229,6 +229,10 @@ MemberModifier
 ClassMember
   : ClassMemberName '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
     { $$ = { kind: 'method', key: $1, params: $3, body: yy.block($6, @5), loc: @$ } }
+  | GET ClassMemberName '(' ')' BLOCK_LBRACE StatementList '}'
+    { $$ = { kind: 'get', key: $2, params: [], body: yy.block($6, @5), loc: @$ } }
+  | SET ClassMemberName '(' Parameter ')' BLOCK_LBRACE StatementList '}'
+    { $$ = { kind: 'set', key: $2, params: [$4], body: yy.block($7, @6), loc: @$ } }
   | ClassMemberName ';'
     { $$ = { kind: 'field', key: $1, value: null, loc: @$ } }
   | ClassMemberName '=' AssignmentExpression ';'
@@ -560,6 +564,16 @@ Property
     { $$ = yy.property($1, $3, false, @$) }
   | LiteralPropertyName MethodTail
     { $$ = yy.property($1, yy.method($2, @2), true, @$) }
+  | GET PropertyKey '(' ')' BLOCK_LBRACE StatementList '}'
+    { $$ = yy.accessorProperty('get', $2, yy.method({ params: [], body: yy.block($6, @5) }, @3), @$) }
+  | SET PropertyKey '(' Parameter ')' BLOCK_LBRACE StatementList '}'
+    { $$ = yy.accessorProperty('set', $2, yy.method({ params: [$4], body: yy.block($7, @6) }, @3), @$) }
+  ;
+
+PropertyKey
+  : IDENT
+    { $$ = yy.identifier($1, @$) }
+  | LiteralPropertyName
   ;
 
 MethodTail

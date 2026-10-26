@@ -3,6 +3,7 @@ import { IDENT_PATTERN } from '@/parser/tokens'
 import { toStringIn } from './conversions'
 import { toString } from './operators'
 import {
+  Accessor,
   Array as ScriptArray,
   Class,
   Function as ScriptFunction,
@@ -24,6 +25,12 @@ function formatFunction(fn: ScriptFunction): string {
 
 function formatKey(key: string): string {
   return IDENT_PATTERN.test(key) ? key : JSON.stringify(key)
+}
+
+function accessorLabel({ get, set }: Accessor): string {
+  if (get && set) return '[Getter/Setter]'
+
+  return get ? '[Getter]' : '[Setter]'
 }
 
 function placeholder(object: ScriptObject): string {
@@ -70,8 +77,13 @@ class Formatter {
     return `[${array.items.map(item => this.value(item, depth + 1)).join(', ')}]`
   }
 
+  // Own accessors are shown, not called (§4.6.2).
+  private property(value: Value | Accessor, depth: number): string {
+    return value instanceof Accessor ? accessorLabel(value) : this.value(value, depth)
+  }
+
   private plainObject(object: ScriptObject, depth: number): string {
-    const entries = [...object.props].map(([key, value]) => `${formatKey(key)}: ${this.value(value as Value, depth + 1)}`)
+    const entries = [...object.props].map(([key, value]) => `${formatKey(key)}: ${this.property(value, depth + 1)}`)
 
     return entries.length === 0 ? '{}' : `{${entries.join(', ')}}`
   }

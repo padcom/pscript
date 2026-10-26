@@ -18,11 +18,12 @@ import {
 } from '@/runtime/operators'
 import { formatNested } from '@/runtime/format'
 import { DONE, getIterator, type ScriptIterator } from '@/runtime/iterators'
-import { defineProperty, getProperty, propertyKey, setProperty } from '@/runtime/properties'
+import { defineAccessor, defineProperty, getProperty, propertyKey, setProperty } from '@/runtime/properties'
 import { toHost } from '@/runtime/interop'
 import { ScriptError, ScriptThrow, rangeError, referenceError, typeError } from '@/runtime/script-error'
 import { arityError } from '@/compiler/signature'
 import {
+  Accessor,
   Array as ScriptArray,
   Class as ClassValue,
   Closure,
@@ -419,8 +420,10 @@ export class VM implements AccessContext {
     if (!home) throw typeError("'super' keyword unexpected here")
 
     const isStatic = frame.homeObject === home
+    const found = superMember(this.realm, home, key, isStatic)
 
-    return superMember(this.realm, home, key, isStatic)
+    // an accessor runs with the current `this` (§4.5.4)
+    return found instanceof Accessor ? (found.get ? this.callFunction(found.get, frame.thisValue, []) : undefined) : found
   }
 
   private notAClass(callee: Value): never {
@@ -625,6 +628,14 @@ export class VM implements AccessContext {
           }
           break
         }
+        case Op.DEFINE_GETTER:
+          b = stack.pop()
+          defineAccessor(stack[stack.length - 1] as ScriptObject, constants[code[ip++]] as string, 'get', b as ScriptFunction)
+          break
+        case Op.DEFINE_SETTER:
+          b = stack.pop()
+          defineAccessor(stack[stack.length - 1] as ScriptObject, constants[code[ip++]] as string, 'set', b as ScriptFunction)
+          break
         case Op.DEFINE_PROP:
           this.defineProperty(stack.pop(), stack[stack.length - 1] as ScriptObject, constants[code[ip++]] as string)
           break

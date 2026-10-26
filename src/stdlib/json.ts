@@ -3,13 +3,22 @@
 import { defineGlobal } from '@/runtime/realm'
 import { typeError } from '@/runtime/script-error'
 import {
+  Accessor,
   Array as ScriptArray,
   Function as ScriptFunction,
   Object as ScriptObject,
+  type AccessContext,
   type Realm,
   type Value,
 } from '@/runtime/values'
 import { defineMethods, integerArgument, method } from './native'
+
+// Own accessors of object literals are serialized through their getter (§4.4.6).
+function readOwn(ctx: AccessContext, object: ScriptObject, stored: Value | Accessor): Value {
+  if (!(stored instanceof Accessor)) return stored
+
+  return stored.get ? ctx.callFunction(stored.get, object, []) : undefined
+}
 
 // Non-finite numbers serialize as null, as in JS.
 function primitive(value: Value): string {
@@ -22,7 +31,7 @@ function primitive(value: Value): string {
 class Serializer {
   private stack = new Set<ScriptObject>()
 
-  constructor(private unit: string) {}
+  constructor(private unit: string, private ctx: AccessContext) {}
 
   value(value: Value, indent: string): string | undefined {
     if (value === undefined || value instanceof ScriptFunction) return undefined
@@ -52,7 +61,7 @@ class Serializer {
     const inner = indent + this.unit
     const separator = this.unit ? ': ' : ':'
     const members = [...object.props].flatMap(([key, item]) => {
-      const text = this.value(item as Value, inner)
+      const text = this.value(readOwn(this.ctx, object, item), inner)
 
       return text === undefined ? [] : [`${JSON.stringify(key)}${separator}${text}`]
     })
@@ -79,15 +88,17 @@ function indentUnit(indent: Value): string {
 /**
  * `JSON.stringify(value, null?, indent?)`.
  *
+ * @param ctx access context (for getters)
  * @param value the value
- * @param replacer must be null or undefined (replacer functions are not supported)
- * @param indent number of spaces or an indentation string
+ * @param options `[replacer, indent]`: the replacer must be null or undefined, indent a number of spaces or a string
  * @returns the JSON text, or undefined for undefined and functions
  */
-export function stringify(value: Value, replacer: Value, indent: Value): Value {
+export function stringify(ctx: AccessContext, value: Value, options: Value[]): Value {
+  const [replacer, indent] = options
+
   if (replacer !== undefined && replacer !== null) throw typeError('JSON.stringify: replacers are not supported')
 
-  return new Serializer(indentUnit(indent)).value(value, '')
+  return new Serializer(indentUnit(indent), ctx).value(value, '')
 }
 
 /**
@@ -99,7 +110,7 @@ export function installJson(realm: Realm) {
   const json = new ScriptObject(realm.ObjectPrototype)
 
   defineMethods(realm, json, {
-    stringify: method(3, (_, __, [value, replacer, indent]) => stringify(value, replacer, indent)),
+    stringify: method(3, (ctx, __, [value, ...options]) => stringify(ctx, value, options)),
   })
   defineGlobal(realm, 'JSON', json, true)
 }

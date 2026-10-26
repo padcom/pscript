@@ -55,8 +55,11 @@ const KEYWORD_TOKENS = new Set(KEYWORDS.map(keyword => keyword.toUpperCase()))
 const MODIFIERS = new Set(['PUBLIC', 'PROTECTED', 'PRIVATE', 'STATIC', 'FINAL', 'OVERRIDE'])
 const CONTEXTUAL_MODIFIERS: Record<string, string> = { final: 'FINAL', override: 'OVERRIDE' }
 
+/** `get` / `set` before a member name on the same line (§4.2.5). */
+const ACCESSOR_KEYWORDS: Record<string, string> = { get: 'GET', set: 'SET' }
+
 /** Tokens after which a class member starts. */
-const MEMBER_PRECEDERS = new Set(['CLASS_LBRACE', ';', '}', ...MODIFIERS])
+const MEMBER_PRECEDERS = new Set(['CLASS_LBRACE', ';', '}', 'GET', 'SET', ...MODIFIERS])
 
 /** After a member name: a method, a field initialiser, the end of a field. */
 const MEMBER_NAME_FOLLOWERS = new Set(['(', '=', ';', '}'])
@@ -92,7 +95,7 @@ const BRACE_TOKENS: Partial<Record<Bracket, string>> = {
 const STATEMENT_BRACKETS = new Set<Bracket | undefined>(['{statement}', '{class-statement}'])
 
 /** In an object literal, a key follows `{` or `,` and is followed by one of these (§4.2.4). */
-const KEY_PRECEDERS = new Set(['OBJ_LBRACE', ','])
+const KEY_PRECEDERS = new Set(['OBJ_LBRACE', ',', 'GET', 'SET'])
 const KEY_FOLLOWERS = new Set([':', '(', ',', '}'])
 
 const PAREN_DEPTH: Record<string, number> = { '(': 1, ')': -1 }
@@ -144,6 +147,8 @@ export class TokenFilter {
   private prev: Token | null = null
   private pending: Token | null = null
   private brackets: Bracket[] = []
+  /** the token being classified by read() */
+  private current: Token | null = null
   /** raw tokens read ahead (arrow detection), not yet seen by the parser */
   private lookahead: Token[] = []
   /** bracket depth of a function declaration whose body brace is still to come, or -1 */
@@ -192,6 +197,7 @@ export class TokenFilter {
   private read(): Token {
     const token = this.lookahead.shift() ?? this.readRaw()
 
+    this.current = token
     this.contextualKeyword(token)
     this.keywordAsName(token)
     ARROW_STARTS[token.name]?.(this, token)
@@ -212,9 +218,33 @@ export class TokenFilter {
 
   // `final class …`; `final` / `override` before another modifier or a member name (§4.2.5).
   private contextualKeyword(token: Token) {
-    const keyword = token.name === 'IDENT' ? CONTEXTUAL_MODIFIERS[token.text] : undefined
+    const keyword = token.name === 'IDENT' ? this.contextualName(token.text) : undefined
 
-    if (keyword && this.isModifier(keyword, this.peek(0))) token.name = keyword
+    if (keyword) token.name = keyword
+  }
+
+  // `final` / `override` as modifiers, `get` / `set` as accessor keywords (§4.2.5).
+  private contextualName(text: string): string | undefined {
+    const modifier = CONTEXTUAL_MODIFIERS[text]
+
+    return modifier ? this.asModifier(modifier) : this.asAccessorKeyword(ACCESSOR_KEYWORDS[text])
+  }
+
+  private asModifier(modifier: string): string | undefined {
+    return this.isModifier(modifier, this.peek(0)) ? modifier : undefined
+  }
+
+  private asAccessorKeyword(keyword: string | undefined): string | undefined {
+    return keyword && this.isAccessorKeyword(this.peek(0)) ? keyword : undefined
+  }
+
+  // `get x() {}` / `set x(v) {}` in a class body or an object literal; `get() {}`, `{ get: 1 }` stay names.
+  private isAccessorKeyword(next: Token): boolean {
+    return this.inAccessorPosition() && !next.afterNewline && isName(next.name)
+  }
+
+  private inAccessorPosition(): boolean {
+    return this.inMemberPosition() || (this.top() === '{object}' && this.afterKeyPreceder())
   }
 
   private isModifier(keyword: string, next: Token): boolean {
@@ -227,8 +257,18 @@ export class TokenFilter {
     return !next.afterNewline && (MODIFIERS.has(next.name) || isName(next.name))
   }
 
+  // In a class body, a member starts after `{`, `;`, `}` or a modifier — or on a new line after something that
+  // ends a member (the `;` the filter is about to insert has not been emitted yet when the token is classified).
   private inMemberPosition(): boolean {
-    return CLASS_BODIES.has(this.top()) && MEMBER_PRECEDERS.has(this.prev?.name ?? '')
+    return CLASS_BODIES.has(this.top()) && (this.afterMemberPreceder() || this.startsLine())
+  }
+
+  private afterMemberPreceder(): boolean {
+    return MEMBER_PRECEDERS.has(this.prev?.name ?? '')
+  }
+
+  private startsLine(): boolean {
+    return Boolean(this.current?.afterNewline) && this.prevEnds()
   }
 
   // A keyword in member position followed by `(`, `=`, `;`, `}` or a newline is a member name (§4.2.4).

@@ -223,6 +223,10 @@ export const builders = {
     return { type: 'Property', key, value, kind: 'init', method, shorthand: false, computed: false, loc: toLoc(loc) }
   },
 
+  accessorProperty(kind: 'get' | 'set', key: Identifier | Literal, value: Expression, loc: JisonLoc): Property {
+    return { type: 'Property', key, value, kind, method: false, shorthand: false, computed: false, loc: toLoc(loc) }
+  },
+
   newExpression(callee: Expression, args: Expression[], loc: JisonLoc): NewExpression {
     return { type: 'NewExpression', callee, arguments: args, loc: toLoc(loc) }
   },

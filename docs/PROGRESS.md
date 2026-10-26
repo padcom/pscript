@@ -22,7 +22,21 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M13 | Standard library | done (2026-10-27) |
 | M14 | Template literals | done (2026-10-27) |
 | M15 | Classes | done (2026-10-27) |
-| M16 | Accessors | next |
+| M16 | Accessors | done (2026-10-27) |
+| M17 | Access modifiers | next |
+
+## M16 — Accessors
+
+Done: accessor programs pass (`tests/programs/accessors/`). `npm run check` and `npm run build` green; 805 tests.
+
+What exists:
+
+- Token filter (§4.2.5): `get`/`set` followed by a member name on the same line, in class-member or object-key position, become `GET`/`SET` (`get() {}`, `get = 1`, `{ get: 1 }`, `{ get }`, `get\n x() {}` stay names). **Fix:** a token on a new line after something that ends a member is in member position even though the `;` the filter will insert has not been emitted yet (`x = 0\n get y() {}`, `x = 1\n static z = 2`).
+- Grammar: class `GET name() {}` / `SET name(param) {}` (exactly one parameter), object-literal `get k() {}` / `set k(v) {}` (`Property.kind` `get`/`set`, `method: false`). An accessor named `constructor` → SyntaxError.
+- Compiler: accessor members → protos of kind `getter`/`setter`, `ClassMethodTemplate.kind` `get`/`set`; object-literal accessors → `DEFINE_GETTER`/`DEFINE_SETTER`.
+- Classes (`vm/classes.ts`): a get/set pair combines into one `accessor` member entry; a subclass redefining one half keeps the inherited other half (§4.5.6). `super.x` on an accessor calls the superclass getter with the current `this`.
+- `src/runtime/properties.ts` rewritten with the access context and the original receiver threaded through: getters/setters run via `ctx.callFunction` with the receiver; class accessor without setter → `TypeError: Cannot set property x of A which has only a getter`, without getter → `TypeError: 'x' has only a setter` (§4.4.12); object literals store own `Accessor`s (`defineAccessor`; a later data property replaces them), a setter-only one reads `undefined`, a getter-only one rejects writes. Compound assignment / update call the getter once and the setter once.
+- Object-literal accessors: `print` shows `[Getter]` / `[Setter]` / `[Getter/Setter]`; `JSON.stringify`, `Object.values`/`entries`/`assign` call the getter (`stringify(ctx, value, [replacer, indent])` now takes the context). Class accessors are not own properties (not in `Object.keys`, D35, JSON) but `in` sees them.
 
 ## M15 — Classes
 

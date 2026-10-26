@@ -1,0 +1,1 @@
+accessors/getter-only.pscript:3:1 TypeError: Cannot set property x of A which has only a getter

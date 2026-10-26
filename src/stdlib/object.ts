@@ -2,6 +2,7 @@
 // (integer-like keys are not reordered, a documented deviation from JS, §4.4.6).
 import { toStringIn } from '@/runtime/conversions'
 import { formatNested } from '@/runtime/format'
+import { getProperty, setProperty } from '@/runtime/properties'
 import { errorToString, isErrorObject } from '@/runtime/operators'
 import { defineGlobal } from '@/runtime/realm'
 import { typeError } from '@/runtime/script-error'
@@ -30,9 +31,14 @@ export function ownEntries(value: Value): Entry[] {
   return value instanceof ScriptObject ? objectEntries(value) : primitiveEntries(value)
 }
 
-function assign(target: Value, sources: Value[]): ScriptObject {
+// Values of own properties; object-literal accessors are read through their getter.
+function ownValues(ctx: AccessContext, value: Value): Entry[] {
+  return ownEntries(value).map(([key]) => [key, getProperty(ctx, value, key)])
+}
+
+function assign(ctx: AccessContext, target: Value, sources: Value[]): ScriptObject {
   if (!(target instanceof ScriptObject)) throw typeError('Object.assign called on a non-object')
-  for (const [key, item] of sources.flatMap(ownEntries)) target.props.set(key, item)
+  for (const [key, item] of sources.flatMap(source => ownValues(ctx, source))) setProperty(ctx, target, key, item)
 
   return target
 }
@@ -92,9 +98,9 @@ export function installObject(realm: Realm) {
   })
   defineMethods(realm, namespace, {
     keys: method(1, (_, __, [value]) => array(ownEntries(value).map(([key]) => key))),
-    values: method(1, (_, __, [value]) => array(ownEntries(value).map(([, item]) => item))),
-    entries: method(1, (_, __, [value]) => array(ownEntries(value).map(entry => array(entry)))),
-    assign: method(2, (_, __, [target, ...sources]) => assign(target, sources)),
+    values: method(1, (ctx, __, [value]) => array(ownValues(ctx, value).map(([, item]) => item))),
+    entries: method(1, (ctx, __, [value]) => array(ownValues(ctx, value).map(entry => array(entry)))),
+    assign: method(2, (ctx, __, [target, ...sources]) => assign(ctx, target, sources)),
     freeze: method(1, (_, __, [value]) => freeze(value)),
   })
   defineGlobal(realm, 'Object', namespace, true)

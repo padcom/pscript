@@ -54,7 +54,9 @@ describe('globals', () => {
 
 describe('JSON.stringify', () => {
   it('rejects replacer functions and handles indent strings', () => {
-    expect(() => stringify(1, 1, undefined)).toThrow('replacers are not supported')
-    expect(stringify(1, null, 'abcdefghijklmnop')).toBe('1')
+    const ctx = { realm: createRealm(), homeClass: null, callFunction: () => null }
+
+    expect(() => stringify(ctx, 1, [1])).toThrow('replacers are not supported')
+    expect(stringify(ctx, 1, [null, 'abcdefghijklmnop'])).toBe('1')
   })
 })

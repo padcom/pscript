@@ -26,7 +26,7 @@ export interface Modifier {
  * A class member before modifiers are applied.
  */
 export type RawMember
-  = { kind: 'method', key: Identifier | Literal, params: Pattern[], body: BlockStatement, loc: JisonLoc }
+  = { kind: 'method' | 'get' | 'set', key: Identifier | Literal, params: Pattern[], body: BlockStatement, loc: JisonLoc }
     | { kind: 'field', key: Identifier | Literal, value: Expression | null, loc: JisonLoc }
 
 type Fail = (reason: string, loc: JisonLoc) => never
@@ -78,8 +78,15 @@ function checkPrivate({ access, final, override }: Flags, loc: JisonLoc, fail: F
   if (override) fail("Private members cannot be 'override'", loc)
 }
 
-function isConstructor(member: RawMember, { isStatic }: Flags): boolean {
-  return member.kind === 'method' && !isStatic && keyName(member.key) === 'constructor'
+function namesConstructor(member: RawMember, { isStatic }: Flags): boolean {
+  return !isStatic && keyName(member.key) === 'constructor'
+}
+
+function isConstructor(member: Exclude<RawMember, { kind: 'field' }>, applied: Flags): boolean {
+  const named = namesConstructor(member, applied)
+  if (named && member.kind !== 'method') throw new ModifierError('Class constructor may not be an accessor', member.loc)
+
+  return named
 }
 
 type FieldMember = Extract<RawMember, { kind: 'field' }>
@@ -93,7 +100,7 @@ function field(member: FieldMember, { access, isStatic, final, override }: Flags
   return { type: 'PropertyDefinition', key, computed: false, value, static: isStatic, access, override, final, loc }
 }
 
-function method(member: Extract<RawMember, { kind: 'method' }>, applied: Flags, modifiers: Modifier[]): MethodDefinition {
+function method(member: Exclude<RawMember, { kind: 'field' }>, applied: Flags, modifiers: Modifier[]): MethodDefinition {
   const constructor = isConstructor(member, applied)
   const loc = toLoc(member.loc)
   const { access, isStatic, final, override } = applied
@@ -104,7 +111,7 @@ function method(member: Extract<RawMember, { kind: 'method' }>, applied: Flags, 
     type: 'MethodDefinition',
     key: member.key,
     computed: false,
-    kind: constructor ? 'constructor' : 'method',
+    kind: constructor ? 'constructor' : member.kind,
     static: isStatic,
     value: { type: 'FunctionExpression', id: null, params: member.params, body: member.body, loc },
     access,

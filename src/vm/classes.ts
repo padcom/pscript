@@ -1,9 +1,10 @@
 // Class definition (§5.6.7): the CLASS instruction builds a sealed class with flattened member indexes.
 // Override/final checks (M18), access modifiers (M17), accessors (M16) and interfaces (M19) build on this.
-import type { ClassMemberRef, ClassTemplate, FunctionProto } from '@/compiler/function-proto'
+import type { ClassMemberRef, ClassMethodTemplate, ClassTemplate, FunctionProto } from '@/compiler/function-proto'
 import { kindOf } from '@/runtime/operators'
 import { typeError } from '@/runtime/script-error'
 import {
+  Accessor,
   Class,
   Closure,
   Function as ScriptFunction,
@@ -86,6 +87,10 @@ function implicitLength(cls: Class): number {
   return cls.superClass ? cls.superClass.length : 0
 }
 
+function accessorHalves(entry: MemberEntry | undefined): Pick<MemberEntry, 'get' | 'set'> {
+  return entry?.kind === 'accessor' ? { get: entry.get, set: entry.set } : {}
+}
+
 class ClassBuilder {
   readonly cls: Class
 
@@ -113,7 +118,8 @@ class ClassBuilder {
     for (const method of template.methods) {
       const fn = this.closure(site.constants[method.protoIndex] as FunctionProto, method.isStatic)
 
-      this.index(method.isStatic).set(method.key, { kind: 'method', access: method.access, owner: cls, final: method.final, fn })
+      if (method.kind === 'method') this.index(method.isStatic).set(method.key, this.entry(method, { kind: 'method', fn }))
+      else this.accessor(method, fn)
     }
 
     for (const field of template.fields) {
@@ -154,6 +160,18 @@ class ClassBuilder {
     if (template.staticInit) this.host.callFunction(this.closure(template.staticInit, true), cls, [])
   }
 
+  private entry(member: ClassMethodTemplate, parts: Partial<MemberEntry> & Pick<MemberEntry, 'kind'>): MemberEntry {
+    return { access: member.access, owner: this.cls, final: member.final, ...parts }
+  }
+
+  // A get/set pair combines into one accessor; an inherited half the class does not redefine stays in effect (§4.5.6).
+  private accessor(method: ClassMethodTemplate, fn: Closure) {
+    const index = this.index(method.isStatic)
+    const halves = accessorHalves(index.get(method.key))
+
+    index.set(method.key, this.entry(method, { kind: 'accessor', ...halves, [method.kind]: fn }))
+  }
+
   private index(isStatic: boolean): Map<string, MemberEntry> {
     return isStatic ? this.cls.staticMemberIndex : this.cls.memberIndex
   }
@@ -188,20 +206,27 @@ function inherited(object: ScriptObject | null, key: string): [Value] | null {
 }
 
 // Without a superclass, `super` reaches the built-in prototypes (Object.prototype / Function.prototype).
-function superStatic(realm: Realm, parent: Class | null, key: string): [Value] | null {
-  if (!parent) return inherited(realm.FunctionPrototype, key)
-
-  const entry = parent.staticMemberIndex.get(key)
-
-  return entry?.fn ? [entry.fn] : inherited(parent, key)
+function accessorOf({ get, set }: MemberEntry): Accessor {
+  return new Accessor(get ?? null, set ?? null)
 }
 
-function superInstance(realm: Realm, parent: Class | null, key: string): [Value] | null {
+// A superclass member: a method's function, or an accessor (its getter is called with the current `this`).
+function memberFound(entry: MemberEntry | undefined): [Value | Accessor] | null {
+  if (!entry || entry.kind === 'field') return null
+
+  return [entry.kind === 'accessor' ? accessorOf(entry) : entry.fn as Value]
+}
+
+function superStatic(realm: Realm, parent: Class | null, key: string): [Value | Accessor] | null {
+  if (!parent) return inherited(realm.FunctionPrototype, key)
+
+  return memberFound(parent.staticMemberIndex.get(key)) ?? inherited(parent, key)
+}
+
+function superInstance(realm: Realm, parent: Class | null, key: string): [Value | Accessor] | null {
   if (!parent) return inherited(realm.ObjectPrototype, key)
 
-  const entry = parent.memberIndex.get(key)
-
-  return entry?.fn ? [entry.fn] : inherited(parent.prototype, key)
+  return memberFound(parent.memberIndex.get(key)) ?? inherited(parent.prototype, key)
 }
 
 /**
@@ -213,7 +238,7 @@ function superInstance(realm: Realm, parent: Class | null, key: string): [Value]
  * @param isStatic static context (statics of the superclass)
  * @returns the member's value
  */
-export function superMember(realm: Realm, home: Class, key: string, isStatic: boolean): Value {
+export function superMember(realm: Realm, home: Class, key: string, isStatic: boolean): Value | Accessor {
   const found = (isStatic ? superStatic : superInstance)(realm, home.superClass, key)
   if (!found) throw typeError(`'super' has no member '${key}' (class '${home.name}')`)
 

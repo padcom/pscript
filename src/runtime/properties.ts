@@ -1,9 +1,11 @@
-// Property access (§5.7): the single entry points for reads and writes.
-// Accessors (M16), access modifiers (M17) and exotic objects (modules, host proxies) come later.
+// Property access (§5.7): the single entry points for reads and writes, including accessors (§4.5.4):
+// getters and setters are called with the original receiver. Access modifiers (M17) and exotic
+// objects (modules, host proxies) come later.
 import { GlobalObject } from './global-object'
 import { isObject, kindOf, toString } from './operators'
 import { rangeError, typeError } from './script-error'
 import {
+  Accessor,
   Array as ScriptArray,
   Class,
   Function as ScriptFunction,
@@ -36,12 +38,35 @@ function checkIndex(index: number, length: number) {
   if (index < 0 || index >= length) throw rangeError(`Index ${index} out of range for length ${length}`)
 }
 
-function lookup(object: ScriptObject | null, key: string): Value {
+/** What a props map holds: a value, or an object literal's own accessor. */
+type Stored = Value | Accessor
+
+// A found property: `[stored]`, or null when the key is not there (undefined is a valid value).
+type Found = [Stored] | null
+
+function find(object: ScriptObject | null, key: string): Found {
   for (let current = object; current; current = current.proto) {
-    if (current.props.has(key)) return current.props.get(key) as Value
+    if (current.props.has(key)) return [current.props.get(key) as Stored]
   }
 
-  return undefined
+  return null
+}
+
+function own(object: ScriptObject, key: string): Found {
+  return object.props.has(key) ? [object.props.get(key) as Stored] : null
+}
+
+// Accessors are read through their getter with the original receiver; an object literal's setter-only accessor reads undefined.
+function resolve(ctx: AccessContext, stored: Stored, receiver: Value): Value {
+  if (!(stored instanceof Accessor)) return stored
+
+  return stored.get ? ctx.callFunction(stored.get, receiver, []) : undefined
+}
+
+function lookup(ctx: AccessContext, object: ScriptObject | null, key: string, receiver: Value): Value {
+  const found = find(object, key)
+
+  return found ? resolve(ctx, found[0], receiver) : undefined
 }
 
 const PRIMITIVE_PROTOTYPES: Record<string, (realm: Realm) => ScriptObject> = {
@@ -54,35 +79,20 @@ function getString(ctx: AccessContext, value: string, key: string): Value {
   if (key === 'length') return value.length
 
   const index = indexOf(key)
-  if (index === null) return lookup(ctx.realm.StringPrototype, key)
+  if (index === null) return lookup(ctx, ctx.realm.StringPrototype, key, value)
   checkIndex(index, value.length)
 
   return value[index]
 }
 
-function getArray(array: ScriptArray, key: string): Value {
+function getArray(ctx: AccessContext, array: ScriptArray, key: string): Value {
   if (key === 'length') return array.items.length
 
   const index = indexOf(key)
-  if (index === null) return lookup(array, key)
+  if (index === null) return lookup(ctx, array, key, array)
   checkIndex(index, array.items.length)
 
   return array.items[index]
-}
-
-// A found property: `[value]`, or null when the key is not there (undefined is a valid value).
-type Found = [Value] | null
-
-function find(object: ScriptObject | null, key: string): Found {
-  for (let current = object; current; current = current.proto) {
-    if (current.props.has(key)) return [current.props.get(key) as Value]
-  }
-
-  return null
-}
-
-function own(object: ScriptObject, key: string): Found {
-  return object.props.has(key) ? [object.props.get(key) as Value] : null
 }
 
 function className(cls: Class): string {
@@ -93,10 +103,6 @@ function noMember(owner: string, key: string): never {
   throw typeError(`${owner} has no member '${key}'`)
 }
 
-function orNoMember(found: Found, owner: string, key: string): Value {
-  return (found ?? noMember(owner, key))[0]
-}
-
 function functionProperty(fn: ScriptFunction, key: string): Found {
   if (key === 'name') return [fn.name]
 
@@ -104,26 +110,43 @@ function functionProperty(fn: ScriptFunction, key: string): Found {
 }
 
 // Functions are open objects: own properties, name/length, Function.prototype; anything else is undefined.
-function getFunction(fn: ScriptFunction, key: string): Value {
-  return (own(fn, key) ?? functionProperty(fn, key) ?? find(fn.proto, key) ?? [undefined])[0]
+function getFunction(ctx: AccessContext, fn: ScriptFunction, key: string): Value {
+  const found = own(fn, key) ?? functionProperty(fn, key) ?? find(fn.proto, key)
+
+  return found ? resolve(ctx, found[0], fn) : undefined
 }
 
-function getGlobal(object: GlobalObject, key: string): Value {
+function getGlobal(ctx: AccessContext, object: GlobalObject, key: string): Value {
   const binding = object.realm.globals.get(key)
 
-  return binding ? binding.value : lookup(object.proto, key)
+  return binding ? binding.value : lookup(ctx, object.proto, key, object)
 }
 
-// A declared member: methods give their function; a declared field not initialised yet reads as null (D37).
-function memberValue(entry: MemberEntry | undefined): Found {
-  return entry ? [entry.fn ?? null] : null
+// A class accessor without getter: reading it is an error (§4.4.12), unlike an object literal's.
+function getterOf(entry: MemberEntry, key: string): ScriptFunction {
+  if (!entry.get) throw typeError(`'${key}' has only a setter`)
+
+  return entry.get
 }
 
-// Class instances have exactly their declared members (D36): own fields, the class's methods, built-in prototype members.
-function getInstance(object: ScriptObject, klass: Class, key: string): Value {
-  const found = own(object, key) ?? memberValue(klass.memberIndex.get(key)) ?? find(object.proto, key)
+// A declared member: methods give their function, accessors call their getter, a declared field not
+// initialised yet reads as null (D37).
+function readMember(ctx: AccessContext, entry: MemberEntry, key: string, receiver: Value): Value {
+  if (entry.kind === 'accessor') return ctx.callFunction(getterOf(entry, key), receiver, [])
 
-  return orNoMember(found, className(klass), key)
+  return entry.fn ?? null
+}
+
+// Class instances have exactly their declared members (D36): own fields, the class's members, built-in prototype members.
+function getInstance(ctx: AccessContext, object: ScriptObject, klass: Class, key: string): Value {
+  if (object.props.has(key)) return object.props.get(key) as Value
+
+  const entry = klass.memberIndex.get(key)
+  if (entry) return readMember(ctx, entry, key, object)
+
+  const found = find(object.proto, key) ?? noMember(className(klass), key)
+
+  return resolve(ctx, found[0], object)
 }
 
 // Static fields live on the class that declares them and are inherited by subclasses.
@@ -135,33 +158,38 @@ function ownStatic(cls: Class, key: string): Found {
   return found
 }
 
+function getClassBuiltin(ctx: AccessContext, cls: Class, key: string): Value {
+  const inherited = functionProperty(cls, key) ?? find(cls.proto, key) ?? noMember(`Class '${cls.name}'`, key)
+
+  return resolve(ctx, inherited[0], cls)
+}
+
 // Classes have their statics, `name`, `length` and Function.prototype members, nothing else (D29, D36).
-function getClass(cls: Class, key: string): Value {
-  const found = ownStatic(cls, key) ?? memberValue(cls.staticMemberIndex.get(key)) ?? functionProperty(cls, key)
+function getClass(ctx: AccessContext, cls: Class, key: string): Value {
+  const found = ownStatic(cls, key)
+  if (found) return found[0] as Value
 
-  return orNoMember(found ?? find(cls.proto, key), `Class '${cls.name}'`, key)
+  const entry = cls.staticMemberIndex.get(key)
+
+  return entry ? readMember(ctx, entry, key, cls) : getClassBuiltin(ctx, cls, key)
 }
 
-function getPlain(object: ScriptObject, key: string): Value {
-  return object instanceof ScriptFunction ? getFunction(object, key) : lookup(object, key)
+function getPlain(ctx: AccessContext, object: ScriptObject, key: string): Value {
+  return object instanceof ScriptFunction ? getFunction(ctx, object, key) : lookup(ctx, object, key, object)
 }
 
-function getExotic(object: ScriptObject, key: string): Value {
-  if (object instanceof GlobalObject) return getGlobal(object, key)
-  if (object instanceof Class) return getClass(object, key)
+function getExotic(ctx: AccessContext, object: ScriptObject, key: string): Value {
+  if (object instanceof GlobalObject) return getGlobal(ctx, object, key)
+  if (object instanceof Class) return getClass(ctx, object, key)
 
-  return object.klass ? getInstance(object, object.klass, key) : getPlain(object, key)
-}
-
-function getObject(object: ScriptObject, key: string): Value {
-  return object instanceof ScriptArray ? getArray(object, key) : getExotic(object, key)
+  return object.klass ? getInstance(ctx, object, object.klass, key) : getPlain(ctx, object, key)
 }
 
 function getPrimitive(ctx: AccessContext, value: Value, key: string): Value {
   if (value === null || value === undefined) throw typeError(`Cannot read properties of ${value} (reading '${key}')`)
   if (typeof value === 'string') return getString(ctx, value, key)
 
-  return lookup(PRIMITIVE_PROTOTYPES[typeof value](ctx.realm), key)
+  return lookup(ctx, PRIMITIVE_PROTOTYPES[typeof value](ctx.realm), key, value)
 }
 
 /**
@@ -173,7 +201,9 @@ function getPrimitive(ctx: AccessContext, value: Value, key: string): Value {
  * @returns the value
  */
 export function getProperty(ctx: AccessContext, receiver: Value, key: string): Value {
-  return isObject(receiver) ? getObject(receiver, key) : getPrimitive(ctx, receiver, key)
+  if (!isObject(receiver)) return getPrimitive(ctx, receiver, key)
+
+  return receiver instanceof ScriptArray ? getArray(ctx, receiver, key) : getExotic(ctx, receiver, key)
 }
 
 // Writing past the end of an array fills the gap with null (D37); other keys are not allowed (§4.4.7).
@@ -220,53 +250,90 @@ function setArrayElement(array: ScriptArray, key: string, value: Value) {
   else setArray(array, key, value)
 }
 
+function onlyGetter(key: string, owner: string): never {
+  throw typeError(`Cannot set property ${key} of ${owner} which has only a getter`)
+}
+
+/**
+ * A property write: the key, the original receiver (`this` for a setter) and the value.
+ */
+interface Write {
+  /** property name */
+  key: string
+  /** the object written to */
+  receiver: Value
+  /** the new value */
+  value: Value
+}
+
+// An accessor's setter runs with the original receiver; returns false when there is no setter.
+function callSetter(ctx: AccessContext, setter: ScriptFunction | null | undefined, { receiver, value }: Write): boolean {
+  if (!setter) return false
+  ctx.callFunction(setter, receiver, [value])
+
+  return true
+}
+
+function writeAccessor(ctx: AccessContext, entry: MemberEntry, write: Write): boolean {
+  return callSetter(ctx, entry.set, write) || onlyGetter(write.key, entry.owner.name)
+}
+
+// Methods cannot be reassigned (D29); accessors call their setter. Returns whether the write was handled.
+function writeMember(ctx: AccessContext, entry: MemberEntry | undefined, write: Write): boolean {
+  if (!entry || entry.kind === 'field') return false
+  if (entry.kind === 'method') throw typeError(`Cannot assign to method '${write.key}' of class '${entry.owner.name}'`)
+
+  return writeAccessor(ctx, entry, write)
+}
+
 // An own field, or inherited built-in data (e.g. an error's `name`) that the instance may shadow.
 function hasData(object: ScriptObject, key: string): boolean {
   return object.props.has(key) || find(object.proto, key) !== null
 }
 
-function cannotAssignMethod(entry: MemberEntry | undefined, key: string) {
-  if (entry?.kind === 'method') throw typeError(`Cannot assign to method '${key}' of class '${entry.owner.name}'`)
-}
-
 // Instances: declared fields (and inherited built-in data such as an error's `name`) are writable; methods and
 // undeclared names are not (D29, D36).
-function setInstance(object: ScriptObject, klass: Class, key: string, value: Value) {
+function setInstance(ctx: AccessContext, object: ScriptObject, klass: Class, write: Write) {
+  const { key } = write
   const entry = klass.memberIndex.get(key)
-
-  cannotAssignMethod(entry, key)
-
+  if (writeMember(ctx, entry, write)) return
   if (!entry && !hasData(object, key)) noMember(className(klass), key)
   checkFrozen(object, key)
-  object.props.set(key, value)
+  object.props.set(key, write.value)
 }
 
 // Classes: static fields (own or inherited) are writable; static methods, name/length and new names are not (D29).
-function setClass(cls: Class, key: string, value: Value) {
+function setClass(ctx: AccessContext, cls: Class, write: Write) {
+  const { key } = write
   const entry = cls.staticMemberIndex.get(key)
-
-  cannotAssignMethod(entry, key)
-
+  if (writeMember(ctx, entry, write)) return
   if (!(cls.props.has(key) || entry)) {
     throw typeError(`Cannot add property '${key}' to class '${cls.name}': classes are not extensible`)
   }
-  cls.props.set(key, value)
+  cls.props.set(key, write.value)
 }
 
-function setOrdinary(object: ScriptObject, key: string, value: Value) {
-  checkWritable(object, key)
-  object.props.set(key, value)
+// Object literals: an own accessor calls its setter (or rejects the write); otherwise a data property is created or updated.
+function setOrdinary(ctx: AccessContext, object: ScriptObject, write: Write) {
+  const stored = object.props.get(write.key)
+  if (stored instanceof Accessor) {
+    if (!callSetter(ctx, stored.set, write)) onlyGetter(write.key, 'object')
+
+    return
+  }
+  checkWritable(object, write.key)
+  object.props.set(write.key, write.value)
 }
 
-function setObject(object: ScriptObject, key: string, value: Value) {
-  if (object instanceof ScriptArray) setArrayElement(object, key, value)
-  else if (object instanceof Class) setClass(object, key, value)
-  else if (object.klass) setInstance(object, object.klass, key, value)
-  else setOrdinary(object, key, value)
+function setObject(ctx: AccessContext, object: ScriptObject, write: Write) {
+  if (object instanceof ScriptArray) setArrayElement(object, write.key, write.value)
+  else if (object instanceof Class) setClass(ctx, object, write)
+  else if (object.klass) setInstance(ctx, object, object.klass, write)
+  else setOrdinary(ctx, object, write)
 }
 
 /**
- * Writes a property (creating an own data property when needed).
+ * Writes a property (calling a setter, or creating an own data property when needed).
  *
  * @param ctx access context
  * @param receiver the value the property is written to
@@ -275,7 +342,7 @@ function setObject(object: ScriptObject, key: string, value: Value) {
  */
 export function setProperty(ctx: AccessContext, receiver: Value, key: string, value: Value) {
   if (isObject(receiver)) {
-    setObject(receiver, key, value)
+    setObject(ctx, receiver, { key, receiver, value })
 
     return
   }
@@ -285,7 +352,7 @@ export function setProperty(ctx: AccessContext, receiver: Value, key: string, va
 }
 
 /**
- * Defines an own property of an object literal (`DEFINE_PROP`).
+ * Defines an own data property of an object literal (`DEFINE_PROP`); it replaces an accessor of the same name.
  *
  * @param object the object being built
  * @param key property name
@@ -293,4 +360,21 @@ export function setProperty(ctx: AccessContext, receiver: Value, key: string, va
  */
 export function defineProperty(object: ScriptObject, key: string, value: Value) {
   object.props.set(key, value)
+}
+
+/**
+ * Defines one half of an object-literal accessor (`DEFINE_GETTER` / `DEFINE_SETTER`, R18); `get` and `set`
+ * with the same key combine, a later data property replaces them.
+ *
+ * @param object the object being built
+ * @param key property name
+ * @param half which half
+ * @param fn the getter or setter
+ */
+export function defineAccessor(object: ScriptObject, key: string, half: 'get' | 'set', fn: ScriptFunction) {
+  const existing = object.props.get(key)
+  const accessor = existing instanceof Accessor ? existing : new Accessor()
+
+  accessor[half] = fn as Accessor['get']
+  object.props.set(key, accessor)
 }

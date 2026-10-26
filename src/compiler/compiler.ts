@@ -172,6 +172,11 @@ interface Reference {
   set: () => void
 }
 
+/** Proto kinds of class members and object-literal accessors. */
+const PROTO_KINDS: Record<string, FunctionKind> = { method: 'method', get: 'getter', set: 'setter' }
+
+const DEFINE_OPS: Record<Property['kind'], Op> = { init: Op.DEFINE_PROP, get: Op.DEFINE_GETTER, set: Op.DEFINE_SETTER }
+
 /** Indexed by `Reference.baseSize` (1 or 2). */
 const DUPLICATE_BASE: Record<number, Op> = { 1: Op.DUP, 2: Op.DUP2 }
 const ROTATE_BELOW_BASE: Record<number, Op> = { 1: Op.ROT3, 2: Op.ROT4 }
@@ -742,11 +747,12 @@ class Compiler {
 
   private methodTemplate(node: MethodDefinition, classContext: ClassContext): ClassMethodTemplate {
     const key = keyName(node.key)
-    const proto = this.functionProto(node.value, key, 'method', { classContext })
+    const kind = node.kind as ClassMethodTemplate['kind']
+    const proto = this.functionProto(node.value, key, PROTO_KINDS[kind], { classContext })
 
     return {
       key,
-      kind: 'method',
+      kind,
       access: node.access,
       isStatic: node.static,
       protoIndex: this.out.constant(proto),
@@ -1129,13 +1135,14 @@ class Compiler {
     for (const property of node.properties) this.property(property)
   }
 
-  private property({ key, value, method, loc }: Property) {
-    const name = key.type === 'Identifier' ? key.name : String((key as Literal).value)
+  // `key: value` / `m() {}` → DEFINE_PROP; `get k() {}` / `set k(v) {}` → DEFINE_GETTER / DEFINE_SETTER (own accessors, R18).
+  private property({ key, value, method, kind, loc }: Property) {
+    const name = keyName(key as Identifier | Literal)
 
-    if (method) this.closure(this.functionProto(value as FunctionExpression, name, 'method'))
+    if (kind !== 'init') this.closure(this.functionProto(value as FunctionExpression, name, PROTO_KINDS[kind]))
+    else if (method) this.closure(this.functionProto(value as FunctionExpression, name, 'method'))
     else this.namedExpression(value, name)
-    this.out.mark(loc)
-    this.out.emit(Op.DEFINE_PROP, this.out.constant(name))
+    this.emitAt(loc, DEFINE_OPS[kind], this.out.constant(name))
   }
 
   // ---------------------------------------------------------------------------
