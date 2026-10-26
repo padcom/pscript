@@ -19,7 +19,31 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M10 | Arrays and for…of | done (2026-10-27) |
 | M11 | Exceptions | done (2026-10-27) |
 | M12 | Callbacks and re-entrancy | done (2026-10-27) |
-| M13 | Standard library | next |
+| M13 | Standard library | done (2026-10-27) |
+| M14 | Template literals | next |
+
+## M13 — Standard library
+
+Done: stdlib programs pass (`tests/programs/stdlib/`, also against Node where JS-compatible). `npm run check` and `npm run build` green; 693 tests + 1 todo.
+
+What exists (`src/stdlib/`, all globals read-only):
+
+- `src/runtime/conversions.ts`: **`toStringIn(ctx, v)`** — `ToString` that looks up `toString` with normal member resolution and calls it (result must be primitive; no usable `toString` → `TypeError: Cannot convert object to string`) — and `addIn` (`+`). The VM's `ADD`, `join`, default `sort`, `String()`, `parseInt`/`parseFloat` and string-method arguments use it. Built-in `toString`s are natives on the prototypes (`Object.prototype` → `[object Object]` / errors `Name: message`; arrays → `join(',')`; functions/classes → `[Function: f]` / `[class C]`; numbers with radix; booleans; strings). The context-free `operators.toString` stays for built-in forms only.
+- `object.ts`: `Object.prototype.toString`, `hasOwnProperty`; `Object.keys/values/entries` (insertion order, arrays and strings by index), `assign`, `freeze` (new `Object.frozen` flag: existing properties become read-only — contract addition).
+- `function.ts`: `Function.prototype.toString`, `bind` (bound functions pass the target only the arguments it declares, like native callbacks, so `[x].map(obj.m.bind(obj))` works under D38), `call`, `apply`.
+- `string.ts`: every §4.6.3 method; `split(sep, limit?)`; `replace`/`replaceAll` take string patterns and **literal** replacements (no `$&` patterns — a deviation, PScript-only test); `at` out of range → `null` (D37); `String(v)` conversion function.
+- `number.ts`: `Number(v)` (objects → D5 TypeError) with `MAX_SAFE_INTEGER MIN_SAFE_INTEGER EPSILON MAX_VALUE MIN_VALUE isInteger`; `toFixed`, `toString(radix)`; `Boolean(v)`; `parseInt`, `parseFloat`, `isNaN`, `isFinite`; `NaN`, `Infinity`.
+- `math.ts`: `Math` with `PI E` and every §4.6.1 function; `random` comes from `InterpreterOptions.random` (new option).
+- `json.ts`: `JSON.stringify(value, null?, indent?)` with its own serializer (insertion-order keys; `undefined`/functions skipped in objects, `null` in arrays; non-finite numbers → `null`; cycles → TypeError; replacer functions → TypeError). `JSON.parse` (COULD) not implemented.
+- `global.ts`: `print`, `console.log` / `console.error` (`stderr` option now used), `globalThis` (`src/runtime/global-object.ts`: reads the realm's globals live; writes → `TypeError: Cannot assign to 'x' through globalThis`).
+- `installStdlib(realm, { stdout, stderr?, random? })`.
+- Node harness: the vm context also gets `console.log` = print.
+
+Gaps:
+
+- Natives do not declare/check arity (§5.6.3).
+- `Object.keys` of error objects lists `message`/`stack` (JS: non-enumerable).
+- Class instances: `Object.prototype.toString` will produce `ClassName(field = value, …)` (D35) in M15; `Object.keys` will need to list only public fields (M17).
 
 ## M12 — Callbacks and re-entrancy
 

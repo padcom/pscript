@@ -80,7 +80,7 @@ export function runInNode(source: string): NodeResult {
   const print = (...args: unknown[]) => { output.push(args.map(String).join(' ')) }
 
   try {
-    runInNewContext(`'use strict';\n${rewriteEquality(source)}`, { print })
+    runInNewContext(`'use strict';\n${rewriteEquality(source)}`, { print, console: { log: print } })
 
     return { output }
   } catch (error) {

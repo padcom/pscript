@@ -1,0 +1,10 @@
+const s = 'Hello, World'
+print(s.length, s[0], s.charAt(7), s.charCodeAt(0), s.at(-1))
+print(s.indexOf('o'), s.lastIndexOf('o'), s.indexOf('o', 5), s.includes('World'), s.startsWith('Hell'), s.endsWith('d'))
+print(s.slice(7), s.slice(-5, -1), s.substring(7, 9), s.substring(9, 7))
+print(s.toUpperCase(), s.toLowerCase())
+print('[' + '  x  '.trim() + ']', '[' + '  x  '.trimStart() + ']', '[' + '  x  '.trimEnd() + ']')
+print('5'.padStart(3, '0'), '5'.padEnd(3, '-'), 'ab'.repeat(3), 'a'.concat('b', 1, true))
+print('a-b-c'.split('-').length, 'a-b-c'.split('-', 2).join('+'), 'abc'.split('').join(' '), 'abc'.split().length)
+print('one two one'.replace('one', '1'), 'one two one'.replaceAll('one', '1'))
+print('abc'.toString(), String(null), String(undefined), String(12.5), String(true))

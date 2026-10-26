@@ -1,0 +1,12 @@
+const user = { name: 'Ann', age: 30, greet() { return 'hi' } }
+print(Object.keys(user).join(), Object.values(user).length, Object.entries({ a: 1, b: 2 }).map(e => e.join('=')).join('&'))
+print(Object.keys([10, 20]).join(), Object.keys('ab').join())
+const merged = Object.assign({ a: 1 }, { b: 2 }, { a: 3 })
+print(merged.a, merged.b, Object.keys(merged).join())
+print(user.hasOwnProperty('name'), user.hasOwnProperty('toString'), 'toString' in user)
+const frozen = Object.freeze({ k: 1 })
+try { frozen.k = 2 } catch (e) { print(e.name) }
+print(frozen.k)
+print(String({}), {} + '', [1, [2, 3]] + '', String([null, undefined, 1]))
+const custom = { toString() { return 'custom!' } }
+print('x' + custom, String(custom), [custom, custom].join(' '))

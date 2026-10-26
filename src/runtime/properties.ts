@@ -1,5 +1,6 @@
 // Property access (§5.7): the single entry points for reads and writes.
 // Accessors (M16), access modifiers (M17) and exotic objects (modules, host proxies) come later.
+import { GlobalObject } from './global-object'
 import { isObject, kindOf, toString } from './operators'
 import { rangeError, typeError } from './script-error'
 import {
@@ -74,10 +75,20 @@ function getFunction(fn: ScriptFunction, key: string): Value {
   return key === 'length' ? fn.length : lookup(fn.proto, key)
 }
 
-function getObject(object: ScriptObject, key: string): Value {
-  if (object instanceof ScriptArray) return getArray(object, key)
+function getGlobal(object: GlobalObject, key: string): Value {
+  const binding = object.realm.globals.get(key)
+
+  return binding ? binding.value : lookup(object.proto, key)
+}
+
+function getExotic(object: ScriptObject, key: string): Value {
+  if (object instanceof GlobalObject) return getGlobal(object, key)
 
   return object instanceof ScriptFunction ? getFunction(object, key) : lookup(object, key)
+}
+
+function getObject(object: ScriptObject, key: string): Value {
+  return object instanceof ScriptArray ? getArray(object, key) : getExotic(object, key)
 }
 
 function getPrimitive(ctx: AccessContext, value: Value, key: string): Value {
@@ -115,7 +126,14 @@ function isReadOnlyFunctionKey(object: ScriptObject, key: string): boolean {
   return object instanceof ScriptFunction && READ_ONLY_FUNCTION_KEYS.has(key)
 }
 
+function checkFrozen(object: ScriptObject, key: string) {
+  if (object instanceof GlobalObject) throw typeError(`Cannot assign to '${key}' through globalThis`)
+  if (object.frozen) throw typeError(`Cannot assign to read only property '${key}' of object`)
+}
+
 function checkWritable(object: ScriptObject, key: string) {
+  checkFrozen(object, key)
+
   if (!object.extensible && !object.props.has(key)) throw typeError(`Cannot add property '${key}', object is not extensible`)
   if (isReadOnlyFunctionKey(object, key)) throw typeError(`Cannot assign to read only property '${key}' of function`)
 }

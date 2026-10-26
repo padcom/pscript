@@ -1,0 +1,4 @@
+// §10.11 (arrays printed with join to stay comparable with Node)
+print(Math.max(1, 5, 3), Math.floor(2.7), parseInt('42px'), Number('3.5'))
+print(String(7).padStart(3, '0'), 'a,b,c'.split(',').join('|'), '  hi '.trim().toUpperCase())
+print(globalThis.print == print, typeof globalThis, globalThis.Math == Math)

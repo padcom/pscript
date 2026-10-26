@@ -1,0 +1,19 @@
+{"a":1,"b":[true,null]}
+[1,"x",{},[]]
+{"s":"q\"uote","n":-0.5,"nested":{"deep":[1,[2]]}}
+{"nan":null,"inf":null,"arr":[null,null]}
+"text" 42 null true undefined
+{
+  "a": [
+    1,
+    {
+      "b": 2
+    }
+  ]
+}
+[
+--1,
+--2
+]
+{} []
+TypeError

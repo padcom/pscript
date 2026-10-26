@@ -1,0 +1,10 @@
+3 2 3 -2 -4 -1
+2 -Infinity Infinity 1024 4 3 5
+true true 0 3 3 1
+0 1 0 0 0
+ff 11111111 3.14 1.000 10
+true false 9007199254740991 true
+12 0 NaN 1 0 0
+255 26 12 3.14 NaN
+true false true false false true
+false true false true true

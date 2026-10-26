@@ -1,0 +1,8 @@
+["b", "a", "1"] [["k", "v"]]
+null null
+Cannot apply '+' to array and array
+Cannot assign to 'x' through globalThis
+Cannot assign to read-only global 'Math'
+Cannot create property '0' on string
+[Function: print] 1,2 {"2":"b","1":"a"}
+a$$b $&

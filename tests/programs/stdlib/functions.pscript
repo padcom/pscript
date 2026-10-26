@@ -1,0 +1,9 @@
+function add(a, b) { return this.base + a + b }
+print(add.call({ base: 1 }, 2, 3), add.apply({ base: 10 }, [1, 1]))
+const bound = add.bind({ base: 100 }, 1)
+print(bound(2), bound.name, bound.length)
+const obj = { v: 5, get() { return this.v } }
+const getter = obj.get.bind(obj)
+print(getter(), [obj].map(getter).length)
+function named() {}
+print(named.name, named.length, (x => x).length, ((a, b = 1) => a).length)

@@ -1,7 +1,7 @@
 // Array.prototype methods without callbacks (§4.6.4) and the Array namespace.
 // Callback methods (map, filter, sort, …) arrive with re-entrant calls (M12).
 import { defineGlobal } from '@/runtime/realm'
-import { toString } from '@/runtime/operators'
+import { toStringIn } from '@/runtime/conversions'
 import { typeError } from '@/runtime/script-error'
 import { DONE, getIterator } from '@/runtime/iterators'
 import { getProperty } from '@/runtime/properties'
@@ -15,10 +15,10 @@ import {
 } from '@/runtime/values'
 import { callBack, requireCallback } from './callbacks'
 import { callbackMethods } from './array-callbacks'
-import { defineMethods, integerArgument, orNull } from './native'
+import { defineMethods, integerArgument, method, orNull } from './native'
 
-function items(thisValue: Value, method: string): Value[] {
-  if (!(thisValue instanceof ScriptArray)) throw typeError(`Array.prototype.${method} called on a non-array`)
+function items(thisValue: Value, name: string): Value[] {
+  if (!(thisValue instanceof ScriptArray)) throw typeError(`Array.prototype.${name} called on a non-array`)
 
   return thisValue.items
 }
@@ -28,8 +28,8 @@ function sameValueZero(a: Value, b: Value): boolean {
   return a === b || (globalThis.Number.isNaN(a) && globalThis.Number.isNaN(b))
 }
 
-function joinPart(value: Value): string {
-  return value === null || value === undefined ? '' : toString(value)
+function joinPart(ctx: AccessContext, value: Value): string {
+  return value === null || value === undefined ? '' : toStringIn(ctx, value)
 }
 
 function flatten(values: Value[]): Value[] {
@@ -47,8 +47,8 @@ function lastIndexOf(values: Value[], value: Value, from: Value[]): number {
   return from.length === 0 ? values.lastIndexOf(value) : values.lastIndexOf(value, integerArgument(from[0]))
 }
 
-function join(values: Value[], separator: Value): string {
-  return values.map(joinPart).join(separator === undefined ? ',' : toString(separator))
+function join(ctx: AccessContext, values: Value[], separator: Value): string {
+  return values.map(value => joinPart(ctx, value)).join(separator === undefined ? ',' : toStringIn(ctx, separator))
 }
 
 function makeMethods(realm: Realm): Record<string, [number, NativeImpl]> {
@@ -62,7 +62,8 @@ function makeMethods(realm: Realm): Record<string, [number, NativeImpl]> {
     slice: [2, (_, self, [start, end]) => array(items(self, 'slice').slice(integerArgument(start), integerArgument(end)))],
     splice: [2, (_, self, [start, count, ...added]) => array(splice(items(self, 'splice'), start, count, added))],
     concat: [1, (_, self, args) => array([...items(self, 'concat'), ...flatten(args)])],
-    join: [1, (_, self, [separator]) => join(items(self, 'join'), separator)],
+    join: [1, (ctx, self, [separator]) => join(ctx, items(self, 'join'), separator)],
+    toString: method(0, (ctx, self) => join(ctx, items(self, 'toString'), undefined)),
     reverse: [0, (_, self) => {
       items(self, 'reverse').reverse()
 

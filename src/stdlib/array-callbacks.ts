@@ -1,6 +1,7 @@
 // Array.prototype methods with callbacks (§4.6.4), run through the VM's re-entrant callFunction (§5.6.4).
 // They delegate to the JS algorithms on the live `items` array, so mutation during iteration behaves as in JS.
-import { toString, truthy } from '@/runtime/operators'
+import { toStringIn } from '@/runtime/conversions'
+import { truthy } from '@/runtime/operators'
 import { typeError } from '@/runtime/script-error'
 import {
   Array as ScriptArray,
@@ -68,10 +69,7 @@ function reduce(ctx: AccessContext, self: Value, [fn, ...initial]: Value[], meth
   return initial.length > 0 ? array.items[method](step, initial[0]) : array.items[method](step)
 }
 
-function defaultCompare(a: Value, b: Value): number {
-  const x = toString(a)
-  const y = toString(b)
-
+function compareStrings(x: string, y: string): number {
   if (x === y) return 0
 
   return x < y ? -1 : 1
@@ -81,7 +79,8 @@ function defaultCompare(a: Value, b: Value): number {
 function sort(ctx: AccessContext, self: Value, [fn]: Value[]): Value {
   const array = receiver(self, 'sort')
   const callback = fn === undefined ? null : requireCallback(fn, 'Array.prototype.sort')
-  const compare = callback ? (a: Value, b: Value) => compareResult(callBack(ctx, callback, null, [a, b])) : defaultCompare
+  const byString = (a: Value, b: Value) => compareStrings(toStringIn(ctx, a), toStringIn(ctx, b))
+  const compare = callback ? (a: Value, b: Value) => compareResult(callBack(ctx, callback, null, [a, b])) : byString
 
   array.items.splice(0, array.items.length, ...[...array.items].sort(compare))
 

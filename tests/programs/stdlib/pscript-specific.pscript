@@ -1,0 +1,9 @@
+// @pscript-only: print formatting (D18), D37, D5, globalThis is read-only
+print(Object.keys({ b: 1, a: 2, 1: 'x' }), Object.entries({ k: 'v' }))
+print('abc'.at(9), [].find(x => true))
+try { [] + [] } catch (e) { print(e.message) }
+try { globalThis.x = 1 } catch (e) { print(e.message) }
+try { Math = 1 } catch (e) { print(e.message) }
+try { 'abc'[0] = 'x' } catch (e) { print(e.message) }
+print(String(print), String([1, [2]]), JSON.stringify({ 2: 'b', 1: 'a' }))
+print('a$b'.replace('$', '$$'), 'x'.replaceAll('x', '$&'))

@@ -21,6 +21,8 @@ export interface InterpreterOptions {
   maxSteps?: number
   /** default: 10 000; Infinity allowed (D14) */
   maxCallDepth?: number
+  /** `Math.random` override (deterministic tests) */
+  random?: () => number
 }
 
 /**
@@ -37,6 +39,7 @@ const DEFAULTS = {
   stderr: (text: string) => console.error(text),
   maxSteps: Infinity,
   maxCallDepth: 10_000,
+  random: Math.random,
 } satisfies Required<InterpreterOptions>
 
 function withDefaults(options: InterpreterOptions): Required<InterpreterOptions> {
@@ -50,10 +53,10 @@ export class Interpreter {
   private readonly vm: VM
 
   constructor(options: InterpreterOptions = {}) {
-    const { globals, stdout, maxSteps, maxCallDepth } = withDefaults(options)
+    const { globals, stdout, stderr, random, maxSteps, maxCallDepth } = withDefaults(options)
 
     this.realm = createRealm()
-    installStdlib(this.realm, { stdout })
+    installStdlib(this.realm, { stdout, stderr, random })
     this.vm = new VM(this.realm, { maxSteps, maxCallDepth })
 
     for (const [name, value] of globalThis.Object.entries(globals)) this.set(name, value)

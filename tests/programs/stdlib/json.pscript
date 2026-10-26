@@ -1,0 +1,11 @@
+print(JSON.stringify({ a: 1, b: [true, null] }))
+print(JSON.stringify([1, 'x', {}, []]))
+print(JSON.stringify({ s: 'q"uote', n: -0.5, nested: { deep: [1, [2]] } }))
+print(JSON.stringify({ u: undefined, f: () => 1, nan: NaN, inf: Infinity, arr: [undefined, () => 1] }))
+print(JSON.stringify('text'), JSON.stringify(42), JSON.stringify(null), JSON.stringify(true), JSON.stringify(undefined))
+print(JSON.stringify({ a: [1, { b: 2 }] }, null, 2))
+print(JSON.stringify([1, 2], null, '--'))
+print(JSON.stringify({}, null, 2), JSON.stringify([], null, 2))
+const cyclic = {}
+cyclic.self = cyclic
+try { JSON.stringify(cyclic) } catch (e) { print(e.name) }

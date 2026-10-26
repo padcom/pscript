@@ -2,8 +2,8 @@
 import type { CompiledScript, FunctionProto } from '@/compiler/function-proto'
 import { GlobalFlags, Op } from '@/compiler/opcodes'
 import { PScriptRuntimeError, formatExcerpt, type ScriptStackFrame } from '@/errors'
+import { addIn } from '@/runtime/conversions'
 import {
-  add,
   arithmetic,
   compare,
   hasProperty,
@@ -426,7 +426,7 @@ export class VM implements AccessContext {
           break
         case Op.ADD:
           b = stack.pop()
-          stack.push(add(stack.pop(), b))
+          stack.push(addIn(this, stack.pop(), b))
           break
         case Op.SUB:
           b = stack.pop()

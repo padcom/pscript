@@ -44,6 +44,8 @@ export class Object {
   /** set for class instances (brand, access checks, interfaces) */
   klass?: Class
   extensible = true
+  /** `Object.freeze`: existing properties are read-only too */
+  frozen?: boolean
 
   constructor(public proto: Object | null) {}
 }
