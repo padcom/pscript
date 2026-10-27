@@ -33,6 +33,25 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M24 | Limits and polish | done (2026-10-27) |
 | M25 | Docs and benchmark | done (2026-10-27) — v1 complete |
 | H3 | Performance | second pass (2026-10-27) |
+| H5 | CLI/REPL | done (2026-10-27) |
+
+## H5 — CLI/REPL
+
+`bin/pscript.js` (plain ES module, Node-only, imports `dist/index.js`), published as the `pscript` bin of
+`@padcom/pscript`, so `npx @padcom/pscript` starts it:
+
+- no arguments: a REPL on `node:repl` (one `Interpreter` per session, so bindings persist; input that ends with
+  `Unexpected end of input` or an unterminated template continues on the next line; completion values are shown as
+  `print` formats them, strings quoted); with stdin not a terminal, runs stdin as a script;
+- `pscript file`: runs the file as a module when it has `import`/`export` declarations, else as a script; a
+  file-system loader (§4.7.3, D10 extensions; ids are paths relative to the working directory) resolves imports;
+- `-e`/`--eval`, `-h`/`--help`, `-v`/`--version`; errors print their message (location and excerpt) to stderr, exit 1.
+
+`npm run build` also checks that the CLI runs a script. Releasing: `.npmrc` sets the tag prefix `pscript-` and the
+commit message `Release @padcom/pscript@%s`; `preversion` runs `npm run check`, `prepack` builds, and
+`publishConfig.access` is `public`.
+
+Not done: standalone binaries (N1), tab completion of script names in the REPL.
 
 ## H3 — Performance (second pass)
 

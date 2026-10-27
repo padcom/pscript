@@ -6,5 +6,5 @@ export default [
   { ignores: ['dist/**', 'coverage/**'] },
   ...config['flat/browser'],
   // build scripts, config files and tests run in Node
-  { ...nodeGlobals, files: ['build/**', 'tests/**', '*.config.*', 'vitest.setup.js'] },
+  { ...nodeGlobals, files: ['bin/**', 'build/**', 'tests/**', '*.config.*', 'vitest.setup.js'] },
 ]

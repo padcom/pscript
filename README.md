@@ -34,6 +34,18 @@ JavaScript hard to reason about:
 The full language reference, including a list of differences from JavaScript, is in
 [`docs/LANGUAGE.md`](docs/LANGUAGE.md).
 
+## Command line
+
+```sh
+npx @padcom/pscript                    # interactive REPL (multi-line input, .help, .exit)
+npx @padcom/pscript main.pscript       # run a file; a file with imports or exports runs as a module
+npx @padcom/pscript -e 'print(1 + 2)'  # run an inline script
+echo 'print("hi")' | npx @padcom/pscript
+```
+
+Modules are loaded from the file system: `./` and `../` resolve against the importing file, trying the exact path,
+then `.pscript`, then `.psc`. Errors go to stderr and set the exit code to 1.
+
 ## Installing and building
 
 ```sh
@@ -42,6 +54,9 @@ npm run build      # dist/index.js (ES module)
 npm run check      # lint, typecheck and the test suite
 npm run bench      # micro benchmarks
 ```
+
+Releases: `npm version patch|minor|major` runs `npm run check`, then commits `Release @padcom/pscript@x.y.z` and tags
+it `pscript-x.y.z`; `npm publish` builds `dist/` before packing.
 
 ## Embedding
 
@@ -99,6 +114,7 @@ values you give it can do. Only pass in what scripts are meant to use.
 | `src/runtime/` | value model, property access, operators, interop, formatting |
 | `src/stdlib/` | the standard library (`print`, `Object`, `Array`, `String`, `Math`, `JSON`, errors …) |
 | `src/modules/` | module loader and registry |
+| `bin/pscript.js` | the command line and REPL (Node-only, outside the browser-safe library) |
 | `tests/` | unit tests, program corpus (`tests/programs`, `tests/modules`), Node and acorn oracles |
 | `docs/PLAN.md` | the design: decisions, grammar, contracts, milestones |
 | `docs/PROGRESS.md` | implementation log per milestone |

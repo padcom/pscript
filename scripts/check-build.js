@@ -1,5 +1,6 @@
 // Checks the library build (§6.5, D16): an ES module with type declarations, browser-safe (no CommonJS, no Node
-// built-ins), that loads and runs a script. Runs after `vite build` in `npm run build`.
+// built-ins), that loads and runs a script, and a CLI (H5) that runs one. Runs after `vite build` in `npm run build`.
+import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import process from 'node:process'
 
@@ -24,13 +25,19 @@ async function runs() {
   return run('1 + 2 * 3') === 7 ? [] : ['dist/index.js does not run scripts']
 }
 
+function cliRuns() {
+  const output = execFileSync(process.execPath, ['bin/pscript.js', '-e', 'print(1 + 2 * 3)'], { encoding: 'utf8' })
+
+  return output === '7\n' ? [] : ['bin/pscript.js does not run scripts']
+}
+
 const problems = missingFiles()
 
-if (problems.length === 0) problems.push(...forbiddenCode(readFileSync('dist/index.js', 'utf8')), ...await runs())
+if (problems.length === 0) problems.push(...forbiddenCode(readFileSync('dist/index.js', 'utf8')), ...await runs(), ...cliRuns())
 
 if (problems.length > 0) {
   console.error(problems.join('\n'))
   process.exit(1)
 }
 
-console.log('build check: ES module, browser-safe, runs scripts')
+console.log('build check: ES module, browser-safe, runs scripts; the CLI runs scripts')

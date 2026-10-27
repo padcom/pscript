@@ -3,7 +3,11 @@
   "version": "0.0.1",
   "description": "PScript - a JavaScript-inspired scripting engine",
   "type": "module",
+  "bin": {
+    "pscript": "./bin/pscript.js"
+  },
   "files": [
+    "bin",
     "dist"
   ],
   "engines": {
@@ -25,7 +29,9 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "check": "npm run lint && npm run typecheck && npm test",
-    "bench": "vite build && node bench/run.js"
+    "bench": "vite build && node bench/run.js",
+    "preversion": "npm run check",
+    "prepack": "npm run build"
   },
   "keywords": [
     "interpreter"
@@ -45,5 +51,8 @@
     "typescript": "~5.9",
     "vite": "^8.3.5",
     "vitest": "*"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
