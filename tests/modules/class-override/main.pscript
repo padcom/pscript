@@ -1,0 +1,5 @@
+// @pscript-only: explicit override (D28) of an imported class's method
+import { Base } from './base'
+class Child extends Base {
+  greet() { return 'yo' }
+}

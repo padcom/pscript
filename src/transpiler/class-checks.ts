@@ -152,10 +152,12 @@ class NestedClasses {
   }
 }
 
-type Kept = (skeleton: Skeleton, node: never) => Statement | null
+type TopLevel = Statement | ModuleDeclaration
 
-/** The top-level statements a skeleton keeps (in their skeleton form). Imports only declare their names. */
-const SKELETON_STATEMENTS: Partial<Record<(Statement | ModuleDeclaration)['type'], Kept>> = {
+type Kept = (skeleton: Skeleton, node: never) => TopLevel | null
+
+/** The top-level statements a skeleton keeps (in their skeleton form). */
+const SKELETON_STATEMENTS: Partial<Record<TopLevel['type'], Kept>> = {
   FunctionDeclaration: (skeleton, node: FunctionDeclaration) => skeleton.declare(node.id, node),
   VariableDeclaration: (skeleton, node: VariableDeclaration) => skeleton.variables(node),
   ClassDeclaration: (skeleton, node: ClassDeclaration) => skeleton.definition(node),
@@ -165,43 +167,68 @@ const SKELETON_STATEMENTS: Partial<Record<(Statement | ModuleDeclaration)['type'
 }
 
 /**
+ * How a skeleton treats a module's imports and exports.
+ */
+export interface SkeletonOptions {
+  /** keep imports and exports (the skeleton is linked with the other modules of the program) */
+  module?: boolean
+  /** local names of imports that are classes or interfaces defined by the skeletons of other modules */
+  importedDefinitions?: Set<string>
+}
+
+/**
  * Builds the definitions-only program.
  */
-class Skeleton {
+export class Skeleton {
   /** top-level names declared so far */
   private readonly declared = new Set<string>()
-  /** top-level classes and interfaces that are defined in the skeleton */
+  /** top-level classes and interfaces that are defined in the skeleton (imported ones included) */
   private readonly defined = new Set<string>()
   /** the skeleton defines at least one class */
   hasClasses = false
 
-  constructor(private readonly program: Program) {}
+  constructor(private readonly program: Program, private readonly options: SkeletonOptions = {}) {}
 
   build(): Program {
     const body = this.program.body.flatMap(statement => this.statement(statement))
     const nested = new NestedClasses(this.defined).find(this.program).filter(node => this.canDefine(node))
+    const sourceType = this.options.module ? 'module' : 'script'
 
-    return { ...this.program, sourceType: 'script', body: [...body, ...nested.map(node => this.nestedCheck(node))] }
+    return { ...this.program, sourceType, body: [...body, ...nested.map(node => this.nestedCheck(node))] }
   }
 
-  private statement(node: Statement | ModuleDeclaration): Statement[] {
+  /**
+   * The top-level names the skeleton defines as classes or interfaces (call after `build()`).
+   *
+   * @returns the names
+   */
+  definitions(): Set<string> {
+    return this.defined
+  }
+
+  private statement(node: TopLevel): TopLevel[] {
     const kept = SKELETON_STATEMENTS[node.type]?.(this, node as never)
 
     return kept ? [kept] : []
   }
 
-  // Imported bindings are not definitions the skeleton can evaluate.
-  imports({ specifiers }: ImportDeclaration): null {
-    specifiers.forEach(({ local }) => this.declare(local, null))
+  // Imported bindings are definitions when the importing module's skeleton defines them.
+  imports(node: ImportDeclaration): ImportDeclaration | null {
+    const { module, importedDefinitions } = this.options
 
-    return null
+    node.specifiers.forEach(({ local }) => this.declare(local, null, importedDefinitions?.has(local.name)))
+
+    return module ? node : null
   }
 
-  exported(node: ExportNamedDeclaration): Statement | null {
-    return node.declaration ? this.statement(node.declaration)[0] : null
+  exported(node: ExportNamedDeclaration): TopLevel | null {
+    const kept = node.declaration ? this.statement(node.declaration)[0] as Statement : null
+    if (!this.options.module) return kept
+
+    return kept ? { ...node, declaration: kept as ExportNamedDeclaration['declaration'] } : node
   }
 
-  declare<T extends Statement | null>(id: Identifier, node: T, defined = false): T {
+  declare<T extends TopLevel | null>(id: Identifier, node: T, defined = false): T {
     this.declared.add(id.name)
 
     if (defined) this.defined.add(id.name)

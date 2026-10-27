@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // psc (§11): compiles PScript files to JavaScript ES modules. Directories are searched for PScript files, and the
-// PScript files that compiled files import are compiled too. Node-only, so it lives outside `src/`.
+// PScript files that compiled files import are compiled too; all of them are checked together as one program.
+// Node-only, so it lives outside `src/`.
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import process from 'node:process'
-import { PScriptError, parse, transpile } from '../dist/index.js'
+import { PScriptError, parse, transpileModules } from '../dist/index.js'
 import { findFile, isDirectory, isPScriptFile, isPath } from './files.js'
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
@@ -12,7 +13,9 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
 const USAGE = `Usage: psc [options] <file|directory>...
 
 Compiles PScript files to JavaScript ES modules (.js). Directories are searched for .pscript and .psc files; the
-PScript files that compiled files import are compiled too. Nothing is written when a file has an error.
+PScript files that compiled files import are compiled too. The files are checked together: importing a missing
+export, calling an imported function with the wrong number of arguments, or overriding a final method of an
+imported class are errors. Nothing is written when there is an error.
 
 Options:
   -o, --out-dir <dir>   write the .js files under <dir>, laid out as the sources are below their common
@@ -143,12 +146,14 @@ function outputPath(file, root, outDir) {
   return outDir === null ? js : join(resolve(outDir), relative(root, js))
 }
 
+// All files are compiled together, so imports are checked against the imported modules (P10).
 function compile(sources) {
   const files = [...sources.keys()]
   const cwd = process.cwd()
   const base = files.every(file => isInside(file, cwd)) ? cwd : commonDirectory(files)
+  const results = transpileModules(Object.fromEntries(files.map(file => [moduleId(file, base), sources.get(file)])))
 
-  return files.map(file => ({ file, code: transpile(sources.get(file), { fileName: moduleId(file, base) }).code }))
+  return files.map(file => ({ file, code: results[moduleId(file, base)].code }))
 }
 
 function write(results, root, outDir) {

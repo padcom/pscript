@@ -1,0 +1,4 @@
+export class Base {
+  name = 'base'
+  greet() { return 'hi ' + name }
+}

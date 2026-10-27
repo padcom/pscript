@@ -1,0 +1,5 @@
+// @pscript-only: implementing an interface imported through a re-export (D31)
+import { Figure } from './api'
+class Square implements Figure {
+  side = 1
+}

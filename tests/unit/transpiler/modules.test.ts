@@ -3,7 +3,7 @@ import { PScriptSyntaxError, transpile } from '@/index'
 import { outputSpecifier } from '@/transpiler/modules'
 
 function js(source: string): string {
-  return transpile(source, { fileName: 'm.pscript' }).code.trimEnd()
+  return transpile(source, { fileName: 'main.pscript' }).code.trimEnd()
 }
 
 describe('psc: module specifiers (P9)', () => {
@@ -82,7 +82,7 @@ describe('psc: module goal', () => {
 
   it('reports the module checks of compileModule() (P1)', () => {
     expect(() => js("import { x } from './o'\nx = 2")).toThrow(PScriptSyntaxError)
-    expect(() => js("import { x } from './o'\nx = 2")).toThrow("m.pscript:2:1 SyntaxError: Cannot assign to import 'x'")
+    expect(() => js("import { x } from './o'\nx = 2")).toThrow("main.pscript:2:1 SyntaxError: Cannot assign to import 'x'")
     expect(() => js('export { nope }')).toThrow("Export 'nope' is not defined in module")
   })
 

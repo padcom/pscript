@@ -37,6 +37,47 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | T1 | psc: emitter core | done (2026-10-27) |
 | T2 | psc: classes and interfaces | done (2026-10-27) |
 | T3 | psc: modules and CLI | done (2026-10-27) |
+| T4 | psc: whole-program checks | done (2026-10-27) |
+
+## T4 — psc: whole-program checks
+
+`transpileModules(sources)` (exported) compiles the files of a program together (`docs/PLAN.md` §11, P10); `psc`
+uses it for all files of a run, and `transpile()` routes a single module through the same path (the program is that
+one module, its imports are outside it).
+
+- `src/transpiler/module-graph.ts`: `ModuleGraph` over `ProgramUnit`s (id, source, checked program). Relative
+  specifiers resolve like the in-memory loader (`resolveSpecifier`, exact id, then `.pscript`/`.psc`; both present →
+  "ambiguous module" error at the specifier); anything else is outside the program. Per module: imports, exports
+  (own binding or re-export) and the compile-time signatures of top-level functions (declarations and `const` bound
+  to a function, as the compiler's `constSignature`). `importBinding`/`exportBinding` follow re-exports and
+  re-exported imports to `{ module, local }` or `{ namespace }`; `order()` is a dependency (post-)order.
+- `src/transpiler/program-checks.ts`: the T2 skeletons, in module mode (`Skeleton` options: imports and exports
+  kept; imported names that another skeleton defines as classes/interfaces are evaluable). Built to a fixpoint (a
+  class can extend a class that extends an import …), compiled with `compileModule()` (a skeleton that does not
+  compile drops its module, which becomes a stand-in, and the others are rebuilt), then linked and run in a
+  throwaway `Interpreter` whose loader returns the precompiled skeletons. Modules outside the program are host
+  stand-ins exporting (as `null`) exactly the names the program imports from them. Link errors (missing export,
+  circular re-export) and class-definition errors become `PScriptSyntaxError`s at the same place with the original
+  excerpt; `ReferenceError`s (TDZ in cycles: nested-class checks run earlier than the program would) are ignored.
+- **Interpreter addition:** a `ModuleLoader` may return `{ id, compiled }` (a `compileModule()` result); the
+  registry uses it instead of compiling source (§4.7.3 updated). No other interpreter change.
+- `src/transpiler/program.ts`: scripts are checked and printed alone; modules are printed in dependency order by a
+  `ProgramPrinter` that gives each `Emitter` a `ProgramContext`: what an imported name is (`ClassInfo` of a printed
+  class, signature) and the shared `classNodes` map. The emitter declares imports with their `ClassInfo` (so
+  implicit members and the strict rule see inherited members of imported classes, and accessor halves are forwarded
+  across modules) and checks `f(…)` / `ns.f(…)` against imported signatures when the name is not shadowed.
+- Files without `import`/`export` are scripts (as before), with no exports: importing a name from one is a missing
+  export, as in the interpreter.
+
+Tests: new `tests/modules` graphs (also run by the interpreter): `class-final`, `class-override`,
+`class-implements` (through a renaming re-export), `import-arity`, `namespace-arity`, `inherited-implicit` (output),
+`inherited-ambiguity`. `tests/transpiler-modules.test.ts` now uses `transpileModules()` and lists the graphs whose
+error psc must report at compile time (`COMPILE_TIME`, including `missing-export` and `circular-reexport`).
+`tests/unit/transpiler/program.test.ts`: stand-ins, non-class imports, ambiguous ids, scripts, cycles, shadowing,
+cross-module accessor halves.
+
+Not covered: classes extending a member of a namespace import (`extends ns.Base`) are not checked (the skeleton only
+evaluates plain names); `new C(…)` of an imported class is not arity-checked (neither is a local one).
 
 ## T3 — psc: modules and CLI
 

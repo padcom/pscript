@@ -1,0 +1,3 @@
+export class Base {
+  final greet() { return 'hi' }
+}

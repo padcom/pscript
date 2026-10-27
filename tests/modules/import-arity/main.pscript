@@ -1,0 +1,4 @@
+// @pscript-only: strict arity (D38) of an imported function
+import { add as plus } from './math'
+print(plus(1, 2))
+print(plus(1))

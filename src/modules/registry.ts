@@ -115,7 +115,7 @@ export class ModuleRegistry {
     if (existing) return existing
     if ('exports' in loaded) return this.define(loaded.id, loaded.exports)
 
-    return this.create(loaded.id, compileModule(loaded.source, loaded.id))
+    return this.create(loaded.id, 'compiled' in loaded ? loaded.compiled : compileModule(loaded.source, loaded.id))
   }
 
   /**

@@ -1,10 +1,15 @@
 // Module loading (§4.7.3, D19): the host's loader resolves a specifier to a canonical id and returns the source (or
 // host exports). The built-in loader serves an in-memory map with POSIX-style relative paths and the D10 extensions.
+import type { CompiledModule } from './module-record'
 
 /**
- * What a module loader returns: a PScript module, or a host module's exports.
+ * What a module loader returns: a PScript module (source text, or already compiled with `compileModule()`), or a host
+ * module's exports.
  */
-export type LoadedModule = { id: string, source: string } | { id: string, exports: Record<string, unknown> }
+export type LoadedModule
+  = | { id: string, source: string }
+    | { id: string, compiled: CompiledModule }
+    | { id: string, exports: Record<string, unknown> }
 
 /**
  * Resolves `specifier` (imported from module `referrer`, null for the entry) and loads it; throws when not found.

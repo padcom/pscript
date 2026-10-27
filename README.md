@@ -107,8 +107,11 @@ interpreter.defineModule('host:clock', { now: () => Date.now() })
 (arity, constant bindings, implicit members, module exports) plus the class checks the interpreter makes when a class
 is defined (`override`, `final`, access, `implements`). Classes become JavaScript classes (`private` members are
 `#private`), interfaces work with `instanceof`, modules become ES modules (`import { a } from './m'` →
-`'./m.js'`). A source with `import`/`export` declarations is a module (or pass `{ goal: 'module' }`). The output has
-JavaScript runtime semantics; see `docs/PLAN.md` §11 for the design and the list of differences.
+`'./m.js'`). A source with `import`/`export` declarations is a module (or pass `{ goal: 'module' }`).
+`transpileModules({ 'main.pscript': …, 'lib/util.psc': … })` compiles the files of a program together (as `psc`
+does), so imports of missing exports, the arity of imported functions, and `override`/`final`/`implements` across
+modules are compile-time errors too. The output has JavaScript runtime semantics; see `docs/PLAN.md` §11 for the
+design and the list of differences.
 
 ```js
 import { transpile } from '@padcom/pscript'

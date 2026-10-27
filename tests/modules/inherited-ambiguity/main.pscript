@@ -1,0 +1,7 @@
+// @pscript-only: the strict rule (D33) for members inherited from an imported class
+import { Base } from './base'
+const count = 5
+class Child extends Base {
+  get() { return count }
+}
+print(new Child().get())

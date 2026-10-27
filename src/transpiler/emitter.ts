@@ -45,6 +45,7 @@ import type {
 } from '@/parser/ast'
 import { classInfoOf, keyName, type ClassInfo } from '@/compiler/class-info'
 import { ambiguityMessage, memberCandidate, type MemberContext } from '@/compiler/implicit-names'
+import { arityError, type Signature } from '@/compiler/signature'
 import { stdlibGlobalNames } from '@/stdlib'
 import { declaringClass, inheritedHalves, privateKey, staticPrefix, uniquePrivateName, type ClassNode } from './classes'
 import { Helpers } from './helpers'
@@ -122,6 +123,32 @@ const UNALIASED_FRAMES = new Set<Frame['kind']>(['field', 'derivedConstructor'])
 
 /** A constructor's bare `return` returns the instance; a derived constructor must not return null. */
 const CONSTRUCTOR_FRAMES = new Set<Frame['kind']>(['constructor', 'derivedConstructor'])
+
+/**
+ * What the other modules of a program say about an imported binding (P10).
+ */
+export interface Imported {
+  /** the class, when the binding is a class the program defines */
+  info?: ClassInfo
+  /** the signature, when the binding is a top-level function (D38) */
+  signature?: Signature
+}
+
+/**
+ * The program a module is printed in (T4): psc compiles the modules of a program together.
+ */
+export interface ProgramContext {
+  /**
+   * What is known about an imported name, or about an export of an imported namespace.
+   *
+   * @param local the local name of the import
+   * @param member the export name read from a namespace import
+   * @returns what the program knows, or undefined
+   */
+  imported(local: string, member?: string): Imported | undefined
+  /** the AST of every class printed so far, for inherited accessor halves */
+  classNodes: Map<ClassInfo, ClassNode>
+}
 
 type Printer<T> = (emitter: Emitter, node: T) => string
 
@@ -239,10 +266,18 @@ export class Emitter {
   /** the name of the alias of `this` in members whose nested functions use implicit members */
   private thisAlias: string | null = null
   /** the AST of the classes the emitter knows, for inherited accessor halves */
-  private readonly classNodes = new Map<ClassInfo, ClassNode>()
+  private readonly classNodes: Map<ClassInfo, ClassNode>
+  /** the local names of the imports */
+  private readonly importNames = new Set<string>()
 
-  constructor(private readonly program: Program, private readonly source?: string, private readonly fileName?: string) {
+  constructor(
+    private readonly program: Program,
+    private readonly source?: string,
+    private readonly fileName?: string,
+    private readonly context?: ProgramContext,
+  ) {
     this.helpers = new Helpers(program)
+    this.classNodes = context?.classNodes ?? new Map()
   }
 
   /**
@@ -254,6 +289,7 @@ export class Emitter {
     const { body } = this.program
 
     this.declareAll(body)
+    this.declareImports(body)
     const statements = body.map(node => isModuleDeclaration(node) ? this.moduleDeclaration(node) : this.statement(node))
     // the helpers follow the leading imports
     const imports = body.findIndex(node => node.type !== 'ImportDeclaration')
@@ -263,8 +299,36 @@ export class Emitter {
     return `${lines.filter(text => text !== '').join('\n')}\n`
   }
 
+  /**
+   * The classes the module defines at the top level (call after `emit()`).
+   *
+   * @returns the classes by name
+   */
+  topLevelClasses(): Map<string, ClassInfo> {
+    return new Map([...this.names.names].flatMap(([name, info]) => info ? [[name, info] as const] : []))
+  }
+
   // ---------------------------------------------------------------------------
   // Names
+
+  // Imported classes of the program carry what the compiler knows about them (for `extends`, §4.5.9).
+  private declareImports(body: (Statement | ModuleDeclaration)[]) {
+    for (const node of body) {
+      if (node.type === 'ImportDeclaration') node.specifiers.forEach(({ local }) => this.importNames.add(local.name))
+    }
+    this.importNames.forEach(name => this.names.names.set(name, this.context?.imported(name)?.info))
+  }
+
+  // What the program knows about an import that `name` refers to here (not shadowed by a local or a member).
+  private imported(name: string, member?: string): Imported | undefined {
+    return this.refersToImport(name) ? this.context?.imported(name, member) : undefined
+  }
+
+  private refersToImport(name: string): boolean {
+    if (!this.importNames.has(name) || this.isImplicitMember(name)) return false
+
+    return this.names.find(name)?.parent === null
+  }
 
   private declare(id: Identifier, info?: ClassInfo) {
     if (RESTRICTED_NAMES.has(id.name)) throw this.error(`'${id.name}' cannot be used as a name in JavaScript`, id)
@@ -756,11 +820,34 @@ export class Emitter {
     return `(${args.map(arg => this.expression(arg, Precedence.Assignment)).join(', ')})`
   }
 
-  call({ callee, arguments: args }: CallExpression): string {
+  call(node: CallExpression): string {
+    const { callee, arguments: args } = node
+
+    this.checkImportedArity(node)
     const argumentList = this.arguments(args)
     if (callee.type === 'MemberExpression') return this.withMember(callee, target => target + argumentList)
 
     return `${callee.type === 'Super' ? 'super' : this.expression(callee, Precedence.Member)}${argumentList}`
+  }
+
+  // Strict arity of imported functions (D38), which the compiler can only check for local functions (P10).
+  private checkImportedArity(node: CallExpression) {
+    const signature = this.calleeSignature(node.callee)
+    const problem = signature && arityError(signature, node.arguments.length)
+    if (problem) throw this.error(problem, node)
+  }
+
+  // `f(…)` with an imported `f`, or `ns.f(…)` with a namespace import `ns`.
+  private calleeSignature(callee: Expression | Super): Signature | undefined {
+    if (callee.type === 'Identifier') return this.imported(callee.name)?.signature
+
+    return callee.type === 'MemberExpression' ? this.namespaceMemberSignature(callee) : undefined
+  }
+
+  private namespaceMemberSignature({ object, property, computed }: MemberExpression): Signature | undefined {
+    if (computed || object.type !== 'Identifier') return undefined
+
+    return this.imported(object.name, (property as Identifier).name)?.signature
   }
 
   newExpression({ callee, arguments: args }: NewExpression): string {

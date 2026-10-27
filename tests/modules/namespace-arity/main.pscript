@@ -1,0 +1,3 @@
+// @pscript-only: strict arity (D38) of a function read from a namespace
+import * as math from './math'
+print(math.add(1, 2, 3))

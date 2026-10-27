@@ -3,9 +3,9 @@ import { compile, compileModule } from '@/compiler/compiler'
 import type { PScriptSyntaxError } from '@/errors'
 import type { Program } from '@/parser/ast'
 import { parse } from '@/parser/parse'
-import { checkClassDefinitions } from './class-checks'
-import { Emitter } from './emitter'
+import { ModuleGraph } from './module-graph'
 import { hasModuleDeclarations } from './modules'
+import { transpileProgram, transpileScript } from './program'
 
 /**
  * Options of `transpile()`.
@@ -70,7 +70,27 @@ export function transpile(source: string, options: TranspileOptions = {}): Trans
   const { fileName } = options
   const program = checkedProgram(source, options)
 
-  checkClassDefinitions(program, source, fileName)
+  if (program.sourceType === 'script') return transpileScript({ id: fileName ?? '', source, program }, fileName)
 
-  return { code: new Emitter(program, source, fileName).emit() }
+  const id = moduleId(fileName)
+
+  return transpileProgram(new ModuleGraph([{ id, source, program }])).get(id)!
+}
+
+/**
+ * Compiles the modules (and scripts) of a program to JavaScript, checking them together (P10): besides each file's
+ * own checks, imports of missing exports, circular re-exports, the arity of imported functions, and overriding,
+ * `final` and `implements` across modules are compile-time errors. Relative specifiers between the files resolve
+ * like the interpreter's in-memory loader (`modules` option): POSIX paths, the exact id first, then `.pscript` and
+ * `.psc`; other specifiers are modules outside the program.
+ *
+ * @param sources source text by module id (e.g. `main.pscript`, `lib/util.psc`)
+ * @returns the JavaScript code by module id
+ * @throws {PScriptSyntaxError} on the first error
+ */
+export function transpileModules(sources: Record<string, string>): Record<string, TranspileResult> {
+  const units = Object.entries(sources).map(([id, source]) => ({ id, source, program: checkedProgram(source, { fileName: id }) }))
+  const results = transpileProgram(new ModuleGraph(units))
+
+  return Object.fromEntries(units.map(({ id }) => [id, results.get(id)!]))
 }

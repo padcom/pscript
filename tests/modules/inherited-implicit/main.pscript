@@ -1,0 +1,10 @@
+// @pscript-only: implicit access (D33) to members inherited from an imported class
+import { Base } from './base'
+class Child extends Base {
+  constructor() {
+    super()
+    name = 'child'
+  }
+  shout() { return greet().toUpperCase() }
+}
+print(new Child().shout())

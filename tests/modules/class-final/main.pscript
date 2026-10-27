@@ -1,0 +1,6 @@
+// @pscript-only: final members (D28) of an imported class
+import { Base } from './base'
+class Child extends Base {
+  override greet() { return 'yo' }
+}
+print('never')
