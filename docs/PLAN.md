@@ -117,6 +117,7 @@ Each feature in this document has one of these tags:
 | R46 | User-defined iterables: `Symbol.iterator` / `Symbol.asyncIterator` (D57) | 4.4.21 |
 | R47 | Abstract classes and members (D58) | 4.5.10 |
 | R48 | Structural `x implements I` operator (D59) | 4.5.7 |
+| R49 | `private` / `protected` constructors (D60) | 4.5.1 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -136,7 +137,7 @@ Each feature in this document has one of these tags:
 
 ### 1.5 COULD (Phase 3+)
 
-~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), ~~the comma operator in `for` headers~~ (done, D55: everywhere), ~~`do … while`, `switch`~~ (done, D41), ~~`for … in`~~ (done, D56), ~~bitwise operators, hex/binary/octal literals~~ (done, D50), ~~destructuring~~ (done, D40), ~~user-defined iterables~~ (done, D57), ~~abstract classes~~ (done, D58), ~~a structural `x implements I` operator~~ (done, D59), `private constructor`, ~~Map/Set~~ (done, D49), a CLI/REPL, a disassembler CLI, source maps for errors.
+~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), ~~the comma operator in `for` headers~~ (done, D55: everywhere), ~~`do … while`, `switch`~~ (done, D41), ~~`for … in`~~ (done, D56), ~~bitwise operators, hex/binary/octal literals~~ (done, D50), ~~destructuring~~ (done, D40), ~~user-defined iterables~~ (done, D57), ~~abstract classes~~ (done, D58), ~~a structural `x implements I` operator~~ (done, D59), ~~`private constructor`~~ (done, D60), ~~Map/Set~~ (done, D49), a CLI/REPL, a disassembler CLI, source maps for errors.
 
 ### 1.6 WON'T (v1)
 
@@ -240,6 +241,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D57 | User-defined iterables | **JavaScript's protocol with two well-known symbols**: `Symbol.iterator` and `Symbol.asyncIterator` exist (`typeof` is `'symbol'`; there is no `Symbol()` and no other symbol). Objects and classes define `[Symbol.iterator]() {}` (also `*[Symbol.iterator]`, `async *[Symbol.asyncIterator]`); in classes these are the only bracketed member names, so classes stay sealed (D29) and the name is known at compile time; only methods can have them. `for…of`, spread, array destructuring, `yield*`, `Array.from`, `new Map/Set`, `Promise.all` … call `[Symbol.iterator]()` and drive the returned `{ next(), return() }` object (`return()` when left early); `for await` tries `[Symbol.asyncIterator]()` first. Built-ins have them too (arrays, strings, maps, sets, generators). Symbol-named properties are stored under internal keys that no enumeration lists (`Object.keys`, `JSON.stringify`, `for…in`, `print`); `Symbol.iterator in o` works. The host sees real `Symbol.iterator` values and iterable proxies. Details in §4.4.21 | minor (only two symbols) |
 | D58 | Abstract classes | **TypeScript/Java style**: `abstract class` (declarations and expressions) cannot be instantiated (`new` of the class itself is a `TypeError`; a `SyntaxError` when the class is declared in scope); subclasses can. `abstract m(a, b);`, `abstract get x();`, `abstract set x(v);` declare members without a body, only in abstract classes, never `static`, `private` or `final`; a method without a body that is not abstract is a `SyntaxError`. A concrete subclass must implement every inherited abstract member (checked when it is defined, like interfaces: `TypeError: Class 'B' must implement abstract method 'A.m'`), keeping its signature (D38); implementing needs no `override`. `super.m()` of an abstract member is a `TypeError`. Details in §4.5.10 | no (new) |
 | D59 | Structural `x implements I` | **A second, structural check next to the nominal `instanceof` (D32)**: `x implements I` (relational precedence, like `instanceof`) is `true` when `x` is an object that currently has every member `I` (and its parents) requires — a public method with exactly the required parameters (D38) for a method requirement, a readable property (data or getter) for `get`, a writable one (setter, or data on a non-frozen object) for `set`, both for a property — whatever its class declares. Works for object literals, class instances (public members only) and host objects; instances of classes that nominally implement `I` are accepted at once; primitives give `false`. A right-hand side that is not an interface is a `TypeError`. Details in §4.5.7 | no (new) |
+| D60 | `private` / `protected` constructors | **TypeScript-like**: an access modifier on a constructor restricts `new C()` to code inside `C` (including nested classes); a `private` constructor's class can only be extended by classes nested in it, a `protected` one by any class. Early `SyntaxError` for a class declared in scope, `TypeError` at runtime otherwise. Details in §4.5.1 | no (new) |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -709,7 +711,7 @@ Static (early) errors are raised by the **builders** or the **compiler**, never 
 - `return expr` inside a class constructor (D27);
 - a bare name in a class body that matches both an own member and an outside lexical binding or stdlib global (D33);
 - in interfaces: bodies, initialisers, default parameter values, access modifiers, `static`/`final`/`override`, duplicate member names, a member named `constructor`;
-- modifiers out of order or repeated; `override`/`final` on a constructor or on a `private` member (private members are never inherited); access modifiers on a constructor;
+- modifiers out of order or repeated; `override`/`final`/`static`/`abstract` on a constructor or `override`/`final` on a `private` member (private members are never inherited); `new` of a class declared in scope whose constructor is not public, outside the class (D60);
 - a getter or setter named `constructor`; a getter with parameters; a setter without exactly one parameter;
 - `import`/`export` in script goal, or anywhere other than the module top level;
 - duplicate exported names; exporting a name that is not declared in the module; duplicate import bindings, or an import binding that clashes with a top-level declaration;
@@ -1272,7 +1274,17 @@ final class Dog extends Animal implements Pet {          // final: nothing can e
 - Prototypes are internal. There is no `__proto__` and no `C.prototype` (D29).
 - Class instances only have their declared members (D36, §4.5.9). Fields without an initialiser start as `null` (D37).
 - **Constructors cannot return values (D27).** `return expr` inside a constructor is a compile-time `SyntaxError: Constructors cannot return a value`; a bare `return` is fine. `new C(...)` therefore always yields a fresh instance of `C`.
-- Access modifiers on a constructor are a SyntaxError in v1 (COULD: `private constructor` for factory/singleton patterns).
+- **Constructor access (D60)**: a constructor may be `private` or `protected` (no other modifier). `new C()` of such a class is allowed only in code inside `C` (its methods, static methods, initialisers, and classes nested in it) — a `SyntaxError` when `C` is declared in scope, a `TypeError` otherwise (also for the host, which has no home class). A `protected` constructor's class can be extended anywhere (subclasses call it through `super(...)`); a `private` one only by classes nested in it (`TypeError: Cannot extend class 'C': its constructor is private`). psc checks this at compile time only.
+
+```js
+class Config {
+  static instance = null
+  private constructor() {}
+  static get() { return instance ??= new Config() }
+}
+Config.get()          // ok
+// new Config()       // SyntaxError: Constructor of class 'Config' is private and only accessible within the class
+```
 
 #### 4.5.2 Access modifiers: `public`, `protected`, `private` (D30, D4)
 

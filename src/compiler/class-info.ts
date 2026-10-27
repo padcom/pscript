@@ -1,6 +1,6 @@
 // What the compiler knows about classes (§4.5.9): member names per class, so that `this.x` and
 // `C.x` can be rejected at compile time when the whole class chain is visible.
-import type { ClassDeclaration, ClassExpression, MemberKey, MethodDefinition, PropertyDefinition } from '@/parser/ast'
+import type { Access, ClassDeclaration, ClassExpression, MemberKey, MethodDefinition, PropertyDefinition } from '@/parser/ast'
 import { memberKeyName } from '@/parser/symbol-keys'
 
 /**
@@ -21,6 +21,8 @@ export interface ClassInfo {
   privates: Set<string>
   /** `abstract class` (D58): `new` is an error */
   abstract: boolean
+  /** access of the constructor (D60): `new` of a non-public one only inside the class */
+  constructorAccess: Access
 }
 
 /** Inherited by every class instance from Object.prototype. */
@@ -55,6 +57,20 @@ function memberNames(node: ClassNode, isStatic: boolean): Set<string> {
   return new Set(members.map(member => keyName(member.key)))
 }
 
+// The access of the class's constructor (D60): public when it has none.
+function constructorAccessOf(node: ClassNode): Access {
+  const constructor = node.body.body.find(member => member.type === 'MethodDefinition' && member.kind === 'constructor')
+
+  return constructor ? constructor.access : 'public'
+}
+
+// The parts of the info that do not depend on the superclass.
+function ownInfo(node: ClassNode, name: string) {
+  const { abstract } = node
+
+  return { name, instance: memberNames(node, false), statics: memberNames(node, true), privates: privateNames(node), abstract }
+}
+
 /**
  * Builds the compile-time view of a class.
  *
@@ -65,12 +81,8 @@ function memberNames(node: ClassNode, isStatic: boolean): Set<string> {
  */
 export function classInfoOf(node: ClassNode, name: string, superClass: ClassInfo | null | undefined): ClassInfo {
   const visible = superClass === null || Boolean(superClass?.visible)
-  const instance = memberNames(node, false)
-  const statics = memberNames(node, true)
 
-  const { abstract } = node
-
-  return { name, instance, statics, superClass: superClass ?? null, visible, privates: privateNames(node), abstract }
+  return { ...ownInfo(node, name), superClass: superClass ?? null, visible, constructorAccess: constructorAccessOf(node) }
 }
 
 function declares(info: ClassInfo, name: string, isStatic: boolean): boolean {
@@ -95,4 +107,15 @@ function declaredInChain(info: ClassInfo, name: string, isStatic: boolean): bool
  */
 export function hasMember(info: ClassInfo, name: string, isStatic: boolean): boolean {
   return declaredInChain(info, name, isStatic) || (isStatic ? STATIC_BUILTINS : INSTANCE_BUILTINS).has(name)
+}
+
+/**
+ * The message of a `new` that a private or protected constructor refuses (D60), the same at compile time and runtime.
+ *
+ * @param name the class name
+ * @param access the constructor's access
+ * @returns the message
+ */
+export function constructorAccessMessage(name: string, access: Access): string {
+  return `Constructor of class '${name}' is ${access} and only accessible within the class`
 }

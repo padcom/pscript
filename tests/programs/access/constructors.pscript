@@ -1,0 +1,36 @@
+// @pscript-only: private and protected constructors (D60)
+class Config {
+  static instance = null
+  value
+  private constructor(value) { this.value = value }
+  static get() {
+    if (instance == null) instance = new Config(42)
+    return instance
+  }
+}
+print(Config.get().value, Config.get() == Config.get())
+const C = Config
+try { new C(1) } catch (e) { print(e.name, e.message) }
+class Base {
+  name
+  protected constructor(name) { this.name = name }
+  static create(name) { return new Base(name) }
+}
+class Derived extends Base {
+  constructor() { super('derived') }
+}
+print(new Derived().name, Base.create('b').name)
+const B = Base
+try { new B('x') } catch (e) { print(e.name, e.message) }
+try {
+  const P = Config
+  class Sub extends P {}
+} catch (e) { print(e.name, e.message) }
+class Outer {
+  private constructor() {}
+  static Inner = class extends Outer {
+    constructor() { super() }
+  }
+  static make() { return new Outer() }
+}
+print(new Outer.Inner() instanceof Outer, Outer.make() instanceof Outer)

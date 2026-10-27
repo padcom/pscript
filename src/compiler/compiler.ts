@@ -69,7 +69,7 @@ import type { FunctionNode } from '@/parser/ast-builders'
 import { parse } from '@/parser/parse'
 import { stdlibGlobalNames } from '@/stdlib'
 import { canFold, createsClosure } from './closures'
-import { classInfoOf, hasMember, keyName, type ClassInfo } from './class-info'
+import { classInfoOf, constructorAccessMessage, hasMember, keyName, type ClassInfo } from './class-info'
 import { ambiguityMessage, implicitIndex, memberCandidate, outerDescription, type ClassRecord } from './implicit-names'
 import { interfaceTemplate } from './interfaces'
 import { ModuleTables } from './module-tables'
@@ -1307,6 +1307,7 @@ class Compiler {
       staticInit: this.initializerProto(fields.filter(f => f.static), 'staticInit', context(true)),
       isFinal: node.final,
       isAbstract: node.abstract,
+      constructorAccess: info.constructorAccess,
       methods: methods.filter(m => m.kind !== 'constructor').map(method => this.methodTemplate(method, context(method.static))),
       memberRefs,
       fields: fields.map(fieldTemplate),
@@ -2061,11 +2062,23 @@ class Compiler {
     this.out.emit(Op.NEW, argc)
   }
 
-  // `new A()` of an abstract class declared in scope is an early error (D58); others fail at runtime.
+  // `new A()` of an abstract class (D58), or of a class whose constructor is not public outside it (D60), declared in
+  // scope is an early error; others fail at runtime.
   private checkConcrete(callee: Expression) {
     const info = callee.type === 'Identifier' ? this.classNamed(callee.name) : undefined
+    const problem = info ? this.constructionProblem(info) : null
 
-    if (info?.abstract) throw this.error(`Cannot create an instance of abstract class '${info.name}'`, callee.loc)
+    if (problem) throw this.error(problem, callee.loc)
+  }
+
+  private constructionProblem(info: ClassInfo): string | null {
+    if (info.abstract) return `Cannot create an instance of abstract class '${info.name}'`
+
+    return this.mayConstruct(info) ? null : constructorAccessMessage(info.name, info.constructorAccess)
+  }
+
+  private mayConstruct(info: ClassInfo): boolean {
+    return info.constructorAccess === 'public' || this.enclosingClasses.some(record => record.info === info)
   }
 
   // ---------------------------------------------------------------------------

@@ -49,6 +49,18 @@ function canUseProtected(home: Class | null, owner: Class): boolean {
   return enclosingClasses(home).some(cls => sameLine(cls, owner))
 }
 
+/**
+ * Whether code with home class `home` may construct `cls` with `new` (D60): a private or protected constructor only
+ * from inside the class (including classes nested in it).
+ *
+ * @param home the home class of the code doing `new` (null for top-level code and the host)
+ * @param cls the class
+ * @returns true when allowed
+ */
+export function mayConstruct(home: Class | null, cls: Class): boolean {
+  return cls.constructorAccess === 'public' || enclosingClasses(home).includes(cls)
+}
+
 function privatesOf(cls: Class, isStatic: boolean): Map<string, PrivateEntry> {
   return isStatic ? cls.staticPrivateIndex : cls.privateIndex
 }

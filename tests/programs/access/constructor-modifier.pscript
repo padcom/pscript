@@ -1,0 +1,4 @@
+// @pscript-only: constructors take only an access modifier (D60)
+class A {
+  public final constructor() {}
+}

@@ -59,6 +59,16 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L18 | User-defined iterables, `Symbol.iterator` (D57) | done (2026-10-27) |
 | L19 | Abstract classes (D58) | done (2026-10-27) |
 | L20 | Structural `x implements I` (D59) | done (2026-10-27) |
+| L21 | `private` / `protected` constructors (D60) | done (2026-10-28) |
+
+## L21 — `private` / `protected` constructors (D60)
+
+- **Parser**: constructors accept an access modifier only (`Constructors cannot be 'final'`).
+- **Compiler**: `ClassInfo.constructorAccess` / `ClassTemplate.constructorAccess`; `new` of a known class outside it
+  is a `SyntaxError` (`constructorAccessMessage`, shared with the VM).
+- **VM**: `Class.constructorAccess`; `construct` checks `mayConstruct(home, cls)` (`src/runtime/members.ts`), the
+  fast `NEW` path skips such classes; `extends` of a private-constructor class only from nested classes.
+- **Tests**: `tests/programs/access/constructors.pscript` and errors.
 
 ## L20 — Structural `x implements I` (D59)
 

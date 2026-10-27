@@ -199,6 +199,8 @@ export class Class extends Function {
   /** transitive: own `implements`, their ancestors, and the superclass's set */
   interfaces = new Set<Interface>()
   final = false
+  /** access of the constructor (D60): `new` of a non-public one only from code inside the class */
+  constructorAccess: Access = 'public'
   /** `abstract class` (D58): cannot be instantiated */
   abstract = false
   ctor: Closure | null = null

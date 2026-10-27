@@ -24,6 +24,7 @@ const KNOWN_DIFFERENCES: Record<string, string> = {
 /** PScript-only programs that rely on a documented difference of the emitted code (§11.4). */
 const PSCRIPT_ONLY_DIFFERENCES: Record<string, string> = {
   'access/account.pscript': '`protected` is not checked at runtime',
+  'access/constructors.pscript': 'non-public constructors are checked at compile time only',
   'access/nested.pscript': '`print` formats arrays like `console.log`',
   'access/private.pscript': 'private members read from outside give `undefined` instead of an AccessError',
   'access/protected.pscript': '`protected` is not checked at runtime',

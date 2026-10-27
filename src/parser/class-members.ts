@@ -73,6 +73,8 @@ class ModifierError extends Error {
   }
 }
 
+const ACCESS_MODIFIERS = new Set(['public', 'protected', 'private'])
+
 const ORDER: Record<string, number> = { public: 0, protected: 0, private: 0, static: 1, final: 2, abstract: 2, override: 3 }
 
 /**
@@ -197,7 +199,9 @@ function method(member: Exclude<RawMember, { kind: 'field' }>, applied: Flags, m
   const loc = toLoc(member.loc)
   const { access, isStatic, final, override, abstract } = applied
 
-  if (constructor && modifiers.length > 0) throw new ModifierError('Constructors cannot have modifiers', member.loc)
+  // only an access modifier (D60)
+  const other = constructor ? modifiers.find(modifier => !ACCESS_MODIFIERS.has(modifier.name)) : undefined
+  if (other) throw new ModifierError(`Constructors cannot be '${other.name}'`, other.loc)
 
   return {
     type: 'MethodDefinition',

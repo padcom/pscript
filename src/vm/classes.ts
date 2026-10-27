@@ -9,6 +9,7 @@ import type {
 } from '@/compiler/function-proto'
 import type { ModuleRecord } from '@/modules/module-record'
 import { displayKey } from '@/parser/symbol-keys'
+import { mayConstruct } from '@/runtime/members'
 import { kindOf } from '@/runtime/operators'
 import { resolveImplicitNames } from './implicit'
 import { checkInterfaces, implementInterfaces } from './interfaces'
@@ -98,10 +99,25 @@ function describe(value: Value): string {
   return value instanceof ScriptFunction ? value.name || 'anonymous function' : kindOf(value)
 }
 
-function checkSuperClass(superClass: Value, template: ClassTemplate): Class | null {
+// `final` (D28), `abstract` (D58) and the constructor's access (D60).
+function applyFlags(cls: Class, { isFinal, isAbstract: abstract = false, constructorAccess = 'public' }: ClassTemplate) {
+  cls.final = isFinal
+  cls.abstract = abstract
+  cls.constructorAccess = constructorAccess
+}
+
+// A class with a private constructor is extended only by classes nested in it (D60).
+function checkExtensible(superClass: Class, home: Class | null) {
+  if (superClass.final) throw typeError(`Cannot extend final class '${superClass.name}'`)
+  if (superClass.constructorAccess === 'private' && !mayConstruct(home, superClass)) {
+    throw typeError(`Cannot extend class '${superClass.name}': its constructor is private`)
+  }
+}
+
+function checkSuperClass(superClass: Value, template: ClassTemplate, home: Class | null): Class | null {
   if (!template.hasSuper) return null
   if (!(superClass instanceof Class)) throw typeError(`Class extends value ${describe(superClass)} is not a class`)
-  if (superClass.final) throw typeError(`Cannot extend final class '${superClass.name}'`)
+  checkExtensible(superClass, home)
 
   return superClass
 }
@@ -154,8 +170,7 @@ class ClassBuilder {
 
     this.cls = new Class(host.realm.FunctionPrototype, template, superClass, prototype)
     this.cls.outerClass = site.homeClass
-    this.cls.final = template.isFinal
-    this.cls.abstract = template.isAbstract === true
+    applyFlags(this.cls, template)
     this.cls.memberIndex = new Map(superClass?.memberIndex)
     this.cls.staticMemberIndex = new Map(superClass?.staticMemberIndex)
   }
@@ -278,7 +293,7 @@ class ClassBuilder {
  * @returns the class
  */
 export function defineClass(host: ClassHost, template: ClassTemplate, heritage: Heritage, site: DefinitionSite): Class {
-  const parent = checkSuperClass(heritage.superClass, template)
+  const parent = checkSuperClass(heritage.superClass, template, site.homeClass)
   const interfaces = checkInterfaces(heritage.interfaces)
   const builder = new ClassBuilder(host, template, parent, site)
   const violations = overrideViolations(template, { realm: host.realm, superClass: parent, constants: site.constants })

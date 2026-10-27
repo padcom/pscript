@@ -35,7 +35,8 @@ import {
   setArrayIndex,
   setProperty,
 } from '@/runtime/properties'
-import { getPrivateMember, setPrivateMember } from '@/runtime/members'
+import { getPrivateMember, mayConstruct, setPrivateMember } from '@/runtime/members'
+import { constructorAccessMessage } from '@/compiler/class-info'
 import { Interop } from '@/runtime/interop'
 import { ScriptError, ScriptThrow, rangeError, referenceError, typeError } from '@/runtime/script-error'
 import { arityError } from '@/compiler/signature'
@@ -217,9 +218,14 @@ function isScriptRoot({ native, host, superClass }: ClassValue): boolean {
 }
 
 // `new C(...)` of a script class without a superclass, with a constructor (NEW's fast path).
+// Abstract classes (D58) and non-public constructors (D60) are checked on the general path.
+function isPlainConstruction(cls: ClassValue): boolean {
+  return !cls.abstract && cls.constructorAccess === 'public'
+}
+
 // (abstract classes take the general path, which refuses them, D58)
 function isBaseScriptClass(value: Value): value is ClassValue & { ctor: Closure } {
-  return value instanceof ClassValue && value.ctor !== null && !value.abstract && isScriptRoot(value)
+  return value instanceof ClassValue && value.ctor !== null && isPlainConstruction(value) && isScriptRoot(value)
 }
 
 // Drops operand stack items down to `height`; popping is cheaper than setting `length` for the few items of a call.
@@ -975,6 +981,7 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
   construct(callee: Value, args: Value[]): Value {
     if (!(callee instanceof ClassValue)) this.notAClass(callee)
     if (callee.abstract) throw typeError(`Cannot create an instance of abstract class '${callee.name}'`)
+    if (!mayConstruct(this.homeClass, callee)) throw typeError(constructorAccessMessage(callee.name, callee.constructorAccess))
 
     return this.constructAs(callee, args, callee)
   }

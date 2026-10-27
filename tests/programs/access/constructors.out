@@ -1,0 +1,6 @@
+42 true
+TypeError Constructor of class 'Config' is private and only accessible within the class
+derived b
+TypeError Constructor of class 'Base' is protected and only accessible within the class
+TypeError Cannot extend class 'Config': its constructor is private
+true true

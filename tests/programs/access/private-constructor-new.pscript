@@ -1,0 +1,5 @@
+// @pscript-only: new of a class with a private constructor outside it (D60)
+class A {
+  private constructor() {}
+}
+new A()

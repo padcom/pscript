@@ -127,6 +127,8 @@ export interface ClassTemplate {
   isFinal: boolean
   /** `abstract class` (D58) */
   isAbstract?: boolean
+  /** access of the constructor (D60) */
+  constructorAccess?: Access
   /** methods and accessors */
   methods: ClassMethodTemplate[]
   /** unproven member references, checked at class-definition time */
