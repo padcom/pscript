@@ -640,6 +640,35 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
     }
   }
 
+  /**
+   * Runs a task of the host's event loop (a timer callback, D44): with a new step budget, followed by
+   * the jobs it queued, as JS runs microtasks after each task. An exception or an unhandled rejection is reported to
+   * the host (`VMOptions.reportError`), since there is no caller to receive it.
+   *
+   * @param task calls the function
+   */
+  runTask(task: () => void) {
+    this.steps = 0
+
+    try {
+      this.runTaskAndJobs(task)
+    } catch (e) {
+      this.reportError(e)
+    }
+  }
+
+  private runTaskAndJobs(task: () => void) {
+    try {
+      task()
+      this.settleJobs()
+    } catch (e) {
+      throw this.uncaught(e)
+    } finally {
+      this.frames.length = 0
+      this.stack.length = 0
+    }
+  }
+
   private reportError(error: unknown) {
     if (!this.options.reportError) throw error
     this.options.reportError(error)

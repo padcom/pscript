@@ -43,6 +43,23 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L2 | `do … while`, `switch`, `void`, `delete` (D41) | done (2026-10-27) |
 | L3 | Generators (D42) | done (2026-10-27) |
 | L4 | `async` / `await` and Promises (D43) | done (2026-10-27) |
+| L5 | `setTimeout` / `clearTimeout` and `fetch` (D44) | done (2026-10-27) |
+
+## L5 — `setTimeout` / `clearTimeout` and `fetch` (D44)
+
+Design in `docs/PLAN.md` D44 (R33), §4.6.1 and §5.6.10; user docs in `docs/LANGUAGE.md` → Async functions and promises.
+
+- **Stdlib**: `src/stdlib/host.ts` (`installHost`, `HostIO`): timers keep script ids (1, 2, …) mapped to host handles
+  per realm; `fetch` converts its arguments with `ctx.interop.toHost` and wraps the host call in a host `Promise`, so
+  synchronous failures reject. `installStdlib` takes optional `setTimeout` / `clearTimeout` / `fetch`; the defaults
+  call `globalThis`'s at call time (vitest fake timers work).
+- **VM**: `runTask(task)` — new step budget, the task, `settleJobs()`, errors to `reportError` (the interpreter's
+  `stderr`). `AccessContext` gains `interop` and `runTask`.
+- **Interpreter**: `InterpreterOptions.fetch`.
+- **Tests**: `tests/unit/stdlib/host.test.ts` (fake timers, a fake fetch). Program/differential tests stay synchronous,
+  so they don't cover timers. Manually checked against a local HTTP server (method, body, headers, `json()`,
+  network errors) and the CLI (it waits for pending timers).
+- **Not done**: `setInterval` / `clearInterval`, `queueMicrotask`, code-string callbacks.
 
 ## L4 — `async` / `await` and Promises (D43)
 

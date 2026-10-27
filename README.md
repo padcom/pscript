@@ -33,7 +33,8 @@ JavaScript hard to reason about:
 - modules with named imports and exports, live bindings and an in-memory or custom loader;
 - `delete` works on plain objects only (class instances and arrays keep their shape);
 - generators work as in JavaScript (missing values are `null` there too);
-- `async`/`await` and promises with the same callback order as JavaScript;
+- `async`/`await` and promises with the same callback order as JavaScript; `setTimeout`/`clearTimeout` and `fetch`
+  use the host's event loop and network;
 - no `var`, spread or `with`.
 
 The full language reference, including a list of differences from JavaScript, is in
@@ -86,6 +87,7 @@ const interpreter = new Interpreter({
   stdout: text => console.log(text),                  // where print() goes
   maxSteps: 1_000_000,                                // stop runaway scripts
   maxCallDepth: 1_000,
+  fetch: (url, init) => fetch(url, init),             // what scripts' fetch() calls (default: the host's)
   modules: { 'math.pscript': 'export const PI = 3.14159' },  // ids; './math' resolves to math.pscript
 })
 

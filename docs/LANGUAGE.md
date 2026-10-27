@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D43).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D44).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -217,6 +217,24 @@ loadAll([1, 2])
   settles.
 - A rejected promise that nobody handles is an error: `run()` throws it like an uncaught exception (later ones go to
   `stderr`).
+- `setTimeout(callback, delay?, ...args)` and `clearTimeout(id)` work as in JavaScript: the callback runs on the host's
+  event loop after `run()` has returned (the callback receives the extra arguments it declares), and the promise
+  callbacks it queues run right after it. Ids are numbers. An exception in a timer callback goes to `stderr`. Code
+  strings are not supported.
+- `fetch(resource, options?)` calls the host's `fetch` (or the one given in the interpreter's `fetch` option) and
+  returns a promise of its `Response`, which scripts use like any host object (`await response.json()`).
+
+```js
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+async function poll(url) {
+  while (true) {
+    const response = await fetch(url)
+    if (response.ok) return await response.json()
+    await sleep(1000)
+  }
+}
+```
 - Differences: only real promises are adopted — an object with a `then` method is just a value; `Promise` cannot be
   extended; missing values are `null` (`resolve()`, an async function without `return`); `print(p)` shows
   `Promise(<pending>)`, `Promise(value)` or `Promise(<rejected> reason)`.
@@ -317,8 +335,8 @@ import './setup'
 ## Standard library
 
 - Globals: `print`, `console.log`/`console.error`, `globalThis`, `String`, `Number`, `Boolean`, `parseInt`,
-  `parseFloat`, `isNaN`, `isFinite`, `NaN`, `Infinity`, `Math`, `JSON`, `Object`, `Array`, `Promise` and the error
-  classes (including `AggregateError`).
+  `parseFloat`, `isNaN`, `isFinite`, `NaN`, `Infinity`, `Math`, `JSON`, `Object`, `Array`, `Promise`,
+  `setTimeout`, `clearTimeout`, `fetch` and the error classes (including `AggregateError`).
 - `Object.keys`, `values`, `entries`, `assign`, `freeze`; `obj.hasOwnProperty(k)`, `toString()`.
 - Arrays: `push`, `pop`, `shift`, `unshift`, `slice`, `splice`, `concat`, `join`, `reverse`, `at`, `indexOf`,
   `lastIndexOf`, `includes`, `flat`, `fill`, `sort`, `map`, `filter`, `reduce`, `reduceRight`, `forEach`, `find`,

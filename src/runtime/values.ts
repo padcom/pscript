@@ -27,6 +27,10 @@ export interface AccessContext {
   captureStack?(): ScriptStackFrame[]
   /** promise operations and the job queue (D43), provided by the VM */
   promises?: PromiseOps
+  /** host ⇄ script value conversion (§5.8.1), provided by the VM */
+  interop?: { toScript(value: unknown): Value, toHost(value: Value): unknown }
+  /** runs a task of the host's event loop (a timer callback, D44) and the jobs it queues, provided by the VM */
+  runTask?(task: () => void): void
 }
 
 /**

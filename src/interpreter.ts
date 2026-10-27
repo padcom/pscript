@@ -24,6 +24,8 @@ export interface InterpreterOptions {
   maxCallDepth?: number
   /** `Math.random` override (deterministic tests) */
   random?: () => number
+  /** the `fetch` scripts call (D44); default: the host's `globalThis.fetch` */
+  fetch?: (input: any, init?: any) => Promise<unknown>
   /** resolves and loads modules (§4.7.3); takes precedence over `modules` */
   moduleLoader?: ModuleLoader
   /** in-memory modules for the built-in loader: source text or host exports, by id */
@@ -69,11 +71,11 @@ export class Interpreter {
   private readonly modules: ModuleRegistry
 
   constructor(options: InterpreterOptions = {}) {
-    const { globals, stdout, stderr, random, maxSteps, maxCallDepth, moduleLoader, modules } = withDefaults(options)
+    const { globals, stdout, stderr, random, fetch, maxSteps, maxCallDepth, moduleLoader, modules } = withDefaults(options)
 
     this.realm = createRealm()
-    installStdlib(this.realm, { stdout, stderr, random })
-    // errors of jobs that run after `run()` returned (unhandled rejections) go to stderr (D43)
+    installStdlib(this.realm, { stdout, stderr, random, fetch })
+    // errors of jobs and timer callbacks that run after `run()` returned go to stderr (D43, D44)
     const reportError = (error: unknown) => stderr(error instanceof Error ? error.message : String(error))
 
     this.vm = new VM(this.realm, { maxSteps, maxCallDepth, reportError })
