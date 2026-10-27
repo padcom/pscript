@@ -29,7 +29,46 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M20 | Implicit member access | done (2026-10-27) |
 | M21 | Modules I | done (2026-10-27) |
 | M22 | Modules II | done (2026-10-27) |
-| M23 | Host interop | next |
+| M23 | Host interop | done (2026-10-27) |
+| M24 | Limits and polish | next |
+
+## M23 — Host interop
+
+Done: interop tests pass (`tests/unit/interop/interop.test.ts`: every §5.8.1 row, identity, round trips, blocked
+keys, host classes and subclasses, exceptions both ways, `Interpreter.call`). `npm run check` and `npm run build`
+green; 932 tests.
+
+What exists:
+
+- `src/runtime/interop.ts`: `Interop` (one per VM): `toScript` (primitives pass, bigint/symbol → TypeError, proxies
+  unwrap to their script value, other host values get a cached wrapper: `HostFunction`, host `Class` for ES classes
+  and `markAsClass` functions, `HostObject` otherwise) and `toHost` (wrappers unwrap, other script objects get a cached
+  proxy). It implements `HostAccess` (`get`/`set`/`has`/`keys`/`iterate`, blocked keys) used by the runtime for
+  `HostObject`s and host parts; `invoke` calls host functions (`this` of script subclass instances is their host part;
+  `undefined` results → `null`). `markAsClass`, `BLOCKED_KEYS` exported (`markAsClass` from the package).
+- `src/runtime/host-proxies.ts`: proxies for the host side — functions (arrow target: not constructable; extra
+  arguments dropped), classes (`construct` → script `new`, `apply` → TypeError, `Symbol.hasInstance` → brand rule),
+  arrays (live `items`, `Array.isArray`, spread, JSON), objects/namespaces (reads via `getProperty` with a no-home-class
+  context, undeclared class members read `undefined`, writes via `setProperty`, `ownKeys` = public keys, deleting own
+  data properties of plain objects).
+- Host classes: `Class` with `host`, `hostAccess` and a native constructor (`Reflect.construct`). Script subclasses
+  get instances whose `hostTarget` holds the host part; undeclared reads/writes (instances and statics) fall back to
+  the host part (`MemberAccess.hostPart`); unproven `this.x` references are not checked for classes extending a host
+  class; override checks see members of the host prototype.
+- VM: `interop`, `hostContext` (no home class), public `construct`, `toHostError` (script exceptions →
+  `PScriptRuntimeError` with `value = toHost(thrown)`), `fromHost` (a `PScriptRuntimeError` gives back its script value,
+  host `Error`s become script errors of the same kind with `cause`, other values are thrown as they are);
+  `HostFunction` calls in `callFunction`.
+- Runtime: `HostObject` in `getProperty`/`setProperty`/`in`/`publicProps` (Object.keys/values/entries, JSON, print),
+  `for…of` over host iterables, `Array.isArray` and printing of host arrays, `instanceof` of host instances.
+- `Interpreter.call(fnOrName, ...args)`; `globals`/`set`/`defineModule` accept host objects and functions;
+  `runModule`/`importModule` now return the namespace through `toHost` (a live proxy; writes throw).
+
+Deviations / gaps:
+
+- Script errors reach the host as proxies of the script error object (`error.value.message` works).
+- Host functions' own properties (other than `name`/`length`) are not visible to scripts; statics of host classes are.
+- `JSON.stringify` of a host array from a script gives an object (`{"0":…}`), not an array.
 
 ## M22 — Modules II
 

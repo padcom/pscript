@@ -1,13 +1,10 @@
 // The Interpreter class and the one-shot run() (§5.8).
 import { compile } from '@/compiler/compiler'
 import type { CompiledScript } from '@/compiler/function-proto'
-import { toHost, toScript } from '@/runtime/interop'
 import { createRealm, defineGlobal } from '@/runtime/realm'
 import { memoryLoader, type ModuleLoader } from '@/modules/loader'
-import { readCell } from '@/modules/cells'
-import type { BindingCell } from '@/modules/module-record'
 import { ModuleRegistry, type LinkedRecord } from '@/modules/registry'
-import { UNINITIALIZED, type Realm } from '@/runtime/values'
+import type { Realm } from '@/runtime/values'
 import { installStdlib } from '@/stdlib'
 import { VM } from '@/vm/vm'
 
@@ -100,7 +97,7 @@ export class Interpreter {
    * @returns the completion value (§4.4.10)
    */
   execute(script: CompiledScript): unknown {
-    return toHost(this.vm.execute(script))
+    return this.vm.interop.toHost(this.vm.execute(script))
   }
 
   /**
@@ -135,22 +132,9 @@ export class Interpreter {
     this.modules.define(id, exports)
   }
 
-  // Each property reads the export's binding on access (live, §4.7.2); uninitialised bindings read as undefined.
+  // The module's namespace through `toHost`: a live proxy; every read goes through the export's binding (§4.7.2).
   private namespaceView(record: LinkedRecord): Record<string, unknown> {
-    const view = globalThis.Object.create(null) as Record<string, unknown>
-
-    for (const name of this.modules.exportNames(record)) {
-      const cell = this.modules.resolveExport(record, name, new Set()) as BindingCell
-      const get = () => {
-        const value = readCell(cell)
-
-        return value === UNINITIALIZED ? undefined : toHost(value)
-      }
-
-      globalThis.Object.defineProperty(view, name, { get, enumerable: true })
-    }
-
-    return globalThis.Object.freeze(view)
+    return this.vm.interop.toHost(this.modules.namespace(record)) as Record<string, unknown>
   }
 
   /**
@@ -160,7 +144,7 @@ export class Interpreter {
    * @returns its value, or `undefined` when there is no such binding or it is uninitialised
    */
   get(name: string): unknown {
-    return toHost(this.vm.globals.peek(name))
+    return this.vm.interop.toHost(this.vm.globals.peek(name))
   }
 
   /**
@@ -170,7 +154,27 @@ export class Interpreter {
    * @param value host value
    */
   set(name: string, value: unknown) {
-    defineGlobal(this.realm, name, toScript(value))
+    defineGlobal(this.realm, name, this.vm.interop.toScript(value))
+  }
+
+  /**
+   * Calls a script function (or a global by name) from the host (§5.8.1): arguments go through `toScript`, the
+   * result through `toHost`; script exceptions arrive as `PScriptRuntimeError`.
+   *
+   * @param fnOrName a function value or the name of a script binding / global
+   * @param args arguments
+   * @returns the result
+   */
+  call(fnOrName: string | ((...args: any[]) => unknown), ...args: unknown[]): unknown {
+    const { vm } = this
+
+    try {
+      const fn = typeof fnOrName === 'string' ? vm.globals.load(fnOrName) : vm.interop.toScript(fnOrName)
+
+      return vm.interop.toHost(vm.callFunction(fn, null, args.map(arg => vm.interop.toScript(arg))))
+    } catch (e) {
+      throw vm.toHostError(e)
+    }
   }
 }
 

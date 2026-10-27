@@ -1,7 +1,15 @@
 // Operator semantics (§4.4.2, §4.4.3). Primitives coerce as in JS; objects, arrays and
 // functions in arithmetic or comparison are a TypeError (D5).
 import { type ScriptError, typeError } from './script-error'
-import { Array as ScriptArray, Class, Function as ScriptFunction, Interface, Object as ScriptObject, type Value } from './values'
+import {
+  Array as ScriptArray,
+  Class,
+  Function as ScriptFunction,
+  HostObject,
+  Interface,
+  Object as ScriptObject,
+  type Value,
+} from './values'
 
 /**
  * Whether a value is a script object.
@@ -235,6 +243,11 @@ function isConstructedFrom(value: Value, type: Class): boolean {
   return klass !== null
 }
 
+// Host objects are instances of the host class whose constructor made them (§5.8.1).
+function isHostInstance(value: HostObject, type: Class): boolean {
+  return type.host !== undefined && value.target instanceof type.host
+}
+
 function implementsInterface(value: Value, type: Interface): boolean {
   return classOf(value)?.interfaces.has(type) ?? false
 }
@@ -250,7 +263,7 @@ export function instanceOf(value: Value, type: Value): boolean {
   if (type instanceof Interface) return implementsInterface(value, type)
   if (!(type instanceof Class)) throw typeError("Right-hand side of 'instanceof' is not a class")
 
-  return isConstructedFrom(value, type)
+  return value instanceof HostObject ? isHostInstance(value, type) : isConstructedFrom(value, type)
 }
 
 function isIndex(name: string, length: number): boolean {

@@ -4,9 +4,11 @@ import { find, functionProperty, noMember, onlyGetter, own, resolve, type Found 
 import { accessError, typeError } from './script-error'
 import {
   Class,
+  HostObject,
   ModuleNamespace,
   type Accessor,
   type AccessContext,
+  type HostAccess,
   type MemberEntry,
   Object as ScriptObject,
   type PrivateEntry,
@@ -78,6 +80,33 @@ function ownStaticIn(start: Class | null, key: string): Found {
   return found
 }
 
+/**
+ * The host object behind a member access, with the access to it.
+ */
+interface HostPart {
+  /** the host object (or host class) */
+  target: object
+  /** reads and writes its properties */
+  access: HostAccess
+}
+
+// The nearest host class in a class chain.
+function hostClassOf(cls: Class | null): Class | null {
+  let current = cls
+
+  while (current && !current.host) current = current.superClass
+
+  return current
+}
+
+function hostPartOf(cls: Class, target: object | undefined): HostPart | null {
+  return target ? { target, access: cls.hostAccess as HostAccess } : null
+}
+
+function hostProps({ host, target }: HostObject): [string, Value][] {
+  return host.keys(target).map(key => [key, host.get(target, key)])
+}
+
 function hasUndeclared(object: ScriptObject, key: string): boolean {
   return object.props.has(key) || find(object.proto, key) !== null
 }
@@ -89,7 +118,7 @@ class MemberAccess {
   constructor(
     private ctx: AccessContext,
     private receiver: ScriptObject,
-    private key: string,
+    readonly key: string,
     private isStatic: boolean,
   ) {}
 
@@ -196,10 +225,14 @@ class MemberAccess {
     return true
   }
 
-  // Not declared: built-in data on the prototypes (an error's `name`), else a hidden private or no member at all.
+  // Not declared: built-in data on the prototypes (an error's `name`), the host part of a host-class instance (or a
+  // host class's statics), else a hidden private or no member at all.
   readUndeclared(): Value {
     if (this.receiver.props.has(this.key)) return this.receiver.props.get(this.key) as Value
     this.checkHiddenPrivate()
+
+    const host = this.hostPart()
+    if (host) return host.access.get(host.target, this.key)
 
     const found = this.builtin() ?? noMember(this.description, this.key)
 
@@ -211,6 +244,13 @@ class MemberAccess {
     const fnProperty = this.isStatic ? functionProperty(this.cls, this.key) : null
 
     return fnProperty ?? find(this.receiver.proto, this.key)
+  }
+
+  // Host parts (of instances of script classes extending host classes, and of host classes) are open (§5.8.1).
+  hostPart(): HostPart | null {
+    const cls = hostClassOf(this.cls)
+
+    return cls && hostPartOf(cls, this.isStatic ? cls.host : this.receiver.hostTarget)
   }
 
   checkUndeclaredWrite() {
@@ -240,11 +280,21 @@ function read(access: MemberAccess): Value {
   return entry ? access.readDeclared(entry) : access.readUndeclared()
 }
 
+function writeUndeclared(access: MemberAccess, value: Value) {
+  const host = access.hostPart()
+  if (host) {
+    host.access.set(host.target, access.key, value)
+
+    return
+  }
+  access.checkUndeclaredWrite()
+  access.store(value)
+}
+
 function writePublic(access: MemberAccess, value: Value) {
   const { entry } = access
-  if (entry && access.writeDeclared(entry, value)) return
-  if (!entry) access.checkUndeclaredWrite()
-  access.store(value)
+  if (!entry) writeUndeclared(access, value)
+  else if (!access.writeDeclared(entry, value)) access.store(value)
 }
 
 function write(access: MemberAccess, value: Value) {
@@ -414,6 +464,7 @@ export function isPublicField(object: ScriptObject, key: string): boolean {
  */
 export function publicProps(object: ScriptObject): [string, Value | Accessor][] {
   if (object instanceof ModuleNamespace) return object.names.map(name => [name, object.read(name)])
+  if (object instanceof HostObject) return hostProps(object)
 
   return [...object.props].filter(([key]) => isPublicField(object, key))
 }

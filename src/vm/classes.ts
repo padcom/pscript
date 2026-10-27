@@ -105,7 +105,18 @@ function checkSuperClass(superClass: Value, template: ClassTemplate): Class | nu
   return superClass
 }
 
+// The host part of a class extending a host class is open: its members are only known at runtime (§5.8.1).
+function extendsHostClass(cls: Class | null): boolean {
+  let current = cls
+
+  while (current && !current.host) current = current.superClass
+
+  return current !== null
+}
+
 function hasMember(cls: Class, name: string, isStatic: boolean): boolean {
+  if (extendsHostClass(cls)) return true
+
   return isStatic ? hasStaticMember(cls, name) : hasInstanceMember(cls, name)
 }
 

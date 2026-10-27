@@ -21,7 +21,7 @@ import { formatNested } from '@/runtime/format'
 import { DONE, getIterator, type ScriptIterator } from '@/runtime/iterators'
 import { defineAccessor, defineProperty, getProperty, hasPropertyIn, propertyKey, setProperty } from '@/runtime/properties'
 import { getPrivateMember, setPrivateMember } from '@/runtime/members'
-import { toHost } from '@/runtime/interop'
+import { Interop } from '@/runtime/interop'
 import { ScriptError, ScriptThrow, rangeError, referenceError, typeError } from '@/runtime/script-error'
 import { arityError } from '@/compiler/signature'
 import {
@@ -31,6 +31,7 @@ import {
   Closure,
   Environment,
   Function as ScriptFunction,
+  HostFunction,
   Interface,
   NativeFunction,
   Object as ScriptObject,
@@ -144,6 +145,14 @@ function readImport(frame: Frame, index: number): Value {
   throw referenceError(`Cannot access '${record.compiled?.imports[index].localName}' before initialization`)
 }
 
+// A PScriptRuntimeError carrying a script value (a script exception that went through host code).
+function isScriptValueError(error: unknown): error is PScriptRuntimeError {
+  return error instanceof PScriptRuntimeError && error.value !== undefined
+}
+
+/** Host errors with these names become script errors of the same class (§5.8.1). */
+const HOST_ERROR_NAMES = new Set(['TypeError', 'RangeError', 'ReferenceError', 'SyntaxError'])
+
 /** A built-in class with its native constructor. */
 type NativeClass = ClassValue & Required<Pick<ClassValue, 'native'>>
 
@@ -161,12 +170,63 @@ export class VM implements AccessContext {
   /** source text of the modules evaluated so far, by id (error excerpts) */
   private moduleSources = new Map<string, string>()
 
+  /** host ⇄ script value conversion (§5.8.1) */
+  readonly interop: Interop
+  /** the context host code acts in: no home class (§5.8.1) */
+  readonly hostContext: AccessContext
+
   constructor(readonly realm: Realm, readonly options: VMOptions) {
     this.globals = new Globals(realm)
+    this.interop = new Interop(this)
+    this.hostContext = {
+      realm,
+      homeClass: null,
+      callFunction: (fn, thisValue, args) => this.callFunction(fn, thisValue, args),
+      captureStack: () => this.captureStack(),
+    }
   }
 
   get homeClass(): ClassValue | null {
     return this.frames.at(-1)?.homeClass ?? null
+  }
+
+  /**
+   * Turns a script exception that reaches host code into a `PScriptRuntimeError` (other errors pass unchanged).
+   *
+   * @param error the exception
+   * @returns what the host sees
+   */
+  toHostError(error: unknown): unknown {
+    return this.uncaught(error)
+  }
+
+  /**
+   * Turns an exception thrown by host code into a script exception (§5.8.2): a `PScriptRuntimeError` gives back the
+   * script value it carries, a host `Error` becomes a script error with the original as `cause`.
+   *
+   * @param error the host exception
+   * @returns the script exception to throw
+   */
+  fromHost(error: unknown): ScriptThrow {
+    if (error instanceof ScriptThrow) return error
+
+    return this.throwValue(isScriptValueError(error) ? this.interop.toScript(error.value) : this.hostErrorValue(error))
+  }
+
+  // A host Error becomes a script error of the same kind; other thrown values are converted.
+  private hostErrorValue(error: unknown): Value {
+    if (!(error instanceof Error)) return this.interop.toScript(error)
+
+    const name = HOST_ERROR_NAMES.has(error.name) ? error.name : 'Error'
+    const object = this.errorObject(name, error.message) as ScriptObject
+
+    object.props.set('cause', this.interop.toScript(error))
+
+    return object
+  }
+
+  private throwValue(value: Value): ScriptThrow {
+    return new ScriptThrow(value, this.captureStack())
   }
 
   /**
@@ -179,6 +239,7 @@ export class VM implements AccessContext {
    */
   callFunction(fn: Value, thisValue: Value, args: Value[]): Value {
     if (fn instanceof NativeFunction) return fn.impl(this, thisValue, args)
+    if (fn instanceof HostFunction) return this.interop.invoke(fn, thisValue, args)
     if (!(fn instanceof Closure)) this.notCallable(fn)
 
     this.enterClosure(fn, args, thisValue)
@@ -325,7 +386,7 @@ export class VM implements AccessContext {
     const [name, reason] = describeThrown(value)
     const { line, column, fileName = this.script?.fileName } = frames[0] ?? { line: 0, column: 0 }
 
-    return new PScriptRuntimeError(name, reason, toHost(value), {
+    return new PScriptRuntimeError(name, reason, this.interop.toHost(value), {
       scriptStack: frames,
       fileName,
       line,
@@ -432,7 +493,14 @@ export class VM implements AccessContext {
   }
 
   // `new C(...)` (§5.6.3): built-in classes construct natively; script classes arrive with M15.
-  private construct(callee: Value, args: Value[]): Value {
+  /**
+   * `new callee(...args)` (also used by host-side `new` on class proxies).
+   *
+   * @param callee the class
+   * @param args arguments
+   * @returns the instance
+   */
+  construct(callee: Value, args: Value[]): Value {
     if (!(callee instanceof ClassValue)) this.notAClass(callee)
 
     return this.constructAs(callee, args, callee)

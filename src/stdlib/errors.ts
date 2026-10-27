@@ -9,7 +9,14 @@ import { defineMethods, method } from './native'
 
 export const ERROR_CLASSES = ['TypeError', 'RangeError', 'ReferenceError', 'SyntaxError'] as const
 
-function builtinTemplate(name: string, hasSuper: boolean): ClassTemplate {
+/**
+ * The template of a class implemented natively (built-in errors, host classes).
+ *
+ * @param name class name
+ * @param hasSuper whether it extends another class
+ * @returns the template
+ */
+export function builtinTemplate(name: string, hasSuper: boolean): ClassTemplate {
   return {
     name,
     hasSuper,

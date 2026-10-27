@@ -100,9 +100,21 @@ function inPrototype(object: ScriptObject, key: string, owner: string): Inherite
   return null
 }
 
+function hostMember(value: unknown, owner: string): Inherited {
+  return { kind: typeof value === 'function' ? 'method' : 'field', owner, final: false, access: 'public', hasHalf: true }
+}
+
+// A member of a class's prototype: built-in data and methods, or what a host class's prototype has (§4.5.6).
+function prototypeMember(cls: Class, key: string): Inherited | null {
+  if (cls.prototype.props.has(key)) return builtin(cls.prototype.props.get(key) as Value, cls.name)
+
+  return cls.host && key in cls.host.prototype ? hostMember(cls.host.prototype[key], cls.name) : null
+}
+
 function builtinInstanceMember({ realm, superClass }: Context, key: string): Inherited | null {
   for (let cls = superClass; cls; cls = cls.superClass) {
-    if (cls.prototype.props.has(key)) return builtin(cls.prototype.props.get(key) as Value, cls.name)
+    const found = prototypeMember(cls, key)
+    if (found) return found
   }
 
   return inPrototype(realm.ObjectPrototype, key, 'Object')

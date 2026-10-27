@@ -1,6 +1,6 @@
 // Property access (§5.7): the single entry points for reads and writes, including accessors (§4.5.4):
-// getters and setters are called with the original receiver. Access modifiers (M17) and exotic
-// objects (modules, host proxies) come later.
+// getters and setters are called with the original receiver. Class members follow §4.5.3 (members.ts);
+// module namespaces, `globalThis` and host objects are exotic.
 import { GlobalObject } from './global-object'
 import { find, functionProperty, onlyGetter, own, resolve } from './lookup'
 import { getClassMember, getInstanceMember, hasClassMember, setClassMember, setInstanceMember } from './members'
@@ -11,6 +11,7 @@ import {
   Array as ScriptArray,
   Class,
   Function as ScriptFunction,
+  HostObject,
   ModuleNamespace,
   Object as ScriptObject,
   type AccessContext,
@@ -99,6 +100,7 @@ type ExoticGetter = (ctx: AccessContext, object: any, key: string) => Value
 // Objects whose reads do not use ordinary properties: namespaces, `globalThis`, classes.
 const EXOTIC_GETTERS: [abstract new (...args: any[]) => ScriptObject, ExoticGetter][] = [
   [ModuleNamespace, getNamespace],
+  [HostObject, (_, object: HostObject, key) => object.host.get(object.target, key)],
   [GlobalObject, getGlobal],
   [Class, getClassMember],
 ]
@@ -201,11 +203,16 @@ function setOrdinary(ctx: AccessContext, object: ScriptObject, write: Write) {
   object.props.set(write.key, write.value)
 }
 
-function setObject(ctx: AccessContext, object: ScriptObject, write: Write) {
+function setScriptObject(ctx: AccessContext, object: ScriptObject, write: Write) {
   if (object instanceof ScriptArray) setArrayElement(object, write.key, write.value)
   else if (object instanceof Class) setClassMember(ctx, object, write.key, write.value)
   else if (object.klass) setInstanceMember(ctx, object, write.key, write.value)
   else setOrdinary(ctx, object, write)
+}
+
+function setObject(ctx: AccessContext, object: ScriptObject, write: Write) {
+  if (object instanceof HostObject) object.host.set(object.target, write.key, write.value)
+  else setScriptObject(ctx, object, write)
 }
 
 /**
@@ -269,6 +276,7 @@ function isClassObject(object: Value): boolean {
  */
 export function hasPropertyIn(ctx: AccessContext, key: Value, object: Value): boolean {
   if (object instanceof ModuleNamespace) return object.names.includes(propertyKey(key))
+  if (object instanceof HostObject) return object.host.has(object.target, propertyKey(key))
 
   return isClassObject(object) ? hasClassMember(ctx, object as ScriptObject, propertyKey(key)) : hasProperty(key, object)
 }

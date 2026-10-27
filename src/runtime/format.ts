@@ -1,4 +1,5 @@
-// print formatting (§4.6.2, D18). Class instances (D35) and accessors (M16) come later.
+// print formatting (§4.6.2, D18): primitives, containers (also host arrays and objects), class instances (D35),
+// accessors, functions, classes and interfaces.
 import { IDENT_PATTERN } from '@/parser/tokens'
 import { toStringIn } from './conversions'
 import { publicProps } from './members'
@@ -8,12 +9,22 @@ import {
   Array as ScriptArray,
   Class,
   Function as ScriptFunction,
+  HostObject,
   Interface,
   ModuleNamespace,
   Object as ScriptObject,
   type AccessContext,
   type Value,
 } from './values'
+
+// The elements of script arrays and host arrays (which print like arrays, §5.8.1); null for other objects.
+function listItems(object: ScriptObject): Value[] | null {
+  if (object instanceof ScriptArray) return object.items
+
+  const isHostArray = object instanceof HostObject && globalThis.Array.isArray(object.target)
+
+  return isHostArray ? publicProps(object).map(([, value]) => value as Value) : null
+}
 
 /** Nested containers deeper than this print as `[Object]` / `[Array]`. */
 const MAX_DEPTH = 2
@@ -83,14 +94,16 @@ class Formatter {
     this.seen.add(object)
 
     try {
-      return object instanceof ScriptArray ? this.array(object, depth) : this.plainObject(object, depth)
+      const items = listItems(object)
+
+      return items ? this.array(items, depth) : this.plainObject(object, depth)
     } finally {
       this.seen.delete(object)
     }
   }
 
-  private array(array: ScriptArray, depth: number): string {
-    return `[${array.items.map(item => this.value(item, depth + 1)).join(', ')}]`
+  private array(items: Value[], depth: number): string {
+    return `[${items.map(item => this.value(item, depth + 1)).join(', ')}]`
   }
 
   // Own accessors are shown, not called (§4.6.2).

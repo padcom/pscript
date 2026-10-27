@@ -55,12 +55,12 @@ describe('Interpreter', () => {
     expect(interpreter.get('missing')).toBeUndefined()
   })
 
-  it('set() defines globals; host objects are not supported yet', () => {
+  it('set() defines globals, also host objects', () => {
     const interpreter = new Interpreter()
 
     interpreter.set('x', 2)
-    expect(interpreter.run('x ** 3')).toBe(8)
-    expect(() => interpreter.set('o', {})).toThrow('not supported yet')
+    interpreter.set('o', { y: 3 })
+    expect(interpreter.run('x ** o.y')).toBe(8)
   })
 
   it('execute() runs precompiled scripts repeatedly', () => {

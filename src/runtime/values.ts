@@ -26,6 +26,22 @@ export interface AccessContext {
   captureStack?(): ScriptStackFrame[]
 }
 
+/**
+ * Access to host objects for the runtime (§5.8.1), implemented by the interop layer.
+ */
+export interface HostAccess {
+  /** reads a property of a host object (blocked keys read as undefined) */
+  get(target: object, key: string): Value
+  /** writes a property of a host object (blocked keys throw) */
+  set(target: object, key: string, value: Value): void
+  /** `key in target` */
+  has(target: object, key: string): boolean
+  /** own enumerable string keys */
+  keys(target: object): string[]
+  /** iterates a host iterable, converting each value */
+  iterate(target: object): Iterator<Value>
+}
+
 export type NativeImpl = (ctx: AccessContext, thisValue: Value, args: Value[]) => Value
 
 /**
@@ -46,6 +62,8 @@ export class Object {
   extensible = true
   /** `Object.freeze`: existing properties are read-only too */
   frozen?: boolean
+  /** instances of script classes extending a host class: the host object their host part lives in (§5.8.1) */
+  hostTarget?: object
 
   constructor(public proto: Object | null) {}
 }
@@ -170,6 +188,8 @@ export class Class extends Function {
   native?: NativeClassImpl
   /** host classes (§5.8.1) */
   host?: new (...args: any[]) => any
+  /** host classes: access to their instances' host parts */
+  hostAccess?: HostAccess
   /** lexically enclosing class (private access from nested classes, §4.5.2) */
   outerClass: Class | null = null
   /** resolution of `template.implicitNames`, by index (§4.5.8) */
@@ -229,7 +249,7 @@ export class ModuleNamespace extends Object {
 
 /** §5.8.1, exotic: all operations delegate to `target`. */
 export class HostObject extends Object {
-  constructor(proto: Object | null, public target: object) {
+  constructor(proto: Object | null, public target: object, public host: HostAccess) {
     super(proto)
   }
 }

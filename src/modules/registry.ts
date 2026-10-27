@@ -4,7 +4,6 @@ import { compileModule } from '@/compiler/compiler'
 import type { FunctionProto } from '@/compiler/function-proto'
 import { PScriptRuntimeError, PScriptSyntaxError, formatExcerpt } from '@/errors'
 import type { SourceLocation } from '@/parser/ast'
-import { toScript } from '@/runtime/interop'
 import { referenceError } from '@/runtime/script-error'
 import { Environment, ModuleNamespace, UNINITIALIZED, type Closure, type Slot, type Value } from '@/runtime/values'
 import { readCell } from './cells'
@@ -26,6 +25,8 @@ export interface ModuleVM {
   evaluateModule(record: ModuleRecord): void
   /** creates a hoisted function of a module */
   moduleFunction(record: ModuleRecord, proto: FunctionProto): Closure
+  /** host values for host modules */
+  interop: { toScript(value: unknown): Value }
 }
 
 /**
@@ -48,7 +49,7 @@ function linkError(record: ModuleRecord, reason: string, { start: { line, column
   return new PScriptSyntaxError(reason, { fileName: record.id, line, column, excerpt })
 }
 
-function hostCell({ names, object }: HostExports, name: string): BindingCell | null {
+function hostCell({ names, object }: HostExports, name: string, toScript: (value: unknown) => Value): BindingCell | null {
   return names.includes(name) ? { read: () => toScript(object[name]) } : null
 }
 
@@ -199,7 +200,7 @@ export class ModuleRegistry {
    * @returns the binding cell, or null when the module has no such export
    */
   resolveExport(record: LinkedRecord, name: string, visiting: Set<string>): BindingCell | null {
-    if (record.hostExports) return hostCell(record.hostExports, name)
+    if (record.hostExports) return hostCell(record.hostExports, name, value => this.vm.interop.toScript(value))
 
     const compiled = compiledOf(record)
     const local = compiled.localExports.find(entry => entry.exportName === name)

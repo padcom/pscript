@@ -16,12 +16,16 @@ function interpreter(modules: Record<string, string>, output: string[] = []) {
 }
 
 describe('runModule / importModule (§5.8)', () => {
-  it('returns a live, frozen, sorted view of the exports', () => {
+  it('returns a live, read-only, sorted view of the exports', () => {
     const ns = interpreter({}).runModule('export let b = 1\nexport const a = 2\nexport function inc() { b++ }')
 
     expect(Object.keys(ns)).toEqual(['a', 'b', 'inc'])
+    const inc = ns.inc as () => void
+
     expect(ns.b).toBe(1)
-    expect(Object.isFrozen(ns)).toBe(true)
+    inc()
+    expect(ns.b).toBe(2)
+    expect(() => { ns.b = 5 }).toThrow(PScriptRuntimeError)
   })
 
   it('evaluates each module once per interpreter', () => {

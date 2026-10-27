@@ -5,7 +5,9 @@ export { compile, compileModule, type CompileOptions } from './compiler/compiler
 
 export { disassemble } from './compiler/disassembler'
 
-export { Interpreter, run, type InterpreterOptions, type RunOptions } from './interpreter'
+export { Interpreter, run, type InterpreterOptions, type ModuleRunOptions, type RunOptions } from './interpreter'
+
+export { markAsClass } from './runtime/interop'
 
 export { PScriptError, PScriptRuntimeError, PScriptSyntaxError } from './errors'
 

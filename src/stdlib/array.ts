@@ -1,5 +1,6 @@
 // Array.prototype methods without callbacks (§4.6.4) and the Array namespace.
 // Callback methods (map, filter, sort, …) arrive with re-entrant calls (M12).
+import { isHostArray } from '@/runtime/interop'
 import { defineGlobal } from '@/runtime/realm'
 import { toStringIn } from '@/runtime/conversions'
 import { typeError } from '@/runtime/script-error'
@@ -121,7 +122,7 @@ export function installArray(realm: Realm) {
 
   defineMethods(realm, realm.ArrayPrototype, { ...makeMethods(realm), ...callbackMethods(realm) })
   defineMethods(realm, namespace, {
-    isArray: [1, (_, __, [value]) => value instanceof ScriptArray],
+    isArray: [1, (_, __, [value]) => value instanceof ScriptArray || isHostArray(value)],
     of: [0, (_, __, args) => new ScriptArray(realm.ArrayPrototype, args)],
     from: [1, (ctx, __, [source, mapFn]) => new ScriptArray(realm.ArrayPrototype, arrayFrom(ctx, source, mapFn))],
   })
