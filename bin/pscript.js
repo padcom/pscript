@@ -5,7 +5,15 @@ import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import repl from 'node:repl'
-import { Interpreter, PScriptError, PScriptSyntaxError, parse } from '../dist/index.js'
+import {
+  Interpreter,
+  PScriptError,
+  PScriptSyntaxError,
+  compile,
+  compileModule,
+  disassemble,
+  parse,
+} from '../dist/index.js'
 import { findFile, isPath } from './files.js'
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
@@ -16,9 +24,10 @@ Runs a PScript file (as a module when it imports or exports), a script given wit
 Without a file and with a terminal on stdin, starts an interactive REPL.
 
 Options:
-  -e, --eval <script>   run the script
-  -h, --help            show this help
-  -v, --version         show the version`
+  -e, --eval <script>         run the script
+  -d, --disassemble [file]    print the bytecode of the file (or of stdin) instead of running it
+  -h, --help                  show this help
+  -v, --version               show the version`
 
 // Module ids are paths relative to the working directory, so that error messages stay short.
 function fsLoader(specifier, referrer) {
@@ -66,6 +75,25 @@ function runEval(flag, source) {
   if (source === undefined) throw new Error(`${flag} needs a script`)
 
   return runSource(source, '<eval>')
+}
+
+// The bytecode listing of a file (D61), with the source position where each statement or expression starts.
+function disassembleSource(source, fileName) {
+  const compiled = isModule(source) ? compileModule(source, fileName) : compile(source, { fileName })
+
+  console.log(disassemble(compiled, { locations: true }))
+}
+
+function runDisassemble(flag, file) {
+  if (file === undefined) {
+    disassembleSource(readFileSync(process.stdin.fd, 'utf8'), '<stdin>')
+
+    return
+  }
+
+  const path = findFile(resolve(file), 'file')
+
+  disassembleSource(readFileSync(path, 'utf8'), relative(process.cwd(), path))
 }
 
 function report(error) {
@@ -137,6 +165,8 @@ const OPTIONS = {
   '--version': () => console.log(pkg.version),
   '-e': runEval,
   '--eval': runEval,
+  '-d': runDisassemble,
+  '--disassemble': runDisassemble,
 }
 
 function commandFor(arg) {

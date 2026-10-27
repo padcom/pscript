@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D60).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D61).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)

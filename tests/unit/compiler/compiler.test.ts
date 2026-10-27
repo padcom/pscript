@@ -141,3 +141,18 @@ describe('compiler: async generators and for await (D53)', () => {
     expect(code.some(op => op.startsWith('ITER_STEP'))).toBe(true)
   })
 })
+
+describe('disassembler (D61)', () => {
+  it('lists class constructors and field initialisers, and names class templates', () => {
+    const listing = disassemble(compile('class A { x = 1\n constructor() { this.x = 2 } }'))
+
+    expect(listing).toMatch(/CLASS +\d+ {2}; <class A>/)
+    expect(listing).toContain('== constructor A ==')
+    expect(listing).toContain('== fieldInit <initializer> ==')
+  })
+
+  it('annotates source positions on request', () => {
+    expect(disassemble(compile('1 + 2'), { locations: true })).toMatch(/ADD +@ 1:1/)
+    expect(disassemble(compile('1 + 2'))).not.toContain('@')
+  })
+})

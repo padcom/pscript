@@ -48,11 +48,12 @@ The full language reference, including a list of differences from JavaScript, is
 npx @padcom/pscript                    # interactive REPL (multi-line input, .help, .exit)
 npx @padcom/pscript main.pscript       # run a file; a file with imports or exports runs as a module
 npx @padcom/pscript -e 'print(1 + 2)'  # run an inline script
+npx @padcom/pscript -d main.pscript    # print the bytecode instead of running it
 echo 'print("hi")' | npx @padcom/pscript
 ```
 
 Modules are loaded from the file system: `./` and `../` resolve against the importing file, trying the exact path,
-then `.pscript`, then `.psc`. Errors go to stderr and set the exit code to 1.
+then `.pscript`, then `.psc`. Files may use top-level `await`. Errors go to stderr and set the exit code to 1.
 
 `psc` compiles PScript to JavaScript ES modules (see [Transpiling to JavaScript](#transpiling-to-javascript-experimental)):
 
@@ -108,7 +109,7 @@ interpreter.defineModule('host:clock', { now: () => Date.now() })
 
 - `run(source)` returns the completion value of the script (like `eval`).
 - `compile(source)` and `Interpreter.execute(compiled)` separate compilation from execution;
-  `disassemble(compiled)` shows the bytecode.
+  `disassemble(compiled, { locations: true })` shows the bytecode (with source positions).
 - Errors are `PScriptSyntaxError` (at compile time) or `PScriptRuntimeError` (uncaught script exceptions, with the
   thrown value, the script stack and a source excerpt).
 

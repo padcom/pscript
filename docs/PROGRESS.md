@@ -60,6 +60,14 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L19 | Abstract classes (D58) | done (2026-10-27) |
 | L20 | Structural `x implements I` (D59) | done (2026-10-27) |
 | L21 | `private` / `protected` constructors (D60) | done (2026-10-28) |
+| L22 | Disassembler CLI (D61) | done (2026-10-28) — COULD list complete |
+
+## L22 — Disassembler CLI (D61)
+
+- **CLI**: `-d, --disassemble [file]` (`bin/pscript.js`, manually checked like the rest of the CLI).
+- **Disassembler**: `locations` option (`@ line:column`), class templates' constructors and initialisers listed,
+  `<class Name>` for class templates.
+- **Tests**: compiler unit tests.
 
 ## L21 — `private` / `protected` constructors (D60)
 
