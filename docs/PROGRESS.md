@@ -30,7 +30,32 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M21 | Modules I | done (2026-10-27) |
 | M22 | Modules II | done (2026-10-27) |
 | M23 | Host interop | done (2026-10-27) |
-| M24 | Limits and polish | next |
+| M24 | Limits and polish | done (2026-10-27) |
+| M25 | Docs and benchmark | next |
+
+## M24 — Limits and polish
+
+Done: `npm run check` green (935 tests; coverage 97.7% statements, 92.0% branches, 98.4% functions, 98.5% lines),
+`npm run build` green including the new build check.
+
+What exists:
+
+- `maxSteps` (D14): the step budget restarts on every entry from the host (`run`/`execute`, module evaluation, host
+  calls into script functions when the VM is idle); exceeding it inside a `try` cannot be swallowed (every following
+  instruction exceeds it again). Tests in `tests/unit/vm/limits.test.ts`.
+- Unexpected host exceptions from the runtime or stdlib natives (bugs, or a failing `stdout`) leave the VM as an
+  uncatchable `PScriptRuntimeError` named `InternalError` with the original as `cause` and the script stack (§5.6.5).
+- `scripts/check-build.js` runs after `vite build`: `dist/index.js` and `dist/index.d.ts` exist, the bundle has no
+  CommonJS, Node built-in imports or `process` access, and it runs a script (ES-only, browser-safe, D16).
+- Public API review against §5.8: `parse`, `compile`, `compileModule`, `disassemble`, `Interpreter` (`run`, `execute`,
+  `get`, `set`, `call`, `runModule`, `importModule`, `defineModule`), `run`, `markAsClass`, the error classes and the
+  AST/module/loader types are exported. Error excerpts with carets exist for syntax errors, runtime errors in scripts
+  and in modules, and link errors.
+
+Gaps:
+
+- `Interpreter.run()` called from a host function while a script runs (re-entrant `run`, not `call`) is not supported.
+- H1 "did you mean" suggestions are not implemented.
 
 ## M23 — Host interop
 

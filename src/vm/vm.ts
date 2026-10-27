@@ -3,7 +3,7 @@ import type { ClassTemplate, CompiledScript, FunctionProto, InterfaceTemplate } 
 import { readCell } from '@/modules/cells'
 import type { CompiledModule, ModuleRecord } from '@/modules/module-record'
 import { GlobalFlags, Op } from '@/compiler/opcodes'
-import { PScriptRuntimeError, formatExcerpt, type ScriptStackFrame } from '@/errors'
+import { PScriptError, PScriptRuntimeError, formatExcerpt, type ScriptStackFrame } from '@/errors'
 import { addIn, toStringIn } from '@/runtime/conversions'
 import {
   arithmetic,
@@ -145,6 +145,11 @@ function readImport(frame: Frame, index: number): Value {
   throw referenceError(`Cannot access '${record.compiled?.imports[index].localName}' before initialization`)
 }
 
+// Unexpected host exceptions (bugs), as opposed to PScript's own errors.
+function isInternalError(error: unknown): error is Error {
+  return error instanceof Error && !(error instanceof PScriptError)
+}
+
 // A PScriptRuntimeError carrying a script value (a script exception that went through host code).
 function isScriptValueError(error: unknown): error is PScriptRuntimeError {
   return error instanceof PScriptRuntimeError && error.value !== undefined
@@ -242,6 +247,11 @@ export class VM implements AccessContext {
     if (fn instanceof HostFunction) return this.interop.invoke(fn, thisValue, args)
     if (!(fn instanceof Closure)) this.notCallable(fn)
 
+    return this.callClosure(fn, thisValue, args)
+  }
+
+  private callClosure(fn: Closure, thisValue: Value, args: Value[]): Value {
+    if (this.frames.length === 0) this.steps = 0 // a call from the host starts a new step budget (D14)
     this.enterClosure(fn, args, thisValue)
 
     return this.runNested()
@@ -328,6 +338,7 @@ export class VM implements AccessContext {
 
     if (source !== undefined) this.moduleSources.set(record.id, source)
     frame.module = record
+    this.steps = 0
     this.frames.push(frame)
 
     try {
@@ -378,8 +389,20 @@ export class VM implements AccessContext {
   // An exception that left the script: report it to the host (§5.9).
   private uncaught(e: unknown): unknown {
     if (e instanceof ScriptError) return this.uncaughtThrow(this.asThrow(e))
+    if (e instanceof ScriptThrow) return this.uncaughtThrow(e)
 
-    return e instanceof ScriptThrow ? this.uncaughtThrow(e) : e
+    return isInternalError(e) ? this.internalError(e) : e
+  }
+
+  // A host exception from inside the runtime or a stdlib native is a bug, never catchable by scripts (§5.6.5).
+  private internalError(error: Error): PScriptRuntimeError {
+    const frames = this.captureStack()
+    const { line, column } = frames[0] ?? { line: 0, column: 0 }
+    const internal = new PScriptRuntimeError('InternalError', error.message, undefined, { scriptStack: frames, line, column })
+
+    internal.cause = error
+
+    return internal
   }
 
   private uncaughtThrow({ value, frames }: ScriptThrow): PScriptRuntimeError {
