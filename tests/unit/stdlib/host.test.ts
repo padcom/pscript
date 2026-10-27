@@ -1,4 +1,4 @@
-// setTimeout / clearTimeout and fetch (D44, §4.6.1).
+// setTimeout / clearTimeout, setInterval / clearInterval, queueMicrotask (D44, D45) and fetch (D44, §4.6.1).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Interpreter } from '@/index'
 
@@ -98,6 +98,92 @@ describe('timer arguments', () => {
     host.run(`setTimeout(() => { ${loop} }, 1)\nsetTimeout(() => { ${loop} }, 2)`)
     vi.runAllTimers()
     expect(errors).toEqual([])
+  })
+})
+
+describe('setInterval and clearInterval', () => {
+  it('runs the callback every delay until it is cleared, even from inside the callback', () => {
+    const { host, lines } = interpreter()
+
+    host.run(`
+      let n = 0
+      const id = setInterval(label => {
+        n++
+        print(label, n)
+        if (n == 3) clearInterval(id)
+      }, 10, 'tick')
+    `)
+    vi.advanceTimersByTime(25)
+    expect(lines).toEqual(['tick 1', 'tick 2'])
+    vi.advanceTimersByTime(100)
+    expect(lines).toEqual(['tick 1', 'tick 2', 'tick 3'])
+  })
+})
+
+describe('interval ids and errors', () => {
+  it('shares ids with setTimeout: clearTimeout and clearInterval are interchangeable', () => {
+    const { host, lines } = interpreter()
+
+    expect(host.run(`
+      const a = setInterval(() => print('a'), 10)
+      const b = setTimeout(() => print('b'), 10)
+      clearTimeout(a)
+      clearInterval(b)
+      [a, b]
+    `)).toEqual([1, 2])
+    vi.advanceTimersByTime(50)
+    expect(lines).toEqual([])
+  })
+
+  it('keeps running after an exception, which goes to stderr', () => {
+    const { host, errors } = interpreter()
+
+    host.run("const id = setInterval(() => { throw new Error('again') }, 10)")
+    vi.advanceTimersByTime(30)
+    expect(errors).toHaveLength(3)
+    host.run('clearInterval(id)')
+    vi.advanceTimersByTime(30)
+    expect(errors).toHaveLength(3)
+    expect(() => host.run("setInterval('print(1)')")).toThrow('setInterval: code strings are not supported')
+  })
+})
+
+describe('queueMicrotask', () => {
+  it('runs the callback as a job, in order with promise reactions, before run() returns', () => {
+    const { host, lines } = interpreter()
+
+    host.run(`
+      Promise.resolve().then(() => print('then 1'))
+      queueMicrotask(() => {
+        print('micro')
+        queueMicrotask(() => print('nested'))
+      })
+      Promise.resolve().then(() => print('then 2'))
+      print('sync')
+    `)
+    expect(lines).toEqual(['sync', 'then 1', 'micro', 'then 2', 'nested'])
+  })
+})
+
+describe('queueMicrotask errors', () => {
+  it('throws an exception of the callback from run() after the other jobs ran', () => {
+    const { host, lines } = interpreter()
+
+    expect(() => host.run(`
+      queueMicrotask(() => { throw new RangeError('bad') })
+      queueMicrotask(() => print('still runs'))
+    `)).toThrow('RangeError: bad')
+    expect(lines).toEqual(['still runs'])
+    expect(() => host.run('queueMicrotask(1)')).toThrow('queueMicrotask: number is not a function')
+  })
+
+  it('reports an exception to stderr when it runs in a timer task', () => {
+    const { host, errors } = interpreter()
+
+    host.run("setTimeout(() => queueMicrotask(() => { throw new Error('late') }))")
+    vi.runAllTimers()
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('Error: late')
   })
 })
 

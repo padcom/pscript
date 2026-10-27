@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D44).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D45).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -221,6 +221,11 @@ loadAll([1, 2])
   event loop after `run()` has returned (the callback receives the extra arguments it declares), and the promise
   callbacks it queues run right after it. Ids are numbers. An exception in a timer callback goes to `stderr`. Code
   strings are not supported.
+- `setInterval(callback, delay?, ...args)` and `clearInterval(id)` repeat the callback every `delay` milliseconds until
+  it is cleared (the callback may clear its own interval; an exception does not stop it). Timer ids are shared, so
+  `clearTimeout` and `clearInterval` are interchangeable, as in JavaScript.
+- `queueMicrotask(callback)` queues the callback as a job, in order with promise callbacks. An exception in it is
+  reported like an unhandled rejection: `run()` throws it after the other jobs have run (later ones go to `stderr`).
 - `fetch(resource, options?)` calls the host's `fetch` (or the one given in the interpreter's `fetch` option) and
   returns a promise of its `Response`, which scripts use like any host object (`await response.json()`).
 
@@ -336,7 +341,7 @@ import './setup'
 
 - Globals: `print`, `console.log`/`console.error`, `globalThis`, `String`, `Number`, `Boolean`, `parseInt`,
   `parseFloat`, `isNaN`, `isFinite`, `NaN`, `Infinity`, `Math`, `JSON`, `Object`, `Array`, `Promise`,
-  `setTimeout`, `clearTimeout`, `fetch` and the error classes (including `AggregateError`).
+  `setTimeout`, `clearTimeout`, `setInterval`, `clearInterval`, `queueMicrotask`, `fetch` and the error classes (including `AggregateError`).
 - `Object.keys`, `values`, `entries`, `assign`, `freeze`; `obj.hasOwnProperty(k)`, `toString()`.
 - Arrays: `push`, `pop`, `shift`, `unshift`, `slice`, `splice`, `concat`, `join`, `reverse`, `at`, `indexOf`,
   `lastIndexOf`, `includes`, `flat`, `fill`, `sort`, `map`, `filter`, `reduce`, `reduceRight`, `forEach`, `find`,

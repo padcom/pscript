@@ -44,6 +44,18 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L3 | Generators (D42) | done (2026-10-27) |
 | L4 | `async` / `await` and Promises (D43) | done (2026-10-27) |
 | L5 | `setTimeout` / `clearTimeout` and `fetch` (D44) | done (2026-10-27) |
+| L6 | `setInterval` / `clearInterval` and `queueMicrotask` (D45) | done (2026-10-27) |
+
+## L6 — `setInterval` / `clearInterval` and `queueMicrotask` (D45)
+
+Design in `docs/PLAN.md` D45 (R34), §4.6.1; user docs in `docs/LANGUAGE.md` → Async functions and promises.
+
+- **Stdlib**: `src/stdlib/host.ts`: `Timers.set` takes a `repeat` flag; an interval re-arms itself with the host's
+  `setTimeout` before running the callback (no new `HostIO` member). `clearTimeout` and `clearInterval` are the same
+  native. `queueMicrotask` enqueues a job; an exception rejects an internal promise so the unhandled-rejection path
+  reports it.
+- **Runtime**: `AccessContext.enqueueJob` (the VM already had it).
+- **Tests**: `tests/unit/stdlib/host.test.ts`.
 
 ## L5 — `setTimeout` / `clearTimeout` and `fetch` (D44)
 
@@ -59,7 +71,7 @@ Design in `docs/PLAN.md` D44 (R33), §4.6.1 and §5.6.10; user docs in `docs/LAN
 - **Tests**: `tests/unit/stdlib/host.test.ts` (fake timers, a fake fetch). Program/differential tests stay synchronous,
   so they don't cover timers. Manually checked against a local HTTP server (method, body, headers, `json()`,
   network errors) and the CLI (it waits for pending timers).
-- **Not done**: `setInterval` / `clearInterval`, `queueMicrotask`, code-string callbacks.
+- **Not done**: code-string callbacks (`setInterval` / `clearInterval` and `queueMicrotask` came in L6).
 
 ## L4 — `async` / `await` and Promises (D43)
 

@@ -31,6 +31,8 @@ export interface AccessContext {
   interop?: { toScript(value: unknown): Value, toHost(value: Value): unknown }
   /** runs a task of the host's event loop (a timer callback, D44) and the jobs it queues, provided by the VM */
   runTask?(task: () => void): void
+  /** queues a job (a microtask, `queueMicrotask`, D45), provided by the VM */
+  enqueueJob?(job: () => void): void
 }
 
 /**
