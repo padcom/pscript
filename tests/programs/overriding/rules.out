@@ -1,0 +1,27 @@
+field over method TypeError Cannot override method 'hook' with a field (21:66)
+method over field TypeError Cannot override field 'value' with a method (22:66)
+method over accessor TypeError Cannot override accessor 'size' with a method (23:69)
+accessor over field TypeError Cannot override field 'value' with an accessor (24:68)
+widen TypeError cannot change access of 'hook' from protected to public (26:54)
+narrow TypeError cannot change access of 'run' from public to protected (27:65)
+keep ok
+fewer params TypeError Override 'run(a)' must keep the signature of 'Base.run(a, b?)' (30:61)
+required vs optional TypeError Override 'run(a, b)' must keep the signature of 'Base.run(a, b?)' (31:69)
+rest TypeError Override 'run(a, b?, ...more)' must keep the signature of 'Base.run(a, b?)' (32:53)
+same signature ok
+final static TypeError Cannot override final field 'VERSION' of class 'Base' (35:59)
+final field TypeError Cannot override final field 'id' of class 'Base' (36:60)
+static override ok
+static missing override TypeError 'create' overrides 'Base.create' and must be marked 'override' (39:70)
+instance named like static ok
+reuse private name ok
+private over public ok
+toString needs override TypeError 'toString' overrides 'Object.toString' and must be marked 'override' (45:50)
+hasOwnProperty override ok
+static bind TypeError 'bind' overrides 'Function.bind' and must be marked 'override' (47:45)
+error name TypeError 'name' overrides 'Error.name' and must be marked 'override' (48:51)
+error message ok
+getter only ok
+setter without override TypeError 'size' overrides 'Base.size' and must be marked 'override' (52:63)
+add missing half ok
+many TypeError 'hook' overrides 'Base.hook' and must be marked 'override' (55:44); 'nothing' does not override anything in 'Base' (56:12)

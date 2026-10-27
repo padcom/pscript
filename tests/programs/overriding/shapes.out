@@ -1,0 +1,7 @@
+area 12 / area 1
+A TypeError 'area' overrides 'Shape.area' and must be marked 'override' (19:44)
+B TypeError 'perimeter' does not override anything in 'Shape' (20:53)
+C TypeError Cannot override final method 'describe' of class 'Shape' (21:53)
+D TypeError Cannot extend final class 'Unit'
+assign method TypeError Cannot assign to method 'area' of class 'Circle'
+new member TypeError Circle has no member 'color'

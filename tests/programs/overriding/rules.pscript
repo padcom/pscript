@@ -1,0 +1,57 @@
+// @pscript-only: override rules (§4.5.6)
+function attempt(label, f) {
+  try { f(); print(label, 'ok') } catch (e) { print(label, e.name, e.message) }
+}
+
+class Base {
+  value = 1
+  protected hook() { return 'base hook' }
+  get size() { return 1 }
+  set size(v) {}
+  get label() { return 'base' }
+  static create() { return new Base() }
+  static final VERSION = 1
+  final id = 0
+  run(a, b = 1) { return a + b }
+  private secret() { return 'base secret' }
+  override toString() { return 'Base' }
+}
+
+// Kinds must match
+attempt('field over method', () => class extends Base { override hook = 1 })
+attempt('method over field', () => class extends Base { override value() {} })
+attempt('method over accessor', () => class extends Base { override size() {} })
+attempt('accessor over field', () => class extends Base { override get value() { return 2 } })
+// Access must match
+attempt('widen', () => class extends Base { override hook() {} })
+attempt('narrow', () => class extends Base { protected override run(a, b = 1) {} })
+attempt('keep', () => class extends Base { protected override hook() {} })
+// Signatures must match (D38)
+attempt('fewer params', () => class extends Base { override run(a) {} })
+attempt('required vs optional', () => class extends Base { override run(a, b) {} })
+attempt('rest', () => class extends Base { override run(a, b = 1, ...more) {} })
+attempt('same signature', () => class extends Base { override run(x, y = 2) {} })
+// final members: no redefinition of any kind, static or instance
+attempt('final static', () => class extends Base { static VERSION = 2 })
+attempt('final field', () => class extends Base { override id = 1 })
+// statics are checked against statics
+attempt('static override', () => class extends Base { static override create() { return null } })
+attempt('static missing override', () => class extends Base { static create() { return null } })
+attempt('instance named like static', () => class extends Base { create() {} })
+// Private members never participate
+attempt('reuse private name', () => class extends Base { secret() {} })
+attempt('private over public', () => class extends Base { private run() {} })
+// Built-in members are inherited too
+attempt('toString needs override', () => class { toString() { return 'x' } })
+attempt('hasOwnProperty override', () => class { override hasOwnProperty(k) { return false } })
+attempt('static bind', () => class { static bind() {} })
+attempt('error name', () => class extends Error { name = 'MyError' })
+attempt('error message', () => class extends Error { override message = 'm' })
+// Accessor halves
+attempt('getter only', () => class extends Base { override get size() { return 2 } })
+attempt('setter without override', () => class extends Base { set size(v) {} })
+attempt('add missing half', () => class extends Base { set label(v) {} })
+// Several violations are reported together
+attempt('many', () => class extends Base { hook() {}
+  override nothing() {}
+})

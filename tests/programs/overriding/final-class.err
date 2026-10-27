@@ -1,0 +1,1 @@
+overriding/final-class.pscript:3:1 TypeError: Cannot extend final class 'Square'

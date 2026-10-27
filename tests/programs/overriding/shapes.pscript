@@ -1,0 +1,25 @@
+// @pscript-only: override / final (D28) and sealed classes (D29), §10.18
+class Shape {
+  area() { return 0 }
+  final describe() { return 'area ' + this.area() }
+}
+class Circle extends Shape {
+  r
+  constructor(r) { super(); this.r = r }
+  override area() { return 3 * this.r ** 2 }
+}
+final class Unit extends Shape {
+  override area() { return 1 }
+}
+print(new Circle(2).describe(), '/', new Unit().describe())
+
+function attempt(label, f) {
+  try { print(label, f()) } catch (e) { print(label, e.name, e.message) }
+}
+attempt('A', () => class A extends Shape { area() {} })
+attempt('B', () => class B extends Shape { override perimeter() {} })
+attempt('C', () => class C extends Shape { override describe() {} })
+attempt('D', () => class D extends Unit {})
+const c = new Circle(1)
+attempt('assign method', () => { c.area = () => 5 })
+attempt('new member', () => { c.color = 'red' })

@@ -24,7 +24,29 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M15 | Classes | done (2026-10-27) |
 | M16 | Accessors | done (2026-10-27) |
 | M17 | Access modifiers | done (2026-10-27) |
-| M18 | Overriding | next |
+| M18 | Overriding | done (2026-10-27) |
+| M19 | Interfaces | next |
+
+## M18 — Overriding
+
+Done: override programs pass (`tests/programs/overriding/`: §10.18, a rule matrix, final class error). `npm run check` and `npm run build` green; 819 tests.
+
+What exists:
+
+- `src/vm/overrides.ts`: `overrideViolations(template, { realm, superClass, constants })`, run by `defineClass` before the members are installed. For every public/protected member (instance against instance, static against static): inherited = superclass member index entry, else a built-in (`Error`-family prototype data/methods, `Object.prototype`, `Function.prototype` for statics). Checks in order: `final` (no redefinition of any kind), `override` required / forbidden, kinds match (method/accessor/field), access matches (per accessor half), signature matches (required, optional, rest; script methods only, natives are not checked).
+- Messages as §4.5.6, each followed by ` (line:column)` of the member; all violations of one class (overrides + unproven `this.x` refs) are joined with `; ` in a single `TypeError` (§5.6.7).
+- Accessor halves: a half that redefines an inherited half needs `override`; adding a half the superclass does not have does not (but `override` is allowed there).
+- `final class`: `Class.final`; `extends` of it → `TypeError: Cannot extend final class 'X'` (in `checkSuperClass`).
+
+Deviations / gaps:
+
+- Member locations start at the member name, not at its first modifier.
+- The COULD compile-time version of these checks is not implemented (all are class-definition time).
+- Host superclasses do not exist yet; `inheritedMember` will need a host-prototype lookup then (§5.6.7 "build entries lazily").
+
+Notes for next session (M19):
+
+- Interface conformance goes into `defineClass` next to `overrideViolations` (same violation list). `Class.interfaces` and `Interface` (values.ts) exist; `INTERFACE k n` opcode is declared but not implemented (the "unimplemented opcode" VM unit test uses it — switch to another).
 
 ## M17 — Access modifiers
 

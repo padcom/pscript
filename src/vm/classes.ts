@@ -1,5 +1,5 @@
-// Class definition (§5.6.7): the CLASS instruction builds a sealed class with flattened member indexes.
-// Override/final checks (M18), access modifiers (M17), accessors (M16) and interfaces (M19) build on this.
+// Class definition (§5.6.7): the CLASS instruction builds a sealed class with flattened member indexes,
+// after the override/final checks (overrides.ts). Interfaces (M19) build on this.
 import type {
   ClassFieldTemplate,
   ClassMemberRef,
@@ -8,6 +8,7 @@ import type {
   FunctionProto,
 } from '@/compiler/function-proto'
 import { kindOf } from '@/runtime/operators'
+import { overrideViolations } from './overrides'
 import { typeError } from '@/runtime/script-error'
 import {
   Accessor,
@@ -82,6 +83,7 @@ function describe(value: Value): string {
 function checkSuperClass(superClass: Value, template: ClassTemplate): Class | null {
   if (!template.hasSuper) return null
   if (!(superClass instanceof Class)) throw typeError(`Class extends value ${describe(superClass)} is not a class`)
+  if (superClass.final) throw typeError(`Cannot extend final class '${superClass.name}'`)
 
   return superClass
 }
@@ -111,6 +113,7 @@ class ClassBuilder {
 
     this.cls = new Class(host.realm.FunctionPrototype, template, superClass, prototype)
     this.cls.outerClass = site.homeClass
+    this.cls.final = template.isFinal
     this.cls.memberIndex = new Map(superClass?.memberIndex)
     this.cls.staticMemberIndex = new Map(superClass?.staticMemberIndex)
   }
@@ -171,14 +174,12 @@ class ClassBuilder {
   }
 
   // Unproven `this.x` references (§4.5.9) must exist once the whole chain is known.
-  checkMemberRefs() {
+  memberRefViolations(): string[] {
     const { cls } = this
     const missing = this.template.memberRefs.filter(ref => !hasMember(cls, ref.name, ref.isStatic))
-    if (missing.length === 0) return
-
     const where = (ref: ClassMemberRef) => `${ref.loc.start.line}:${ref.loc.start.column}`
 
-    throw typeError(missing.map(ref => `Class '${cls.name}' has no member '${ref.name}' (${where(ref)})`).join('; '))
+    return missing.map(ref => `Class '${cls.name}' has no member '${ref.name}' (${where(ref)})`)
   }
 
   // The name is visible to static initialisers; the class is sealed (D29) before they run.
@@ -221,11 +222,16 @@ class ClassBuilder {
  * @returns the class
  */
 export function defineClass(host: ClassHost, template: ClassTemplate, superClass: Value, site: DefinitionSite): Class {
-  const builder = new ClassBuilder(host, template, checkSuperClass(superClass, template), site)
+  const parent = checkSuperClass(superClass, template)
+  const builder = new ClassBuilder(host, template, parent, site)
+  const violations = overrideViolations(template, { realm: host.realm, superClass: parent, constants: site.constants })
 
   builder.members()
   builder.functions()
-  builder.checkMemberRefs()
+  violations.push(...builder.memberRefViolations())
+
+  // All violations of one class definition are reported together (§5.6.7).
+  if (violations.length > 0) throw typeError(violations.join('; '))
   builder.finish()
 
   return builder.cls
