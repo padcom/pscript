@@ -96,6 +96,34 @@ export interface CompileOptions {
 }
 
 // The target of a parameter: its name, or the pattern that destructures it (D40).
+// Functions, arrows, methods and classes have their own `await` rules (field initialisers are functions too).
+const OWN_AWAIT_SCOPE = /Function|Class|Method/
+
+function isAwait({ type, await: awaits }: { type?: string, await?: boolean }): boolean {
+  return type === 'AwaitExpression' || (type === 'ForOfStatement' && awaits === true)
+}
+
+function hasOwnAwaitScope({ type }: { type?: string }): boolean {
+  return typeof type === 'string' && OWN_AWAIT_SCOPE.test(type)
+}
+
+/**
+ * Whether code at the top level of a script or module awaits (D51), outside nested functions and classes.
+ *
+ * @param node a node or any value inside one
+ * @returns true when it contains such an `await` (or a `for await`)
+ */
+function containsTopLevelAwait(node: unknown): boolean {
+  if (typeof node !== 'object' || node === null) return false
+
+  // eslint-disable-next-line no-use-before-define -- recursion
+  return isAwait(node) || searchesDeeper(node)
+}
+
+function searchesDeeper(node: object): boolean {
+  return !hasOwnAwaitScope(node) && globalThis.Object.values(node).some(containsTopLevelAwait)
+}
+
 function paramTarget(param: Pattern): PatternTarget {
   if (param.type === 'RestElement') return param.argument
 
@@ -170,7 +198,6 @@ function bindingOf(resolution: Resolution): Binding | undefined {
 }
 
 const AWAIT_OUTSIDE_ASYNC = "'await' is only valid in async functions"
-const TOP_LEVEL_AWAIT = "'await' is only valid in async functions (top-level await is not supported)"
 
 /** Statements that declare bindings with a TDZ. */
 const LEXICAL_DECLARATIONS = new Set<Statement['type']>(['VariableDeclaration', 'ClassDeclaration', 'InterfaceDeclaration'])
@@ -506,6 +533,8 @@ class Compiler {
     const { out } = this
     const body = program.body as Statement[]
 
+    const async = this.topLevelAwait(body)
+
     this.declare(body, this.scope)
 
     for (const binding of this.scope.bindings.values()) {
@@ -516,10 +545,28 @@ class Compiler {
     this.hoistFunctions(body)
     this.statements(body)
     out.emit(Op.LOAD, 0, COMPLETION_SLOT)
-    out.emit(Op.HALT)
+    out.emit(async ? Op.RETURN : Op.HALT)
     out.scopeSize = this.scope.slotCount
 
-    return { main: out.build(), source: this.source, fileName: this.fileName }
+    return this.compiledScript(async)
+  }
+
+  private compiledScript(async: boolean): CompiledScript {
+    const script: CompiledScript = { main: this.out.build(), source: this.source, fileName: this.fileName }
+
+    if (async) script.async = true
+
+    return script
+  }
+
+  // Top-level `await` (D51): the script or module body becomes a coroutine, as an async function's body does, and
+  // completes with RETURN (resolving its promise) instead of HALT.
+  private topLevelAwait(body: Node[]): boolean {
+    const async = body.some(containsTopLevelAwait)
+
+    if (async) this.coroutinePrologue({ generator: false, async: true })
+
+    return async
   }
 
   // Module goal (§5.5): top-level bindings live in the module's top environment; imports are read through cells;
@@ -532,16 +579,18 @@ class Compiler {
     this.declare(body as Statement[], this.scope)
 
     const hoistedFunctions = this.moduleFunctions(body)
+    const async = this.topLevelAwait(body)
 
     this.statements(body as Statement[])
     this.exportLists(body)
     out.emit(Op.UNDEFINED)
-    out.emit(Op.HALT)
+    out.emit(async ? Op.RETURN : Op.HALT)
     out.scopeSize = this.scope.slotCount
 
     const { requests, imports, localExports, indirectExports } = this.moduleTables
+    const tables = { requests, imports, localExports, indirectExports, hoistedFunctions }
 
-    return { id, main: out.build(), requests, imports, localExports, indirectExports, hoistedFunctions, source: this.source }
+    return { id, main: out.build(), ...tables, source: this.source, ...(async && { async }) }
   }
 
   private moduleTables: ModuleTables | null = null
@@ -1960,7 +2009,7 @@ class Compiler {
 
   // `await v` suspends the async function until v (as a promise) settles (D43).
   awaitExpression({ argument, loc }: AwaitExpression) {
-    if (!this.fn.async) throw this.error(this.fn.parent ? AWAIT_OUTSIDE_ASYNC : TOP_LEVEL_AWAIT, loc)
+    if (!this.fn.async) throw this.error(AWAIT_OUTSIDE_ASYNC, loc)
     this.expression(argument)
     this.emitAt(loc, Op.AWAIT)
   }
@@ -2021,7 +2070,7 @@ class Compiler {
 
   // The parameters are bound by the call; a generator's body runs on the first next() (D42), an async function's
   // body runs now, until its first await (D43).
-  private coroutinePrologue({ generator, async }: AnyFunction) {
+  private coroutinePrologue({ generator, async }: Pick<AnyFunction, 'generator' | 'async'>) {
     if (generator) this.out.emit(Op.GENERATOR)
     if (async) this.out.emit(Op.ASYNC)
     this.fn.generator = generator

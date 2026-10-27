@@ -1,0 +1,4 @@
+import { config } from './config'
+print('report: after config', config.port)
+export const report = await Promise.all([1, 2].map(async n => n * config.port))
+print('report: done', report.length)

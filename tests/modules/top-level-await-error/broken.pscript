@@ -1,0 +1,2 @@
+print('broken: start')
+export const value = await Promise.reject(new TypeError('no value'))

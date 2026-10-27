@@ -37,17 +37,17 @@ export function expected(graph: string, extension: string): string | null {
 }
 
 /**
- * Runs a graph in the interpreter.
+ * Runs a graph in the interpreter, waiting for top-level `await`s (D51).
  *
  * @param modules module sources by file name
  * @returns output and the thrown error
  */
-export function runGraph(modules: Record<string, string>): ProgramResult {
+export async function runGraph(modules: Record<string, string>): Promise<ProgramResult> {
   const output: string[] = []
   const interpreter = new Interpreter({ modules, stdout: text => output.push(text) })
 
   try {
-    interpreter.importModule('./main')
+    await interpreter.importModuleAsync('./main')
 
     return { output }
   } catch (error) {

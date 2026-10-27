@@ -44,27 +44,28 @@ function createInterpreter(stdout = text => console.log(text)) {
   return new Interpreter({ moduleLoader: fsLoader, stdout })
 }
 
-function runSource(source, fileName) {
+// The asynchronous API waits for top-level `await` (D51).
+async function runSource(source, fileName) {
   const interpreter = createInterpreter()
 
-  if (isModule(source)) interpreter.runModule(source, { id: fileName })
-  else interpreter.run(source, { fileName })
+  if (isModule(source)) await interpreter.runModuleAsync(source, { id: fileName })
+  else await interpreter.runAsync(source, { fileName })
 }
 
 function runFile(file) {
   const path = findFile(resolve(file), 'file')
 
-  runSource(readFileSync(path, 'utf8'), relative(process.cwd(), path))
+  return runSource(readFileSync(path, 'utf8'), relative(process.cwd(), path))
 }
 
 function runStdin() {
-  runSource(readFileSync(process.stdin.fd, 'utf8'), '<stdin>')
+  return runSource(readFileSync(process.stdin.fd, 'utf8'), '<stdin>')
 }
 
 function runEval(flag, source) {
   if (source === undefined) throw new Error(`${flag} needs a script`)
 
-  runSource(source, '<eval>')
+  return runSource(source, '<eval>')
 }
 
 function report(error) {
@@ -96,7 +97,11 @@ function createReplSession() {
     }
   }
 
-  return input => show(interpreter.run(input, { fileName: '<repl>' }))
+  return async input => show(await interpreter.runAsync(input, { fileName: '<repl>' }))
+}
+
+function evaluateInput(evaluate, input) {
+  return input.trim() === '' ? undefined : evaluate(input)
 }
 
 /* eslint-disable promise/prefer-await-to-callbacks -- node:repl's eval API takes a callback */
@@ -109,9 +114,9 @@ function startRepl() {
     prompt: 'pscript> ',
     ignoreUndefined: true,
     writer: text => text,
-    eval(input, context, fileName, callback) {
+    async eval(input, context, fileName, callback) {
       try {
-        callback(null, input.trim() === '' ? undefined : evaluate(input))
+        callback(null, await evaluateInput(evaluate, input))
       } catch (e) {
         if (isIncomplete(e)) {
           callback(new repl.Recoverable(e))
@@ -141,15 +146,15 @@ function commandFor(arg) {
   return OPTIONS[arg]
 }
 
-function main(args) {
+async function main(args) {
   const command = commandFor(args[0])
   if (command === undefined) throw new Error(`unknown option '${args[0]}'\n\n${USAGE}`)
 
-  command(...args)
+  await command(...args)
 }
 
 try {
-  main(process.argv.slice(2))
+  await main(process.argv.slice(2))
 } catch (e) {
   report(e)
   process.exitCode = 1

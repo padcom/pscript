@@ -12,9 +12,10 @@ export type LoadedModule
     | { id: string, exports: Record<string, unknown> }
 
 /**
- * Resolves `specifier` (imported from module `referrer`, null for the entry) and loads it; throws when not found.
+ * Resolves `specifier` (imported from module `referrer`, null for the entry) and loads it; throws (or rejects) when
+ * not found. An asynchronous loader (D51) works with the asynchronous API (`runModuleAsync()`, `importModuleAsync()`).
  */
-export type ModuleLoader = (specifier: string, referrer: string | null) => LoadedModule
+export type ModuleLoader = (specifier: string, referrer: string | null) => LoadedModule | Promise<LoadedModule>
 
 function isRelative(specifier: string): boolean {
   return specifier.startsWith('./') || specifier.startsWith('../')

@@ -1,0 +1,9 @@
+start
+value 42
+[2, 4]
+caught nope
+a job runs while the script waits
+after await
+loop 2
+loop 4
+true

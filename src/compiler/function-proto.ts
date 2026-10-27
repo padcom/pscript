@@ -175,4 +175,6 @@ export interface CompiledScript {
   source?: string
   /** file name, for error messages */
   fileName?: string
+  /** the script uses top-level `await` (D51): `main` runs as a coroutine and completes with a promise */
+  async?: boolean
 }

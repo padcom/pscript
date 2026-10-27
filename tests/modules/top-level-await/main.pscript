@@ -1,0 +1,6 @@
+// Top-level await (D51): dependencies start in order; a module runs once its async dependencies are done
+import { config } from './config'
+import { counter } from './counter'
+import { report } from './report'
+
+print('main', config.port, counter, report.join(','))

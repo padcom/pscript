@@ -6,7 +6,8 @@ import { memoryLoader, type ModuleLoader } from '@/modules/loader'
 import { ModuleRegistry, type LinkedRecord } from '@/modules/registry'
 import type { Realm } from '@/runtime/values'
 import { installStdlib } from '@/stdlib'
-import { VM } from '@/vm/vm'
+import type { PromiseObject } from '@/runtime/promises'
+import { PENDING, VM } from '@/vm/vm'
 
 /**
  * Options of an `Interpreter`.
@@ -99,10 +100,29 @@ export class Interpreter {
    * Runs a precompiled script.
    *
    * @param script compiled script
-   * @returns the completion value (§4.4.10)
+   * @returns the completion value (§4.4.10); for a script with top-level `await` that still waits for the host after
+   * the job queue has drained, a promise of it (D51)
    */
   execute(script: CompiledScript): unknown {
-    return this.vm.interop.toHost(this.vm.execute(script))
+    const value = this.vm.execute(script)
+    if (!script.async) return this.vm.interop.toHost(value)
+
+    const outcome = this.vm.outcome(value as PromiseObject)
+
+    return this.vm.interop.toHost(outcome === PENDING ? value : outcome)
+  }
+
+  /**
+   * Compiles and runs a script, waiting for its top-level `await`s (D51).
+   *
+   * @param source source text
+   * @param options file name
+   * @returns a promise of the completion value (§4.4.10); a completion value that is a promise is waited for too
+   */
+  async runAsync(source: string, options: RunOptions = {}): Promise<unknown> {
+    const value = await this.run(source, options)
+
+    return value
   }
 
   /**
@@ -124,6 +144,29 @@ export class Interpreter {
    */
   importModule(specifier: string): Record<string, unknown> {
     return this.namespaceView(this.modules.import(specifier, null))
+  }
+
+  /**
+   * Runs an entry module given as source text, after its dependencies, waiting for top-level `await`s; the loader
+   * may be asynchronous (D51).
+   *
+   * @param source module source
+   * @param options the module's id
+   * @returns a promise of a live, read-only view of the module's exports
+   */
+  async runModuleAsync(source: string, options: ModuleRunOptions = {}): Promise<Record<string, unknown>> {
+    return this.namespaceView(await this.modules.runSourceAsync(source, options.id ?? 'main'))
+  }
+
+  /**
+   * Loads a module through the loader (which may be asynchronous) and evaluates it (and its dependencies) once,
+   * waiting for top-level `await`s (D51).
+   *
+   * @param specifier module specifier
+   * @returns a promise of a live, read-only view of the module's exports
+   */
+  async importModuleAsync(specifier: string): Promise<Record<string, unknown>> {
+    return this.namespaceView(await this.modules.importAsync(specifier, null))
   }
 
   /**

@@ -1,6 +1,7 @@
 // Module contract (§5.4): compiled modules and their runtime records.
 import type { FunctionProto } from '@/compiler/function-proto'
 import type { SourceLocation } from '@/parser/ast'
+import type { PromiseObject } from '@/runtime/promises'
 import type { Environment, ModuleNamespace, Value } from '@/runtime/values'
 
 /**
@@ -71,6 +72,8 @@ export interface CompiledModule {
   hoistedFunctions: HoistedFunction[]
   /** source text, for error excerpts */
   source?: string
+  /** the body uses top-level `await` (D51): it runs as a coroutine, like an async function */
+  async?: boolean
 }
 
 /**
@@ -125,4 +128,6 @@ export interface ModuleRecord {
   namespace?: ModuleNamespace
   /** error of an errored module, rethrown on every import */
   error?: unknown
+  /** set when the evaluation of the module (or of a dependency) waits for a promise (top-level await, D51) */
+  evaluation?: PromiseObject
 }

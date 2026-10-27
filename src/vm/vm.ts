@@ -252,6 +252,9 @@ function arrayPush(stack: Value[]) {
   array.items.push(value)
 }
 
+/** A body with top-level `await` that has not finished (D51). */
+export const PENDING: unique symbol = Symbol('PENDING')
+
 function popItems(stack: Value[], count: number): Value[] {
   const items = stack.slice(stack.length - count)
 
@@ -543,9 +546,11 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
    * Evaluates a linked module: runs its body in the module's top environment, with `this` null (§5.6.8).
    *
    * @param record the module (its `env` and imports are set up by the linker)
+   * @returns the promise of a module body with top-level `await` (D51), which runs until its first `await`; null when
+   * the body has run to completion
    */
-  evaluateModule(record: ModuleRecord) {
-    const { main, source } = record.compiled as CompiledModule
+  evaluateModule(record: ModuleRecord): PromiseObject | null {
+    const { main, source, async } = record.compiled as CompiledModule
     const frame = this.newFrame(main, record.env as Environment, null)
 
     if (source !== undefined) this.moduleSources.set(record.id, source)
@@ -554,7 +559,9 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
     this.frames.push(frame)
 
     try {
-      this.run(1)
+      const value = this.run(1)
+
+      return async ? value as PromiseObject : null
     } catch (e) {
       throw this.uncaught(e)
     } finally {
@@ -602,6 +609,19 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
       this.frames.length = 0
       this.stack.length = 0
     }
+  }
+
+  /**
+   * The outcome of a script or module body with top-level `await` (D51) once the job queue has drained: its value
+   * when it completed, its exception (as a host error) when it failed.
+   *
+   * @param promise the body's promise
+   * @returns the value, or `PENDING` when the body still waits (for a host promise or a timer)
+   */
+  outcome(promise: PromiseObject): Value | typeof PENDING {
+    if (promise.state === 'rejected') throw this.uncaught(new ScriptThrow(promise.result, promise.frames))
+
+    return promise.state === 'fulfilled' ? promise.result : PENDING
   }
 
   // ---------------------------------------------------------------------------

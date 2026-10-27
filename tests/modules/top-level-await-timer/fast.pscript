@@ -1,0 +1,2 @@
+export const fast = await new Promise(resolve => setTimeout(() => resolve('fast'), 1))
+print('fast done')

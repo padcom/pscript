@@ -1,0 +1,3 @@
+// A rejected top-level await fails the importers (D51)
+import { value } from './broken'
+print('never', value)

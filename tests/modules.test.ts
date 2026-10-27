@@ -6,8 +6,8 @@ import { errorName, expected, graphs, runGraph, sources } from './helpers/module
 import { runModulesInNode } from './helpers/node-modules'
 
 describe('module programs', () => {
-  it.each(graphs)('%s', graph => {
-    const { output, error } = runGraph(sources(graph))
+  it.each(graphs)('%s', async graph => {
+    const { output, error } = await runGraph(sources(graph))
     const expectedError = expected(graph, '.err')
 
     if (expectedError === null) {
@@ -22,9 +22,9 @@ describe('module programs', () => {
 const differential = graphs.filter(graph => !sources(graph)['main.pscript'].includes('@pscript-only'))
 
 describe('module programs against Node', () => {
-  it.each(differential)('%s', graph => {
+  it.each(differential)('%s', async graph => {
     const modules = sources(graph)
-    const pscript = runGraph(modules)
+    const pscript = await runGraph(modules)
     const node = runModulesInNode(modules, 'main.pscript')
 
     expect(pscript.output).toEqual(node.output)

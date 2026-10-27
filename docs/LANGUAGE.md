@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D50).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D51).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -218,7 +218,8 @@ loadAll([1, 2])
 
 - `async function`, `async` arrows and `async` methods (also `static`) return promises; `await` pauses until a
   promise settles, giving its value or throwing its reason (so `try`/`catch`/`finally` work). `await` is only allowed
-  inside async functions — there is no top-level `await` yet. Async generators and `for await` are not supported.
+  inside async functions and at the top level of scripts and modules (see [Modules](#modules)). Async generators and
+  `for await` are not supported.
 - `Promise` works as in JavaScript: `new Promise((resolve, reject) => …)`, `then`, `catch`, `finally`,
   `Promise.resolve`, `reject`, `all`, `allSettled`, `race`, `any` (with `AggregateError`) and `withResolvers`.
   Callbacks run in the same order as in JavaScript.
@@ -345,6 +346,11 @@ import './setup'
 - Specifiers are resolved by the host's loader. The built-in loader resolves `./` and `../` against the importing
   module and tries the exact id, then `.pscript`, then `.psc`.
 - Namespace objects (`import * as ns`) list the exports in sorted order, are frozen and print as `[Module] {…}`.
+- **Top-level `await`** works in modules (and in scripts): `export const config = await loadConfig()`. As in
+  JavaScript, dependencies start in import order and a module runs once its dependencies have finished.
+  `runModule()` / `importModule()` work when the awaits only wait for script code; when they wait for the host
+  (timers, `fetch`), use `runModuleAsync()` / `importModuleAsync()` (and `runAsync()` for scripts), which return
+  promises. Module loaders may be asynchronous too (asynchronous API only). The CLI waits for top-level `await`.
 - Host modules (`interpreter.defineModule('host:fs', { … })`) export the properties of a host object, read live.
 
 ## Standard library
@@ -405,7 +411,8 @@ Values cross the boundary by reference and identity is kept in both directions.
 | Tagged templates | Not available |
 | Generators give `undefined` for missing values | Generators give `null` (`yield`, `next()`, finished steps) |
 | Any object with a `then` method is a thenable | Only promises are adopted; `Promise` is final |
-| Top-level `await`, async generators, `for await` | Not available (yet) |
+| Top-level `await` only in modules | In modules and scripts |
+| Async generators, `for await`, dynamic `import()` | Not available (yet) |
 | Symbols, BigInt, getters on the global object | Not available |
 | Default exports, `export *`, dynamic `import()` | Named exports only |
 | Integer-like keys are listed first | Insertion order for all keys |

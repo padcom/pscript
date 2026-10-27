@@ -45,10 +45,10 @@ function expectCompileError(graph: string, files: Record<string, string> | PScri
 }
 
 // The graph's behaviour in Node, compared with the interpreter.
-function expectSameRun(modules: Record<string, string>, files: Record<string, string> | PScriptSyntaxError) {
+async function expectSameRun(modules: Record<string, string>, files: Record<string, string> | PScriptSyntaxError) {
   if (files instanceof PScriptSyntaxError) throw files
 
-  const pscript = runGraph(modules)
+  const pscript = await runGraph(modules)
   const node = runFilesInNode(files, 'main.js')
 
   expect(node.output).toEqual(pscript.output)
@@ -56,7 +56,7 @@ function expectSameRun(modules: Record<string, string>, files: Record<string, st
 }
 
 describe('psc module graphs', () => {
-  it.for(graphs)('%s', (graph, { skip }) => {
+  it.for(graphs)('%s', async (graph, { skip }) => {
     if (graph in DIFFERENCES) {
       skip(DIFFERENCES[graph])
 
@@ -67,6 +67,6 @@ describe('psc module graphs', () => {
     const files = transpileGraph(modules)
 
     if (COMPILE_TIME.has(graph)) expectCompileError(graph, files)
-    else expectSameRun(modules, files)
+    else await expectSameRun(modules, files)
   })
 })

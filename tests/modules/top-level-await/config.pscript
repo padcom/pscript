@@ -1,0 +1,3 @@
+print('config: start')
+export const config = await Promise.resolve({ port: 8080 })
+print('config: done')

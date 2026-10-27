@@ -1,1 +1,24 @@
-const x = await 1
+// @pscript-only: top-level await in scripts (D51; JavaScript has it in modules only)
+print('start')
+const value = await Promise.resolve(41)
+print('value', value + 1)
+
+async function twice(x) { return x * 2 }
+const results = await Promise.all([twice(1), twice(2)])
+print(results)
+
+try {
+  await Promise.reject(new Error('nope'))
+} catch (e) {
+  print('caught', e.message)
+}
+
+Promise.resolve().then(() => print('a job runs while the script waits'))
+await null
+print('after await')
+
+for (const n of [1, 2]) print('loop', await twice(n))
+
+const thenable = { then() { return 'not adopted' } }
+print(await thenable == thenable)
+'completion'

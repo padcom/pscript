@@ -1,0 +1,4 @@
+// @pscript-only: await in a nested function at the top level (D51)
+function f() {
+  return await 1
+}

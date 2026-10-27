@@ -29,6 +29,7 @@ const PSCRIPT_ONLY_DIFFERENCES: Record<string, string> = {
   'access/protected.pscript': '`protected` is not checked at runtime',
   'accessors/printing.pscript': '`print` formatting (D18)',
   'arrays/pscript-specific.pscript': 'array reads out of range and holes (§4.4.7)',
+  'async/top-level-await.pscript': 'psc emits an ES module (native top-level await); this runner evaluates a script',
   'async/pscript-specific.pscript': 'native promises: thenables are adopted, `Promise` can be extended, `undefined` values',
   'callbacks/callback-arity.pscript': 'stdlib callbacks receive every argument; functions return `undefined`',
   'classes/closed-instances.pscript': 'closed instances and sealed classes are not enforced at runtime',

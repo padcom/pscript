@@ -1,0 +1,3 @@
+// @pscript-only: an exception after a top-level await (D51)
+await null
+throw new Error('after await')

@@ -1,0 +1,2 @@
+print('counter: sync')
+export let counter = 1

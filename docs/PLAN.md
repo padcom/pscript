@@ -108,6 +108,7 @@ Each feature in this document has one of these tags:
 | R37 | Computed keys in object literals: `{ [k]: v, [k]() {}, get [k]() {} }` (D48) | 4.4.6 |
 | R38 | `Map` and `Set` (D49) | 4.6.6 |
 | R39 | Bitwise operators and hexadecimal, binary and octal literals (D50) | 4.1.4, 4.4.3 |
+| R40 | Top-level `await`, asynchronous module loaders and the asynchronous host API (D51) | 4.4.17, 4.7.4, 5.8 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -133,11 +134,11 @@ Each feature in this document has one of these tags:
 
 `var`, ~~generators~~ (done, D42), **default exports and default imports** (`export default`, `import x from`), `export * from`, `export * as ns from`, `import.meta`, regular-expression literals, labels, `with`, `eval`, symbols, BigInt, **tagged templates and `String.raw`** (D34, excluded for good), Unicode identifiers (ASCII only in v1).
 
-Planned for v2 (§1.7): ~~`async`/`await`~~ (done, D43), an asynchronous module loader, top-level `await`, dynamic `import()`, async generators and `for await`.
+Planned for v2 (§1.7): ~~`async`/`await`~~ (done, D43), ~~an asynchronous module loader, top-level `await`~~ (done, D51), dynamic `import()`, async generators and `for await`.
 
 ### 1.7 v2 roadmap and constraints on v1 (D19)
 
-v2 adds ~~`async` functions, `await`, Promises~~ (done early: D43, §4.4.17), an asynchronous `ModuleLoader`, top-level `await` in modules, and probably dynamic `import()`. v1 does not implement any of it, but must keep these doors open:
+v2 adds ~~`async` functions, `await`, Promises~~ (done early: D43, §4.4.17), ~~an asynchronous `ModuleLoader`, top-level `await` in modules~~ (done: D51, §4.7.4), and probably dynamic `import()`. v1 does not implement any of it, but must keep these doors open:
 
 - **Suspendable execution.** Script-to-script calls must never recurse on the host JS stack (already required by §5.6.2). All frame state (operand stack slice, ip, environments, handlers, completion records) lives in heap objects, so a frame can later be suspended at an `await` and resumed from a microtask.
 - **Re-entrancy is the exception.** Native→script callbacks (`Array.prototype.map`, getters called from natives, host calls through proxies) use the re-entrant `callFunction`. In v2, `await` inside such a nested run is only allowed when the async function itself was called from the script (the usual case). The VM design must keep "nested run loop" an explicit, detectable state (`vm.nestingDepth`).
@@ -191,7 +192,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D16 | Build output | **ES modules only.** For now, override `build.lib.formats` locally; later the upstream `@padcom/vite-config-lib` will drop UMD | n/a |
 | D17 | `.5` and `5.` | **Allowed** | no |
 | D18 | `print` formatting | **Own simple format** (§4.6.2), shared with the default class `toString()`: double-quoted strings inside arrays and objects, `[1, "a"]`, `{a: 1}` | yes (output format) |
-| D19 | Module loading | **Synchronous in v1.** v2 adds `async`/`await`, an asynchronous module loader and top-level `await`. v1 must not make those hard (§1.7) | n/a |
+| D19 | Module loading | **Synchronous in v1.** v2 adds `async`/`await`, an asynchronous module loader and top-level `await` (done: D43, D51). v1 must not make those hard (§1.7) | n/a |
 | D20 | Script vs module | **Two entry points:** `run()` for scripts (`import`/`export` are a SyntaxError); `runModule()` / `importModule()` for modules | no |
 | D21 | Getters/setters in object literals | **In v1** (MUST, R18) | no |
 | D22 | `import * as ns from 'm'` | **In v1** (MUST, R19) | no |
@@ -222,6 +223,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D48 | Computed keys | **In object literals, as in JavaScript**: `[k]: v`, `[k]() {}`, `*[k]() {}`, `async [k]() {}`, `get [k]() {}`, `set [k](v) {}`. The key is evaluated before its value and converted like `o[k]` (ToString); later keys replace earlier ones; an anonymous function, arrow, class, method or accessor defined there is named after the key at runtime. **Not in classes** (class members are declared, D29, D36) **nor in destructuring patterns** (`SyntaxError`). Details in §4.4.6 | no |
 | D49 | `Map` and `Set` | **Final built-in classes with the JavaScript interface** (like `Promise`, D43): `new Map(entries?)`, `get`, `set`, `has`, `delete`, `clear`, `forEach`, `keys`, `values`, `entries`, `size`; `new Set(values?)`, `add`, `has`, `delete`, `clear`, `forEach`, `keys`, `values`, `entries`, `size`. Keys compare by SameValueZero (host proxies by their host object); iteration is in insertion order and live. Deviations: **a missing entry is `null`** (D37, like `find`), the classes are final and instances closed (D29, D36), `keys()` / `values()` / `entries()` return generator-like iterator objects (print as `[Generator]`), and the ES2025 set operations (`union`, …) and `Map.groupBy` are not provided. They print as `Map(2) {"a" => 1, …}` / `Set(2) {1, 2}`. Details in §4.6.6 | minor (null for missing entries, final) |
 | D50 | Bitwise operators, `0x` / `0b` / `0o` literals | **As in JavaScript**: `& \| ^ ~ << >> >>>` and `&= \|= ^= <<= >>= >>>=`, with JS precedence (shifts between `+` and `<`; `&`, `^`, `\|` between `==` and `&&`, so `a & b == c` is `a & (b == c)`), converting primitives to 32-bit integers. Object operands are a `TypeError` (D5). Literals `0xFF`, `0b1010`, `0o17` (either case); legacy octal (`017`) and numeric separators stay errors. Details in §4.1.4, §4.4.3 | no |
+| D51 | Top-level `await`, asynchronous loaders and host API | **Top-level `await` in modules and in scripts** (JS allows it in modules only; scripts get it too, so `run()` input and the CLI can await). A body with top-level `await` runs as a coroutine like an async function's. **Module graphs follow JavaScript's order**: every dependency is started in import order without waiting, and a module's body runs once all its dependencies are done (a module importing an async module is async itself); cycles are not re-entered. **The synchronous API keeps working** when the awaits settle while the job queue drains: `run()` returns the completion value (or, when the script still waits for the host, a host `Promise` of it), `runModule()` / `importModule()` throw `PScriptRuntimeError` asking for the asynchronous API (the evaluation continues in the background). **New host API**: `runAsync()`, `runModuleAsync()`, `importModuleAsync()` return promises and wait. **Loaders may return a promise** (asynchronous API only; graphs load one after another). A rejected top-level `await` errors the module: every later import rejects with the same error. Details in §4.4.17, §4.7.4, §5.8 | minor (top-level await in scripts) |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -1089,7 +1091,7 @@ class Repository {
 loadAll([1, 2]).then(users => print(users.length))
 ```
 
-**Syntax**: `async function` (declarations and expressions), `async` arrows (`async x => …`, `async (a, b) => …`), `async` methods in classes (also `static async`) and object literals. `async` and `await` are keywords (D43); `async()` and `{ async: 1 }` still work as names. No line break is allowed after `async`. `await x` is a prefix operator (unary precedence: `await a + await b`) allowed only directly in an async function body — not in its parameters, in nested non-async functions, or at the top level of scripts and modules (`SyntaxError: 'await' is only valid in async functions`; top-level `await` comes with the asynchronous module loader of v2). Async generators (`async function*`, `async *m()`), `for await` and async constructors, getters and setters are `SyntaxError`s.
+**Syntax**: `async function` (declarations and expressions), `async` arrows (`async x => …`, `async (a, b) => …`), `async` methods in classes (also `static async`) and object literals. `async` and `await` are keywords (D43); `async()` and `{ async: 1 }` still work as names. No line break is allowed after `async`. `await x` is a prefix operator (unary precedence: `await a + await b`) allowed only directly in an async function body — not in its parameters or in nested non-async functions (`SyntaxError: 'await' is only valid in async functions`). **Top-level `await`** (D51) is allowed in scripts and modules, outside functions and classes (§4.7.4). Async generators (`async function*`, `async *m()`), `for await` and async constructors, getters and setters are `SyntaxError`s.
 
 **Promises** (`Promise` is a built-in **final** class: `instanceof Promise` works, it cannot be extended, instances are closed, D36):
 
@@ -1669,7 +1671,7 @@ Not supported (SyntaxError with a message naming the alternative): `export defau
   ```
 
   `referrer` is the importing module's `id` (`null` for the entry module). The loader resolves the specifier (relative paths, extensions, aliases …) and returns the canonical `id`. Not found → the loader throws; the interpreter wraps it as `PScriptRuntimeError` (`Cannot find module './x' imported from 'main'`).
-  - v1 calls the loader synchronously. All calls go through one internal function (`fetchModule`) so that v2 can accept a `Promise`-returning loader (§1.7).
+  - A loader may also return a **promise** of the result (D51, §4.7.4); such loaders work with the asynchronous API only (the synchronous one throws a `PScriptRuntimeError` naming `runModuleAsync()` / `importModuleAsync()`).
 - **Built-in default loader** (used when `options.modules` is given instead of `moduleLoader`): an in-memory map `{ [id]: source | exportsObject }`.
   - Relative specifiers (`./`, `../`) are resolved against the referrer's id using POSIX-style path normalisation. Bare specifiers are looked up as-is.
   - **Extensions (D10)**: try the exact id first, then `id + '.pscript'`, then `id + '.psc'`. If both extension variants exist → loader error (`ambiguous module './x': x.pscript and x.psc`).
@@ -1677,6 +1679,26 @@ Not supported (SyntaxError with a message naming the alternative): `export defau
   - The export *names* are fixed when the module is loaded (the own enumerable keys of `exports` at that moment).
   - The export *values* are **live** (D9): each binding reads `exports[name]` through the interop layer on every access, so a host that reassigns `exports.count` is seen by scripts. Host-module bindings are read-only for scripts.
 - A Node-only file-system loader (`createFsLoader(rootDir)`) is **not** part of the browser-safe library; it can live in the CLI (H5).
+
+#### 4.7.4 Top-level `await` and asynchronous loading (D51)
+
+```js
+// config.pscript
+const response = await fetch('/config.json')
+export const config = await response.json()
+
+// main.pscript
+import { config } from './config'     // main runs once config has finished
+print(config.port)
+```
+
+- `await` may appear at the top level of a module or a script, outside functions and classes (including in `for` loops, conditions, `try` blocks). Such a body runs as a coroutine (§5.6.9), like an async function's body: it runs synchronously until its first `await`, and the rest continues in jobs. A module's top-level `await` that rejects (or an exception after one) errors the module.
+- **Evaluation order** follows JavaScript: the dependencies of a module are evaluated depth-first in import order, each one started without waiting for the asynchronous ones before it; a module's body runs once all of its dependencies are done. So a module that imports an async module is itself async, and a sibling that does not depend on it runs while it waits. A module that is evaluating on the current import path (a cycle) is not waited for; one that waits elsewhere is.
+- **Synchronous API**: `runModule()` / `importModule()` drain the job queue after starting the graph. When everything finished, they return as before; when a top-level `await` still waits for the host (a timer, a host promise, `fetch`), they throw a `PScriptRuntimeError` that names the asynchronous API, and the evaluation continues in the background (later imports wait for it). `run()` of a script with top-level `await` returns the completion value when it finished, otherwise a host `Promise` of it.
+- **Asynchronous API**: `runAsync(source)`, `runModuleAsync(source, { id })` and `importModuleAsync(specifier)` return promises that settle when the script or the module graph has finished; failures reject with `PScriptRuntimeError` / `PScriptSyntaxError`.
+- **Asynchronous loaders**: a `ModuleLoader` may return `Promise<LoadedModule>`. The asynchronous API awaits it; requests are loaded one at a time in source order, and graphs requested concurrently are loaded one after another (each graph is linked only once it is complete), so every module is still evaluated once. The synchronous API refuses a promise-returning loader.
+- The CLI uses the asynchronous API, so files may use top-level `await`; the REPL accepts it too.
+- Not yet: dynamic `import()` (§1.7).
 
 ---
 
@@ -2314,6 +2336,10 @@ export class Interpreter {
   // modules (D20)
   runModule(source: string, options?: { id?: string }): Record<string, unknown>  // entry module from source; returns its live namespace proxy
   importModule(specifier: string): Record<string, unknown>   // load via the loader (cached); returns the live namespace proxy
+  // asynchronous API (D51, §4.7.4): waits for top-level `await`; the loader may return a promise
+  runAsync(source: string, options?: { fileName?: string }): Promise<unknown>
+  runModuleAsync(source: string, options?: { id?: string }): Promise<Record<string, unknown>>
+  importModuleAsync(specifier: string): Promise<Record<string, unknown>>
   defineModule(id: string, exports: Record<string, unknown>): void   // register a host module (live values)
 }
 

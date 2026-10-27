@@ -33,7 +33,8 @@ JavaScript hard to reason about:
 - modules with named imports and exports, live bindings and an in-memory or custom loader;
 - `delete` works on plain objects only (class instances and arrays keep their shape);
 - generators work as in JavaScript (missing values are `null` there too);
-- `async`/`await` and promises with the same callback order as JavaScript; `setTimeout`, `setInterval`,
+- `async`/`await` (also at the top level of modules and scripts) and promises with the same callback order as
+  JavaScript; asynchronous module loaders; `setTimeout`, `setInterval`,
   `queueMicrotask` and `fetch` use the host's event loop and network;
 - spread works in calls and in array and object literals, and optional chaining (`a?.b`, `f?.()`) as in JavaScript;
 - no `var` or `with`.

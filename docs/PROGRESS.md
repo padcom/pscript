@@ -50,6 +50,24 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L9 | Computed keys (D48) | done (2026-10-27) |
 | L10 | `Map` and `Set` (D49) | done (2026-10-27) |
 | L11 | Bitwise operators, `0x` / `0b` / `0o` literals (D50) | done (2026-10-27) |
+| L12 | Top-level `await`, asynchronous loaders and host API (D51) | done (2026-10-27) |
+
+## L12 — Top-level `await`, asynchronous loaders and host API (D51)
+
+Design in `docs/PLAN.md` D51 (R40), §4.7.4, §5.8; user docs in `docs/LANGUAGE.md` → Async functions, Modules.
+
+- **Compiler**: `containsTopLevelAwait` (outside functions and classes; `for await` counted for L14); such a script
+  or module `main` gets the `ASYNC` prologue and ends with `RETURN`; `CompiledScript.async` / `CompiledModule.async`.
+- **VM**: `evaluateModule` returns the body's promise; `outcome(promise)` (value, `PENDING`, or throws).
+- **Registry** (`src/modules/registry.ts`): `evaluate(record, path)` returns a promise when the evaluation waits;
+  `evaluateRequests` starts every request, then waits (`wait` / `resume` through `promises.react`) and re-checks;
+  `record.evaluation` holds the module's evaluation promise. Async loading: `importAsync`, `runSourceAsync`,
+  `loadAsync` / `loadRequestsAsync`, serialized per graph. A module whose requests fail to load is errored.
+- **Interpreter**: `runAsync`, `runModuleAsync`, `importModuleAsync`; `execute()` unwraps a finished async script.
+- **CLI**: runs files with the asynchronous API; the REPL awaits too.
+- **Tests**: `tests/modules/top-level-await*` (also against Node), `tests/programs/async/top-level-await*`,
+  `tests/unit/modules/async-api.test.ts`; the module-graph runner uses `importModuleAsync`.
+- **Not done**: dynamic `import()` (L13), async generators and `for await` (L14).
 
 ## L11 — Bitwise operators and `0x` / `0b` / `0o` literals (D50)
 
