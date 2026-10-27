@@ -33,6 +33,7 @@ const PSCRIPT_ONLY_DIFFERENCES: Record<string, string> = {
   'callbacks/callback-arity.pscript': 'stdlib callbacks receive every argument; functions return `undefined`',
   'classes/closed-instances.pscript': 'closed instances and sealed classes are not enforced at runtime',
   'classes/to-string.pscript': 'the default `toString()` of instances (D35)',
+  'collections/pscript-specific.pscript': 'native Map and Set: missing entries are `undefined`, open, extendable; `print`',
   'computed-keys/pscript-specific.pscript': '`print` formatting (D18) and key order',
   'destructuring/named-parameters.pscript': 'named parameters are checked at compile time only; no arity checks at runtime',
   'exceptions/runtime-errors.pscript': 'operator, index and arity errors at runtime',

@@ -48,6 +48,19 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L7 | Spread (D46) | done (2026-10-27) |
 | L8 | Optional chaining (D47) | done (2026-10-27) |
 | L9 | Computed keys (D48) | done (2026-10-27) |
+| L10 | `Map` and `Set` (D49) | done (2026-10-27) |
+
+## L10 — `Map` and `Set` (D49)
+
+Design in `docs/PLAN.md` D49 (R38), §4.6.6; user docs in `docs/LANGUAGE.md` → Standard library.
+
+- **Runtime**: `src/runtime/collections.ts` (`CollectionObject`, `MapObject`, `SetObject`, `collectionKey`);
+  `getIterator` iterates them through `JsIterator` (now lazy, so live iteration works; host iterables use it too);
+  `print` formats them; host proxies are iterable.
+- **Stdlib**: `src/stdlib/collections.ts`: final classes with native construct; `keys()` / `values()` /
+  `entries()` are `GeneratorObject`s driven by a `NativeDriver`.
+- **psc**: uses the native classes (difference listed in `tests/transpiler.test.ts`).
+- **Tests**: `tests/programs/collections/`, interop unit tests.
 
 ## L9 — Computed keys (D48)
 

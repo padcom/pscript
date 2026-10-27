@@ -2,6 +2,7 @@
 // constructable, D25), classes over classes (`new` runs script construction, `instanceof` applies the brand rule),
 // arrays over arrays (live `items`), other objects over plain objects (reads and writes go through the runtime with
 // no home class, so private and protected members stay inaccessible), generators over JS iterators (D42).
+import { CollectionObject } from './collections'
 import { GeneratorObject, type ResumeMode } from './generators'
 import { PromiseObject, type PromiseOps } from './promises'
 import { ScriptThrow } from './script-error'
@@ -64,6 +65,10 @@ function deleteOwn(object: ScriptObject, key: string): boolean {
   object.props.delete(key)
 
   return true
+}
+
+function* converted(iterator: Iterator<Value>, toHost: (value: Value) => unknown): Generator<unknown> {
+  for (let step = iterator.next(); !step.done; step = iterator.next()) yield toHost(step.value)
 }
 
 class Proxies {
@@ -183,13 +188,20 @@ class Proxies {
 
   object(object: ScriptObject): object {
     return new Proxy({}, {
-      get: (_, key) => (typeof key === 'symbol' ? undefined : this.read(object, key)),
+      get: (_, key) => (typeof key === 'symbol' ? this.symbol(object, key) : this.read(object, key)),
       set: (_, key, value) => typeof key === 'string' && this.write(object, key, value),
       has: (_, key) => typeof key === 'string' && this.enter(() => hasPropertyIn(this.host.hostContext, key, object)),
       ownKeys: () => this.keys(object),
       getOwnPropertyDescriptor: (_, key) => this.descriptor(object, key),
       deleteProperty: (_, key) => typeof key === 'string' && deleteOwn(object, key),
     })
+  }
+
+  // Maps and sets (D49) are iterable on the host side, like the host's own.
+  private symbol(object: ScriptObject, key: symbol): unknown {
+    if (key !== Symbol.iterator || !(object instanceof CollectionObject)) return undefined
+
+    return () => converted(object.iterate(), value => this.convert.toHost(value))
   }
 
   // Undeclared members of class instances read as undefined from the host (JS conventions, D36).

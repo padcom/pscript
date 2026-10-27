@@ -1,0 +1,26 @@
+// Set (D49): unique values in insertion order
+const tags = new Set(['a', 'b', 'a', 'c'])
+print(tags.size, tags.has('a'), tags.has('z'))
+tags.add('d').add('a')
+print([...tags].join(','), tags.delete('b'), tags.delete('b'), tags.size)
+for (const tag of tags) print(tag)
+tags.forEach((value, again) => print('forEach', value, again))
+print([...tags.keys()].join(''), [...tags.values()].join(''), [...tags.entries()].map(([a, b]) => a + b).join(' '))
+
+const unique = [...new Set([3, 1, 3, 2, 1])]
+print(unique.join(','))
+print(new Set('hello').size, [...new Set('hello')].join(''))
+print(new Set([NaN, NaN, 0, -0]).size)
+
+const objects = new Set()
+const o = {}
+objects.add(o).add(o).add({})
+print(objects.size, objects.has(o))
+
+const growing = new Set([1])
+for (const x of growing) if (x < 5) growing.add(x + 1)
+print([...growing].join(','))
+
+tags.clear()
+print(tags.size, tags instanceof Set, String(tags))
+print(Array.from(new Set([1, 2])).length)

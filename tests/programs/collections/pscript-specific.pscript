@@ -1,0 +1,12 @@
+// @pscript-only: Map and Set printing, missing entries are null (D37), final classes, closed instances
+const m = new Map([['a', 1], ['b', { c: [1, 2] }]])
+print(m)
+print(new Set([1, 'two', [3]]), new Map(), new Set())
+print(m.get('missing'))
+print([m], { m })
+const it = m.entries()
+print(it, it.next(), it.next().value, it.next())
+try { m.extra = 1 } catch (e) { print(e.name, e.message) }
+try { new Set(5) } catch (e) { print(e.name, e.message) }
+try { new Map([1]) } catch (e) { print(e.name, e.message) }
+try { class MyMap extends Map {} } catch (e) { print(e.name, e.message) }

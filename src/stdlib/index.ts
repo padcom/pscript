@@ -2,6 +2,7 @@
 import { createRealm } from '@/runtime/realm'
 import type { Realm } from '@/runtime/values'
 import { installArray } from './array'
+import { installCollections } from './collections'
 import { installErrors } from './errors'
 import { installFunction } from './function'
 import { installGenerator } from './generator'
@@ -47,6 +48,7 @@ export function installStdlib(realm: Realm, io: Partial<StdlibIO & HostIO> & Pic
   installErrors(realm)
   installGenerator(realm)
   installPromise(realm)
+  installCollections(realm)
   installHost(realm, hostIO(io))
 }
 

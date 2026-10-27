@@ -1,5 +1,6 @@
 // Iteration for `for…of` (§4.4.8): arrays (live, by index, while i < length), strings (by UTF-16 code unit),
-// generators (D42) and host iterables.
+// generators (D42), maps and sets (D49) and host iterables.
+import { CollectionObject } from './collections'
 import { GeneratorObject, type IteratorStep } from './generators'
 import { kindOf } from './operators'
 import { type ScriptError, typeError } from './script-error'
@@ -61,23 +62,27 @@ export class GeneratorIterator extends ScriptIterator {
   }
 }
 
-// Host iterables (arrays, Maps, Sets, generators …) use the host iterator, converting each value (§5.8.1).
-function hostIterator(iterator: Iterator<Value>): ScriptIterator {
-  let next = iterator.next()
-  const advance = (): Value => {
-    const { value } = next
-
-    next = iterator.next()
-
-    return value
+/**
+ * Iterates a JS iterator of script values: host iterables (arrays, Maps, Sets, generators …, whose host iterator
+ * converts each value, §5.8.1) and script maps and sets (D49). Values are taken one at a time, so a map or set that
+ * grows during the loop is iterated live.
+ */
+export class JsIterator extends ScriptIterator {
+  constructor(private readonly iterator: Iterator<Value>) {
+    super(() => 0, () => undefined)
   }
 
-  return new ScriptIterator(() => (next.done ? 0 : Infinity), advance)
+  override next(): Value | typeof DONE {
+    const step = this.iterator.next()
+
+    return step.done ? DONE : step.value
+  }
 }
 
 function objectIterator(value: Value): ScriptIterator {
   if (value instanceof GeneratorObject) return new GeneratorIterator(value)
-  if (value instanceof HostObject) return hostIterator(value.host.iterate(value.target))
+  if (value instanceof CollectionObject) return new JsIterator(value.iterate())
+  if (value instanceof HostObject) return new JsIterator(value.host.iterate(value.target))
 
   throw typeError(`${kindOf(value)} is not iterable`)
 }

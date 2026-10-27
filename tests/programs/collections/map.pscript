@@ -1,0 +1,36 @@
+// Map (D49): insertion order, SameValueZero keys, live iteration
+const ages = new Map([['ann', 31], ['bob', 27]])
+ages.set('cid', 45).set('ann', 32)
+print(ages.size, ages.get('ann'), ages.has('bob'), ages.has('dan'))
+print(ages.delete('bob'), ages.delete('bob'), ages.size)
+
+for (const [name, age] of ages) print(name, age)
+print([...ages.keys()].join(','), [...ages.values()].join(','))
+print([...ages.entries()].map(([k, v]) => `${k}=${v}`).join('&'))
+ages.forEach((age, name) => print('forEach', name, age))
+ages.forEach(age => print('value only', age))
+
+// keys: NaN equals NaN, -0 is 0, objects by identity
+const keys = new Map()
+const key = { id: 1 }
+keys.set(NaN, 'not a number').set(-0, 'zero').set(key, 'object').set('1', 'string one').set(1, 'number one')
+print(keys.get(NaN), keys.get(0), keys.get(key), keys.has({ id: 1 }), keys.get('1'), keys.get(1))
+print(1 / [...keys.keys()][1])
+
+// iteration sees entries added while iterating
+const growing = new Map([[1, 'a']])
+for (const [k] of growing) if (k < 3) growing.set(k + 1, 'more')
+print([...growing.keys()].join(','))
+
+// clearing, copying and converting
+const copy = new Map(ages)
+ages.clear()
+print(ages.size, copy.size, copy.get('cid'))
+const fromObject = new Map(Object.entries({ x: 1, y: 2 }))
+print(fromObject.get('y'))
+print(typeof ages, ages instanceof Map, String(ages), JSON.stringify(ages))
+
+// iterator objects
+const it = copy.keys()
+const first = it.next()
+print(first.value, first.done, it.next().done)

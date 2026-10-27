@@ -1,0 +1,16 @@
+3 true false
+a,b,c,d true false 3
+a
+c
+d
+forEach a a
+forEach c c
+forEach d d
+acd acd aa cc dd
+3,1,2
+4 helo
+2
+2 true
+1,2,3,4,5
+0 true [object Set]
+2

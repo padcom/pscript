@@ -297,3 +297,24 @@ describe('generators across the boundary (D42), continued', () => {
     expect(interpreter({ hostGen }).run('function* g() { yield* hostGen() }\nArray.from(g()).join()')).toBe('a,b')
   })
 })
+
+describe('maps and sets (D49)', () => {
+  it('iterates script maps and sets on the host side', () => {
+    const host = interpreter()
+    const map = host.run("new Map([['a', 1], ['b', [2]]])") as Map<string, unknown>
+
+    expect(map.get('a')).toBe(1)
+    expect(map.size).toBe(2)
+    expect([...map].map(([key]) => key)).toEqual(['a', 'b'])
+    expect([...host.run('new Set([1, 2, 2])') as Set<number>]).toEqual([1, 2])
+  })
+
+  it('builds script maps from host maps and keys host objects by identity', () => {
+    const key = { id: 1 }
+    const host = interpreter({ hostMap: new Map([['h', 1]]), key, same: () => key })
+
+    expect(host.run("new Map(hostMap).get('h')")).toBe(1)
+    expect(host.run('const m = new Map(); m.set(key, 1); m.get(same())')).toBe(1)
+    expect(host.run('new Set([key, same()]).size')).toBe(1)
+  })
+})

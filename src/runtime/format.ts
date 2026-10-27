@@ -1,6 +1,7 @@
 // print formatting (§4.6.2, D18): primitives, containers (also host arrays and objects), class instances (D35),
 // accessors, functions, classes and interfaces.
 import { IDENT_PATTERN } from '@/parser/tokens'
+import { CollectionObject, MapObject, SetObject } from './collections'
 import { toStringIn } from './conversions'
 import { GeneratorObject } from './generators'
 import { PromiseObject } from './promises'
@@ -92,9 +93,39 @@ class Formatter {
   private object(object: ScriptObject, depth: number): string {
     const named = namedForm(object)
     if (named !== null) return named
+
+    return this.builtin(object, depth) ?? (object.klass ? this.instance(object) : this.container(object, depth))
+  }
+
+  // Instances of the built-in classes with a form of their own: promises (D43), maps and sets (D49).
+  private builtin(object: ScriptObject, depth: number): string | null {
     if (object instanceof PromiseObject) return this.promise(object, depth)
 
-    return object.klass ? this.instance(object) : this.container(object, depth)
+    return object instanceof CollectionObject ? this.collection(object as MapObject | SetObject, depth) : null
+  }
+
+  // `Map(2) {"a" => 1, "b" => 2}`, `Set(2) {1, 2}` (D49).
+  private collection(object: MapObject | SetObject, depth: number): string {
+    const [name, size] = object instanceof MapObject ? ['Map', object.entries.size] : ['Set', object.elements.size]
+
+    if (this.seen.has(object)) return '[Circular]'
+    if (depth > MAX_DEPTH) return `[${name}]`
+
+    this.seen.add(object)
+
+    try {
+      const items = this.collectionItems(object, depth + 1)
+
+      return `${name}(${size}) {${items.join(', ')}}`
+    } finally {
+      this.seen.delete(object)
+    }
+  }
+
+  private collectionItems(object: MapObject | SetObject, depth: number): string[] {
+    if (object instanceof SetObject) return [...object.elements.values()].map(value => this.value(value, depth))
+
+    return [...object.entries.values()].map(([key, value]) => `${this.value(key, depth)} => ${this.value(value, depth)}`)
   }
 
   private promise({ state, result }: PromiseObject, depth: number): string {

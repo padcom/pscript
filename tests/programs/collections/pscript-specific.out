@@ -1,0 +1,9 @@
+Map(2) {"a" => 1, "b" => {c: [1, 2]}}
+Set(3) {1, "two", [3]} Map(0) {} Set(0) {}
+null
+[Map(2) {"a" => 1, "b" => {c: [Array]}}] {m: Map(2) {"a" => 1, "b" => {c: [Array]}}}
+[Generator] {value: ["a", 1], done: false} ["b", {c: [1, 2]}] {value: null, done: true}
+TypeError Map has no member 'extra'
+TypeError number is not iterable
+TypeError Iterator value number is not an entry object
+TypeError Cannot extend final class 'Map'

@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D48).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D49).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -348,7 +348,7 @@ import './setup'
 ## Standard library
 
 - Globals: `print`, `console.log`/`console.error`, `globalThis`, `String`, `Number`, `Boolean`, `parseInt`,
-  `parseFloat`, `isNaN`, `isFinite`, `NaN`, `Infinity`, `Math`, `JSON`, `Object`, `Array`, `Promise`,
+  `parseFloat`, `isNaN`, `isFinite`, `NaN`, `Infinity`, `Math`, `JSON`, `Object`, `Array`, `Promise`, `Map`, `Set`,
   `setTimeout`, `clearTimeout`, `setInterval`, `clearInterval`, `queueMicrotask`, `fetch` and the error classes (including `AggregateError`).
 - `Object.keys`, `values`, `entries`, `assign`, `freeze`; `obj.hasOwnProperty(k)`, `toString()`.
 - Arrays: `push`, `pop`, `shift`, `unshift`, `slice`, `splice`, `concat`, `join`, `reverse`, `at`, `indexOf`,
@@ -358,6 +358,8 @@ import './setup'
 - Strings: `charAt`, `charCodeAt`, `at`, `indexOf`, `lastIndexOf`, `includes`, `startsWith`, `endsWith`, `slice`,
   `substring`, `split`, `trim`, `trimStart`, `trimEnd`, `padStart`, `padEnd`, `repeat`, `replace` and `replaceAll`
   (string patterns), `toUpperCase`, `toLowerCase`, `concat`.
+- `Map` and `Set` work as in JavaScript (insertion order, `NaN`-safe keys, live iteration), except that
+  `map.get(missing)` is `null`, and both classes are final. They print as `Map(1) {"a" => 1}` / `Set(2) {1, 2}`.
 - `Math` (functions and constants), `Number` helpers (`isInteger`, `isFinite`, `isNaN`, `parseFloat`, `EPSILON`,
   `toFixed`, `toString(radix)`), `JSON.parse`/`stringify`.
 - `print` formats values readably: strings inside containers are quoted, nested containers are abbreviated after two
@@ -406,5 +408,6 @@ Values cross the boundary by reference and identity is kept in both directions.
 | Symbols, BigInt, getters on the global object | Not available |
 | Default exports, `export *`, dynamic `import()` | Named exports only |
 | Integer-like keys are listed first | Insertion order for all keys |
+| `map.get(missing)` is `undefined`; `Map`/`Set` can be extended | `null`; `Map` and `Set` are final |
 | `-2 ** 2` is a syntax error | `-2 ** 2` is `-(2 ** 2)` |
 | Module top-level `this` is `undefined` | `this` is `null` |

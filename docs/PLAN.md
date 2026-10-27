@@ -106,6 +106,7 @@ Each feature in this document has one of these tags:
 | R35 | Spread `...x` in calls, `new`, `super(...)`, array literals and object literals (D46) | 4.4.18 |
 | R36 | Optional chaining `a?.b`, `a?.[k]`, `f?.(x)` (D47) | 4.4.19 |
 | R37 | Computed keys in object literals: `{ [k]: v, [k]() {}, get [k]() {} }` (D48) | 4.4.6 |
+| R38 | `Map` and `Set` (D49) | 4.6.6 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -125,7 +126,7 @@ Each feature in this document has one of these tags:
 
 ### 1.5 COULD (Phase 3+)
 
-~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), the comma operator in `for` headers, ~~`do … while`, `switch`~~ (done, D41), `for … in`, bitwise operators, hex/binary/octal literals, ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, Map/Set, a CLI/REPL, a disassembler CLI, source maps for errors.
+~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), the comma operator in `for` headers, ~~`do … while`, `switch`~~ (done, D41), `for … in`, bitwise operators, hex/binary/octal literals, ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, ~~Map/Set~~ (done, D49), a CLI/REPL, a disassembler CLI, source maps for errors.
 
 ### 1.6 WON'T (v1)
 
@@ -218,6 +219,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D46 | Spread `...x` | **As in JavaScript**: `f(...xs)`, `new C(...xs)`, `super(...xs)`, `[...xs]` take what an iterable produces (arrays, strings, generators, host iterables; anything else is a `TypeError`); `{ ...o }` copies the own enumerable public properties (getters run, later keys win; `null`, `undefined` and non-string primitives add nothing). Spread arguments keep **strict arity (D38) and named parameters (D40)** but move their check to runtime (`TypeError`), since the count is not known at compile time; the arguments before the first spread are still checked against named parameters at compile time. A spread in a literal that becomes an assignment pattern is its rest element, which must be a name. Details in §4.4.18 | no |
 | D47 | Optional chaining | **As in JavaScript**: `a?.b`, `a?.[k]`, `f?.(x)` and `o.m?.(x)`; when the value before `?.` is `null` or `undefined`, the rest of the chain (including its arguments) is skipped and the chain gives **`undefined`** (not `null`, D37: like a missing property, it is JavaScript's "nothing read"). Only the base is tested: an undeclared member of a class instance is still an error (D36). A chain is not an assignment, `++`/`--` or `delete` target. Inside a class body, an optional call of a bare name that may be an implicit member (`m?.()`, D33) is a `SyntaxError` (write `this.m?.()`). `?.` followed by a digit is `?` and a number, as in JS. Details in §4.4.19 | no |
 | D48 | Computed keys | **In object literals, as in JavaScript**: `[k]: v`, `[k]() {}`, `*[k]() {}`, `async [k]() {}`, `get [k]() {}`, `set [k](v) {}`. The key is evaluated before its value and converted like `o[k]` (ToString); later keys replace earlier ones; an anonymous function, arrow, class, method or accessor defined there is named after the key at runtime. **Not in classes** (class members are declared, D29, D36) **nor in destructuring patterns** (`SyntaxError`). Details in §4.4.6 | no |
+| D49 | `Map` and `Set` | **Final built-in classes with the JavaScript interface** (like `Promise`, D43): `new Map(entries?)`, `get`, `set`, `has`, `delete`, `clear`, `forEach`, `keys`, `values`, `entries`, `size`; `new Set(values?)`, `add`, `has`, `delete`, `clear`, `forEach`, `keys`, `values`, `entries`, `size`. Keys compare by SameValueZero (host proxies by their host object); iteration is in insertion order and live. Deviations: **a missing entry is `null`** (D37, like `find`), the classes are final and instances closed (D29, D36), `keys()` / `values()` / `entries()` return generator-like iterator objects (print as `[Generator]`), and the ES2025 set operations (`union`, …) and `Map.groupBy` are not provided. They print as `Map(2) {"a" => 1, …}` / `Set(2) {1, 2}`. Details in §4.6.6 | minor (null for missing entries, final) |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -1539,7 +1541,7 @@ The stdlib is implemented as native functions registered as read-only globals. A
 - `Array.isArray`.
 - `globalThis`: read-only namespace object exposing every global by name (stdlib and host), used to name a global explicitly inside classes (D33). It reflects host globals added later. Assigning through it → `TypeError`.
 - `JSON.stringify(value, null?, indent?)` (SHOULD; required by the differential tests). `JSON.parse` (COULD).
-- `Promise` (D43, §4.4.17): a final built-in class.
+- `Promise` (D43, §4.4.17), `Map` and `Set` (D49, §4.6.6): final built-in classes.
 - `setTimeout(callback, delay?, ...args)`, `clearTimeout(id)` and `fetch(resource, options?)` (D44): the host's timers and fetch with the JavaScript interface (`src/stdlib/host.ts`). A missing, `null` or `NaN` delay is 0; the callback receives the extra arguments it declares (§4.6.4); unknown ids are ignored by `clearTimeout`. `setInterval(callback, delay?, ...args)`, `clearInterval(id)` and `queueMicrotask(callback)` (D45) complete the set; timer ids are shared by both kinds. `fetch` arguments and results cross the boundary like any host call (§5.8.1); `InterpreterOptions.fetch` replaces the host's fetch.
 - Errors (D3): `Error`, `TypeError`, `RangeError`, `ReferenceError`, `SyntaxError`, `AccessError`, `AggregateError` (D43: `new AggregateError(errors, message)`, with `errors`). These and `Promise` are the stdlib's only classes (D25): constructable, extendable (`class MyErr extends Error {}`), with `name`, `message` and `stack`. Calling them without `new` → `TypeError` (unlike JS).
 - `String`, `Number` and `Boolean` are plain conversion functions; `Object`, `Array`, `Math` and `JSON` are namespaces of static functions. None of them is a class (§4.5.5).
@@ -1583,6 +1585,24 @@ Strings are immutable; writing an index is silently ignored, as in non-strict JS
 - `fn.name`, `fn.length`.
 - `bind(thisArg, ...args)`: SHOULD.
 - `call` and `apply`: COULD.
+
+#### 4.6.6 Map and Set (D49)
+
+```js
+const ages = new Map([['ann', 31], ['bob', 27]])
+ages.set('cid', 45)
+for (const [name, age] of ages) print(name, age)
+const unique = [...new Set(words)]
+```
+
+- `Map` and `Set` are **final** built-in classes (like `Promise`): `instanceof` works, they cannot be extended, instances are closed (no extra properties, D36). `typeof` is `'object'`; `String(m)` is `[object Map]`; `JSON.stringify(m)` is `{}` (as in JS).
+- `new Map(iterable?)` takes `[key, value]` arrays (script or host arrays); `new Set(iterable?)` any iterable. `null` / `undefined` / no argument make an empty collection; anything else that is not iterable is a `TypeError`.
+- Map: `get(k)` (a missing key gives **`null`**, D37), `set(k, v)` (returns the map; updating keeps the position), `has`, `delete` (returns whether it existed), `clear`, `forEach(callback(value, key, map))`, `keys()`, `values()`, `entries()`, `size`. Set: `add(v)` (returns the set), `has`, `delete`, `clear`, `forEach(callback(value, value, set))`, `keys()` = `values()`, `entries()` (`[v, v]`), `size`. Callbacks receive the arguments they declare (§4.6.4).
+- **Keys** compare by SameValueZero: primitives by value (`NaN` equals `NaN`, `-0` is stored as `0`), objects by identity, host proxies by the identity of the host object.
+- **Iteration** (`for…of`, spread, destructuring, `Array.from`, `Promise.all`, …) is in insertion order and live: entries added during the loop are visited, deleted ones are skipped. A map iterates `[key, value]` arrays. `keys()`, `values()` and `entries()` return iterator objects that behave like generators (`next`, `return`, `throw`, iterable, print as `[Generator]`).
+- `print` shows `Map(2) {"a" => 1, "b" => 2}` and `Set(2) {1, 2}` (nested ones as `[Map]` / `[Set]` past the depth limit).
+- **Host interop**: a script map or set reaches the host as a proxy whose methods work and which is iterable (`[...map]`); host maps and sets stay host objects in scripts (iterable, with their own methods).
+- Not provided: the ES2025 set operations (`union`, `intersection`, …), `Map.groupBy`, `WeakMap`, `WeakSet`.
 
 ### 4.7 Modules (R16)
 
