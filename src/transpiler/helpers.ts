@@ -1,12 +1,34 @@
 // Inline helpers of the emitted code (§11.3, P4, P6): emitted once at the top of a file when used.
 import type { Node } from '@/parser/ast'
 
+const INTERFACE = `const $interface = (() => {
+  const implemented = new WeakMap();
+  const extendsInterface = (iface, target) =>
+    iface === target || iface.parents.some(parent => extendsInterface(parent, target));
+  const define = (name, parents) => Object.freeze({
+    name,
+    parents,
+    toString: () => \`[interface \${name}]\`,
+    [Symbol.hasInstance](value) {
+      let proto = Object(value) === value ? Object.getPrototypeOf(value) : null;
+      for (; proto; proto = Object.getPrototypeOf(proto)) {
+        if ((implemented.get(proto.constructor) ?? []).some(iface => extendsInterface(iface, this))) return true;
+      }
+      return false;
+    },
+  });
+  define.implement = (cls, interfaces) => implemented.set(cls, interfaces);
+  return define;
+})();`
+
 /** The helpers, by the base name the emitter asks for. */
 const HELPERS: Record<string, (name: string) => string> = {
   // P6: `print` writes its arguments like `console.log`
   print: name => `const ${name} = (...args) => console.log(...args);`,
   // P4, D39: `typeof null` is 'null'
   typeof: name => `function ${name}(value) {\n  return value === null ? 'null' : typeof value;\n}`,
+  // P8: interfaces are values for `instanceof` (D32); classes record what they implement
+  interface: name => INTERFACE.replaceAll('$interface', name),
 }
 
 // Every identifier name in a tree (also property keys: a safe over-approximation of the names in use).
@@ -50,6 +72,16 @@ export class Helpers {
     }
 
     return name
+  }
+
+  /**
+   * Reserves a name for a local of the emitted code.
+   *
+   * @param base the preferred name
+   * @returns a name no program identifier uses
+   */
+  reserve(base: string): string {
+    return this.uniqueName(base)
   }
 
   /**

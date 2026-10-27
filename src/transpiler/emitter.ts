@@ -9,6 +9,7 @@ import type {
   BinaryExpression,
   BlockStatement,
   CallExpression,
+  ClassDeclaration,
   ConditionalExpression,
   Expression,
   ForOfStatement,
@@ -17,15 +18,18 @@ import type {
   FunctionExpression,
   Identifier,
   IfStatement,
+  InterfaceDeclaration,
   Literal,
   LogicalExpression,
   MemberExpression,
+  MethodDefinition,
   NewExpression,
   Node,
   ObjectExpression,
   Pattern,
   Program,
   Property,
+  PropertyDefinition,
   ReturnStatement,
   Statement,
   Super,
@@ -36,6 +40,10 @@ import type {
   VariableDeclaration,
   WhileStatement,
 } from '@/parser/ast'
+import { classInfoOf, keyName, type ClassInfo } from '@/compiler/class-info'
+import { ambiguityMessage, memberCandidate, type MemberContext } from '@/compiler/implicit-names'
+import { stdlibGlobalNames } from '@/stdlib'
+import { declaringClass, inheritedHalves, privateKey, staticPrefix, uniquePrivateName, type ClassNode } from './classes'
 import { Helpers } from './helpers'
 import { Precedence, binaryPrecedence, precedenceOf, startsAmbiguously } from './precedence'
 
@@ -48,17 +56,68 @@ const OPERATORS: Partial<Record<string, string>> = { '==': '===', '!=': '!==' }
 const INDENT = '  '
 
 /**
- * Names declared in a block or function, to tell local names from globals.
+ * Names declared in a block or function, to tell local names from globals; class declarations carry what the
+ * compiler knows about the class.
  */
 class Names {
-  readonly names = new Set<string>()
+  readonly names = new Map<string, ClassInfo | undefined>()
 
   constructor(readonly parent: Names | null) {}
 
-  has(name: string): boolean {
-    return this.names.has(name) || (this.parent?.has(name) ?? false)
+  /**
+   * The scope that declares a name.
+   *
+   * @param name the name
+   * @returns the innermost scope declaring it, or null for a global
+   */
+  find(name: string): Names | null {
+    return this.names.has(name) ? this : this.parent?.find(name) ?? null
   }
 }
+
+/**
+ * A class body being printed (§4.5.8): bare names in it may be members.
+ */
+interface ClassRecord extends MemberContext {
+  /** the scope around the class body, where outside definitions are found */
+  names: Names
+  /** the JS private name of each private member (`#x`, or `#x$2` when an enclosing class has a private `x` too) */
+  privates: Map<string, string>
+}
+
+/**
+ * How `o.x` reaches a private member `x` (§4.5.3 step 1).
+ */
+interface PrivateAccess {
+  /** JS private names to try, innermost class first */
+  names: string[]
+  /** `o` may be an instance of none of these classes: the public `o.x` is tried last (§4.5.3 step 2) */
+  fallback: boolean
+}
+
+const PUBLIC: PrivateAccess = { names: [], fallback: false }
+
+/** Adds the read, write, update or call around a member access target. */
+type Render = (target: string) => string
+
+/**
+ * The function being printed: what `this` and a bare `return` mean in it.
+ */
+interface Frame {
+  /** class members have the instance (or class) as `this`; plain functions have their own */
+  kind: 'function' | 'arrow' | 'method' | 'constructor' | 'derivedConstructor' | 'field'
+  /** a nested plain function uses an implicit member: the member keeps `this` in an alias */
+  aliasUsed?: boolean
+}
+
+/** Frames whose `this` is the receiver of implicit members. */
+const MEMBER_FRAMES = new Set<Frame['kind']>(['method', 'constructor', 'derivedConstructor', 'field'])
+
+/** Members whose `this` cannot be aliased: field initialisers, and derived constructors before `super()`. */
+const UNALIASED_FRAMES = new Set<Frame['kind']>(['field', 'derivedConstructor'])
+
+/** A constructor's bare `return` returns the instance; a derived constructor must not return null. */
+const CONSTRUCTOR_FRAMES = new Set<Frame['kind']>(['constructor', 'derivedConstructor'])
 
 type Printer<T> = (emitter: Emitter, node: T) => string
 
@@ -80,6 +139,7 @@ const EXPRESSIONS: { [K in Expression['type']]?: Printer<Extract<Expression, { t
   NewExpression: (e, node) => e.newExpression(node),
   MemberExpression: (e, node) => e.member(node),
   ThisExpression: () => 'this',
+  ClassExpression: (e, node) => e.classText(node),
 }
 
 const STATEMENTS: { [K in Statement['type']]?: Printer<Extract<Statement, { type: K }>> } = {
@@ -97,14 +157,38 @@ const STATEMENTS: { [K in Statement['type']]?: Printer<Extract<Statement, { type
   TryStatement: (e, node) => e.tryStatement(node),
   BlockStatement: (e, node) => e.block(node.body),
   EmptyStatement: () => '',
+  ClassDeclaration: (e, node) => e.classText(node),
+  InterfaceDeclaration: (e, node) => e.interfaceText(node),
 }
+
+function nameOf({ id }: ClassNode): string {
+  return id?.name ?? ''
+}
+
+// Whether a classification of a bare name means a member; `unknown` (superclass not visible) is decided by the caller.
+function isMemberCandidate(candidate: ReturnType<typeof memberCandidate>, unknownIsMember: boolean): boolean {
+  return candidate === 'unknown' ? unknownIsMember : candidate !== 'none'
+}
+
+// How the strict rule's message names a global, or null when the name is not one psc knows.
+function globalDescription(name: string): string | null {
+  return stdlibGlobalNames().has(name) ? 'a global' : null
+}
+
+function isGlobalPrintAccess({ object, property, computed }: MemberExpression): boolean {
+  return !computed && object.type === 'Identifier' && object.name === 'globalThis' && (property as Identifier).name === 'print'
+}
+
+const DECLARATIONS = new Set<Statement['type']>(['FunctionDeclaration', 'ClassDeclaration', 'InterfaceDeclaration'])
 
 // The names a statement declares in its block (function declarations are hoisted, `let`/`const` have a TDZ: either
 // way a use anywhere in the block refers to them).
 function declaredBy(statement: Statement): Identifier[] {
   if (statement.type === 'VariableDeclaration') return statement.declarations.map(({ id }) => id)
 
-  return statement.type === 'FunctionDeclaration' ? [statement.id] : []
+  const declaration = statement as FunctionDeclaration | ClassDeclaration | InterfaceDeclaration
+
+  return DECLARATIONS.has(statement.type) ? [declaration.id] : []
 }
 
 function paramName(param: Pattern): Identifier {
@@ -137,6 +221,14 @@ export class Emitter {
   private readonly helpers: Helpers
   /** printing a `for` initialiser, where a bare `in` would be read as `for…in` */
   private noIn = false
+  /** enclosing class bodies, innermost last */
+  private readonly classes: ClassRecord[] = []
+  /** enclosing functions, innermost last */
+  private readonly frames: Frame[] = []
+  /** the name of the alias of `this` in members whose nested functions use implicit members */
+  private thisAlias: string | null = null
+  /** the AST of the classes the emitter knows, for inherited accessor halves */
+  private readonly classNodes = new Map<ClassInfo, ClassNode>()
 
   constructor(private readonly program: Program, private readonly source?: string, private readonly fileName?: string) {
     this.helpers = new Helpers(program)
@@ -163,10 +255,10 @@ export class Emitter {
   // ---------------------------------------------------------------------------
   // Names
 
-  private declare(id: Identifier) {
+  private declare(id: Identifier, info?: ClassInfo) {
     if (RESTRICTED_NAMES.has(id.name)) throw this.error(`'${id.name}' cannot be used as a name in JavaScript`, id)
 
-    this.names.names.add(id.name)
+    this.names.names.set(id.name, info)
   }
 
   private declareAll(body: Statement[]) {
@@ -185,17 +277,138 @@ export class Emitter {
   }
 
   private isFree(name: string): boolean {
-    return !this.names.has(name)
+    return this.names.find(name) === null
+  }
+
+  // A bare name in a class body that is a member of the innermost class (§4.5.8). The compiler has already rejected
+  // ambiguous names, so a name is a member exactly when the class (chain) declares it. When the superclass is not
+  // visible, a name with no outside definition is taken to be an inherited member.
+  private isImplicitMember(name: string): boolean {
+    const record = this.classes.at(-1)
+    if (!record || name === 'undefined') return false
+
+    return this.isMemberOf(record, name)
+  }
+
+  private isMemberOf(record: ClassRecord, name: string): boolean {
+    const outside = record.names.find(name)
+    if (this.names.find(name) !== outside) return false // a local of the member's code
+
+    return isMemberCandidate(memberCandidate(record, name), outside === null && globalDescription(name) === null)
+  }
+
+  // The strict rule for inherited members (§4.5.8), which the VM checks when the class is defined: with the whole
+  // class chain visible, psc reports it at compile time.
+  private checkInheritedAmbiguity(node: Identifier) {
+    const record = this.classes.at(-1)!
+    const outer = record.names.find(node.name) ? 'an outer binding' : globalDescription(node.name)
+    if (memberCandidate(record, node.name) !== 'inherited' || outer === null) return
+
+    throw this.error(ambiguityMessage(record.info.name, node.name, outer, declaringClass(record.info, node.name)), node)
+  }
+
+  // The JS name of an implicit member of the innermost class.
+  private implicitName(name: string): string {
+    return this.classes.at(-1)!.privates.get(name) ?? name
+  }
+
+  // Which private members `o.x` may mean. `this` is an instance of the innermost class declaring `x`; a class name
+  // reaches its own static privates; a global is never an instance of a script class. Any other receiver is checked
+  // at runtime when it is a plain name, else taken to be an instance of the innermost class.
+  private privateAccess(object: Expression, name: string): PrivateAccess {
+    const names = this.classes.toReversed().flatMap(({ privates }) => privates.has(name) ? [privates.get(name)!] : [])
+    if (names.length === 0) return PUBLIC
+
+    const isPlainName = object.type === 'Identifier' && !this.isImplicitMember(object.name)
+
+    return isPlainName ? this.namedReceiverAccess(object.name, name, names) : { names: names.slice(0, 1), fallback: false }
+  }
+
+  private namedReceiverAccess(receiver: string, name: string, names: string[]): PrivateAccess {
+    const scope = this.names.find(receiver)
+    if (scope === null) return PUBLIC
+
+    const info = scope.names.get(receiver)
+
+    return info ? this.staticPrivateAccess(info, name) : { names, fallback: true }
+  }
+
+  // `C.x` inside class C (or a class nested in it) with a private static `x`.
+  private staticPrivateAccess(info: ClassInfo, name: string): PrivateAccess {
+    const jsName = this.classes.find(record => record.info === info)?.privates.get(name)
+
+    return { names: jsName ? [jsName] : [], fallback: false }
+  }
+
+  // Prints a member access as part of an operation (`render` adds the read, write, update or call around the
+  // target). When the receiver is checked at runtime, each candidate gets its own branch.
+  private withMember(node: MemberExpression, render: Render): string {
+    if (this.isGlobalPrint(node)) return render('print')
+
+    const base = this.memberObject(node.object)
+    const name = privateKey(node)
+    const access = name === null ? PUBLIC : this.privateAccess(node.object as Expression, name)
+
+    return this.renderAccess(base, access, this.publicTarget(node, base), render)
+  }
+
+  private publicTarget({ property, computed }: MemberExpression, base: string): string {
+    return computed ? `${base}[${this.expression(property as Expression)}]` : `${base}.${(property as Identifier).name}`
+  }
+
+  private renderAccess(base: string, access: PrivateAccess, publicTarget: string, render: Render): string {
+    const { names, fallback } = access
+
+    if (!fallback) return render(names.length > 0 ? `${base}.${names[0]}` : publicTarget)
+
+    const branch = (rest: string, jsName: string) => `${jsName} in ${base} ? ${render(`${base}.${jsName}`)} : ${rest}`
+
+    return `(${names.reduceRight(branch, render(publicTarget))})`
+  }
+
+  // `globalThis.print` is the `print` helper (P6).
+  private isGlobalPrint(node: MemberExpression): boolean {
+    if (!isGlobalPrintAccess(node) || !this.isFree('globalThis')) return false
+
+    this.helpers.usePrint()
+
+    return true
+  }
+
+  // `this` of the enclosing member, or its alias inside a nested plain function (implicit members use the member's
+  // `this`, §4.5.8).
+  private receiver(node: Node): string {
+    const frame = this.frames.findLast(({ kind }) => kind !== 'arrow')!
+
+    return frame.kind === 'function' ? this.aliasOfThis(node) : 'this'
+  }
+
+  private aliasOfThis(node: Node): string {
+    const member = this.frames.findLast(({ kind }) => MEMBER_FRAMES.has(kind))!
+    if (UNALIASED_FRAMES.has(member.kind)) {
+      throw this.unsupported(node, 'Implicit members in functions nested in field initialisers and derived constructors')
+    }
+    member.aliasUsed = true
+    this.thisAlias ??= this.helpers.reserve('$this')
+
+    return this.thisAlias
+  }
+
+  private framed<T>(frame: Frame, print: () => T): T {
+    this.frames.push(frame)
+
+    try {
+      return print()
+    } finally {
+      this.frames.pop()
+    }
   }
 
   // ---------------------------------------------------------------------------
   // Statements
 
   statement(node: Statement): string {
-    const printer = STATEMENTS[node.type] as Printer<Statement> | undefined
-    if (!printer) throw this.unsupported(node, node.type === 'InterfaceDeclaration' ? 'Interfaces' : 'Classes')
-
-    return printer(this, node)
+    return (STATEMENTS[node.type] as Printer<Statement>)(this, node)
   }
 
   /**
@@ -231,8 +444,10 @@ export class Emitter {
   }
 
   returnStatement({ argument }: ReturnStatement): string {
-    // D37: a bare `return` returns null
-    return argument ? `return ${this.expression(argument)};` : 'return null;'
+    if (argument) return `return ${this.expression(argument)};`
+
+    // D37: a bare `return` returns null, except in constructors
+    return CONSTRUCTOR_FRAMES.has(this.frames.at(-1)!.kind) ? 'return;' : 'return null;'
   }
 
   ifStatement({ test, consequent, alternate }: IfStatement): string {
@@ -297,16 +512,21 @@ export class Emitter {
   functionText(node: FunctionDeclaration | FunctionExpression): string {
     const name = node.id ? ` ${node.id.name}` : node.type === 'FunctionExpression' ? ' ' : ''
 
-    return `function${name}${this.functionRest(node.params, node.body, node.type === 'FunctionExpression' ? node.id : null)}`
+    return `function${name}${this.functionRest(node, { kind: 'function' }, node.type === 'FunctionExpression' ? node.id : null)}`
   }
 
-  // `(params) { body }`; a named function expression's name is visible in its body.
-  private functionRest(params: Pattern[], body: BlockStatement, ownName: Identifier | null = null): string {
-    return this.scoped(() => {
+  // `(params) { body }`; a named function expression's name is visible in its body. A member whose nested functions
+  // use implicit members starts by saving `this`.
+  private functionRest(node: FunctionDeclaration | FunctionExpression, frame: Frame, ownName: Identifier | null = null): string {
+    const { params, body } = node
+
+    return this.framed(frame, () => this.scoped(() => {
       if (ownName) this.declare(ownName)
 
-      return `(${this.params(params)}) ${this.functionBody(params, body)}`
-    })
+      const text = `(${this.params(params)}) ${this.functionBody(params, body)}`
+
+      return frame.aliasUsed ? text.replace('{\n', `{\n${INDENT.repeat(this.depth + 1)}const ${this.thisAlias} = this;\n`) : text
+    }))
   }
 
   private functionBody(params: Pattern[], body: BlockStatement): string {
@@ -326,7 +546,9 @@ export class Emitter {
 
   arrow({ params, body, expression }: ArrowFunctionExpression): string {
     const head = params.length === 1 && params[0].type === 'Identifier' ? params[0].name : `(${this.params(params)})`
-    if (!expression) return `${head} => ${this.functionBody(params, body as BlockStatement)}`
+    const arrowBody = () => this.functionBody(params, body as BlockStatement)
+
+    if (!expression) return `${head} => ${this.framed({ kind: 'arrow' }, arrowBody)}`
 
     return this.scoped(() => {
       params.forEach(param => this.declare(paramName(param)))
@@ -346,10 +568,7 @@ export class Emitter {
    * @returns the expression text
    */
   expression(node: Expression, min: Precedence = Precedence.Lowest): string {
-    const printer = EXPRESSIONS[node.type] as Printer<Expression> | undefined
-    if (!printer) throw this.unsupported(node, 'Classes')
-
-    const text = printer(this, node)
+    const text = (EXPRESSIONS[node.type] as Printer<Expression>)(this, node)
 
     return precedenceOf(node) < min ? `(${text})` : text
   }
@@ -366,7 +585,14 @@ export class Emitter {
     return startsAmbiguously(node) && !text.startsWith('(') ? `(${text})` : text
   }
 
-  identifier({ name }: Identifier): string {
+  identifier(node: Identifier): string {
+    const { name } = node
+
+    if (this.isImplicitMember(name)) {
+      this.checkInheritedAmbiguity(node)
+
+      return `${this.receiver(node)}.${this.implicitName(name)}`
+    }
     if (name === 'print' && this.isFree(name)) this.helpers.usePrint()
 
     return name
@@ -418,9 +644,7 @@ export class Emitter {
   }
 
   private method(value: Expression): string {
-    const { params, body } = value as FunctionExpression
-
-    return this.functionRest(params, body)
+    return this.functionRest(value as FunctionExpression, { kind: 'function' })
   }
 
   unary({ operator, argument }: UnaryExpression): string {
@@ -437,22 +661,47 @@ export class Emitter {
   private typeofText(argument: Expression): string {
     const name = this.helpers.use('typeof')
     const text = this.expression(argument, Precedence.Assignment)
-    if (argument.type !== 'Identifier' || !this.isFree(argument.name)) return `${name}(${text})`
+    const isGlobal = argument.type === 'Identifier' && this.isFree(argument.name) && !this.isImplicitMember(argument.name)
+    if (!isGlobal) return `${name}(${text})`
 
     return `(typeof ${text} === 'undefined' ? 'undefined' : ${name}(${text}))`
   }
 
   update({ operator, prefix, argument }: UpdateExpression): string {
-    const text = this.expression(argument, Precedence.Postfix)
+    const render = (target: string) => prefix ? `${operator}${target}` : `${target}${operator}`
 
-    return prefix ? `${operator}${text}` : `${text}${operator}`
+    if (argument.type === 'MemberExpression') return this.withMember(argument, render)
+
+    return render(this.expression(argument, Precedence.Postfix))
   }
 
-  binary({ operator, left, right }: BinaryExpression): string {
-    const [leftMin, rightMin] = operandPrecedences(operator)
-    const text = `${this.expression(left, leftMin)} ${OPERATORS[operator] ?? operator} ${this.expression(right, rightMin)}`
+  binary(node: BinaryExpression): string {
+    const text = this.privateIn(node) ?? this.binaryText(node)
 
-    return operator === 'in' && this.noIn ? `(${text})` : text
+    return node.operator === 'in' && this.noIn ? `(${text})` : text
+  }
+
+  private binaryText({ operator, left, right }: BinaryExpression): string {
+    const [leftMin, rightMin] = operandPrecedences(operator)
+
+    return `${this.expression(left, leftMin)} ${OPERATORS[operator] ?? operator} ${this.expression(right, rightMin)}`
+  }
+
+  // `'x' in o` with a private `x` is the brand check `#x in o` (§4.5.2: `in` sees accessible members only).
+  private privateIn({ operator, left, right }: BinaryExpression): string | null {
+    const isKey = operator === 'in' && left.type === 'Literal' && typeof left.value === 'string'
+
+    return isKey ? this.privateInText(left as Literal, right) : null
+  }
+
+  private privateInText(key: Literal, object: Expression): string | null {
+    const { names, fallback } = this.privateAccess(object, key.value as string)
+    if (names.length === 0) return null
+
+    const base = this.expression(object, Precedence.Additive)
+    const checks = [...names, ...fallback ? [key.raw] : []].map(name => `${name} in ${base}`)
+
+    return checks.length > 1 ? `(${checks.join(' || ')})` : checks[0]
   }
 
   logical({ operator, left, right }: LogicalExpression): string {
@@ -471,7 +720,10 @@ export class Emitter {
   }
 
   assignment({ operator, left, right }: AssignmentExpression): string {
-    return `${this.expression(left, Precedence.Member)} ${operator} ${this.expression(right, Precedence.Assignment)}`
+    const value = this.expression(right, Precedence.Assignment)
+    const render = (target: string) => `${target} ${operator} ${value}`
+
+    return left.type === 'MemberExpression' ? this.withMember(left, render) : render(this.expression(left, Precedence.Member))
   }
 
   conditional({ test, consequent, alternate }: ConditionalExpression): string {
@@ -489,9 +741,10 @@ export class Emitter {
   }
 
   call({ callee, arguments: args }: CallExpression): string {
-    if (callee.type === 'Super') throw this.unsupported(callee, 'Classes')
+    const argumentList = this.arguments(args)
+    if (callee.type === 'MemberExpression') return this.withMember(callee, target => target + argumentList)
 
-    return `${this.expression(callee, Precedence.Member)}${this.arguments(args)}`
+    return `${callee.type === 'Super' ? 'super' : this.expression(callee, Precedence.Member)}${argumentList}`
   }
 
   newExpression({ callee, arguments: args }: NewExpression): string {
@@ -500,19 +753,130 @@ export class Emitter {
     return `new ${containsCall(callee) && !text.startsWith('(') ? `(${text})` : text}${this.arguments(args)}`
   }
 
-  member({ object, property, computed }: MemberExpression): string {
-    if (object.type === 'Super') throw this.unsupported(object, 'Classes')
-
-    const base = this.memberObject(object)
-
-    return computed ? `${base}[${this.expression(property as Expression)}]` : `${base}.${(property as Identifier).name}`
+  member(node: MemberExpression): string {
+    return this.withMember(node, target => target)
   }
 
   // `1.toString()` would read as a number with a fraction.
-  private memberObject(object: Expression): string {
+  private memberObject(object: Expression | Super): string {
+    if (object.type === 'Super') return 'super'
+
     const text = this.expression(object, Precedence.Member)
 
     return object.type === 'Literal' && typeof object.value === 'number' ? `(${text})` : text
+  }
+
+  // ---------------------------------------------------------------------------
+  // Classes and interfaces (P7, P8)
+
+  classText(node: ClassNode): string {
+    const info = this.classInfo(node)
+    const heritage = node.superClass ? ` extends ${this.expression(node.superClass, Precedence.Member)}` : ''
+    const implemented = node.implements.map(iface => this.expression(iface, Precedence.Assignment))
+
+    return this.scoped(() => {
+      const { id } = node
+
+      if (node.type === 'ClassExpression' && id) this.declare(id, info)
+
+      return `class${id ? ` ${id.name}` : ''}${heritage} ${this.classBody(node, info, implemented)}`
+    })
+  }
+
+  // What the compiler knows about the class; a declaration's binding carries it for later `extends` (§4.5.9).
+  private classInfo(node: ClassNode): ClassInfo {
+    const info = classInfoOf(node, nameOf(node), this.knownSuperClass(node))
+
+    this.classNodes.set(info, node)
+
+    if (node.type === 'ClassDeclaration') this.names.find(node.id.name)?.names.set(node.id.name, info)
+
+    return info
+  }
+
+  // null: no superclass; undefined: a superclass the emitter cannot see.
+  private knownSuperClass({ superClass }: ClassNode): ClassInfo | null | undefined {
+    if (!superClass) return null
+
+    return superClass.type === 'Identifier' ? this.names.find(superClass.name)?.names.get(superClass.name) : undefined
+  }
+
+  private classBody(node: ClassNode, info: ClassInfo, implemented: string[]): string {
+    const record = this.classRecord(info)
+
+    this.classes.push(record)
+    this.depth++
+
+    try {
+      const members = node.body.body.map(member => this.classMember(member, record, node.superClass !== null))
+      const lines = [...this.implementsBlock(implemented), ...members, ...inheritedHalves(node, info, this.classNodes)]
+
+      const inner = lines.map(text => INDENT.repeat(this.depth) + text)
+
+      return lines.length === 0 ? '{}' : `{\n${inner.join('\n')}\n${INDENT.repeat(this.depth - 1)}}`
+    } finally {
+      this.depth--
+      this.classes.pop()
+    }
+  }
+
+  private classRecord(info: ClassInfo): ClassRecord {
+    const taken = new Set(this.classes.flatMap(({ privates }) => [...privates.values()]))
+    const privates = new Map([...info.privates].map(name => [name, uniquePrivateName(name, taken)]))
+
+    return { info, names: this.names, isStatic: false, privates }
+  }
+
+  // `implements` lists are kept for `instanceof` with interfaces (D32).
+  private implementsBlock(implemented: string[]): string[] {
+    if (implemented.length === 0) return []
+
+    return [`static { ${this.helpers.use('interface')}.implement(this, [${implemented.join(', ')}]); }`]
+  }
+
+  private classMember(member: MethodDefinition | PropertyDefinition, record: ClassRecord, derived: boolean): string {
+    record.isStatic = member.static
+
+    if (member.type === 'PropertyDefinition') return `${staticPrefix(member)}${this.field(member, record)}`
+    if (member.kind === 'constructor') return this.constructorText(member, derived)
+
+    return this.methodText(member, record)
+  }
+
+  private constructorText({ value }: MethodDefinition, derived: boolean): string {
+    return `constructor${this.functionRest(value, { kind: derived ? 'derivedConstructor' : 'constructor' })}`
+  }
+
+  private methodText(member: MethodDefinition, record: ClassRecord): string {
+    const accessor = member.kind === 'method' ? '' : `${member.kind} `
+
+    const rest = this.functionRest(member.value, { kind: 'method' })
+
+    return `${staticPrefix(member)}${accessor}${this.memberKey(member, record)}${rest}`
+  }
+
+  // D37: a field without initialiser starts as null.
+  private field(member: PropertyDefinition, record: ClassRecord): string {
+    const value = this.framed({ kind: 'field' }, () => this.optional(member.value, Precedence.Assignment, 'null'))
+
+    return `${this.memberKey(member, record)} = ${value};`
+  }
+
+  // `private` members are JS private names (P7); `protected`, `override` and `final` are compile-time only.
+  private memberKey(member: MethodDefinition | PropertyDefinition, record: ClassRecord): string {
+    const { key, access } = member
+    if (access !== 'private') return key.type === 'Identifier' ? key.name : key.raw
+
+    const name = keyName(key)
+    if (!/^[A-Za-z_$][\w$]*$/.test(name)) throw this.unsupported(member, 'Private members with non-identifier names')
+
+    return record.privates.get(name)!
+  }
+
+  interfaceText({ id, extends: parents }: InterfaceDeclaration): string {
+    const parentList = parents.map(parent => this.expression(parent, Precedence.Assignment)).join(', ')
+
+    return `const ${id.name} = ${this.helpers.use('interface')}('${id.name}', [${parentList}]);`
   }
 
   // ---------------------------------------------------------------------------

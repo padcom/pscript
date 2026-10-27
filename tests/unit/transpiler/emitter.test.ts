@@ -171,14 +171,6 @@ describe('psc: errors', () => {
     expect(() => transpile('function f(a) {}\nf()')).toThrow(PScriptSyntaxError)
   })
 
-  it.each([
-    ['class A {}', 'Classes'],
-    ['interface I {}', 'Interfaces'],
-    ['const C = class {}', 'Classes'],
-  ])('rejects %s until T2', (source, feature) => {
-    expect(() => transpile(source)).toThrow(`${feature} are not supported by psc yet`)
-  })
-
   it('rejects names JavaScript reserves in strict mode', () => {
     const message = "a.pscript:1:5 SyntaxError: 'arguments' cannot be used"
 

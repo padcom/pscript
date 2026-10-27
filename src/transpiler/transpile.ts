@@ -2,6 +2,7 @@
 import { compile } from '@/compiler/compiler'
 import type { PScriptSyntaxError } from '@/errors'
 import { parse } from '@/parser/parse'
+import { checkClassDefinitions } from './class-checks'
 import { Emitter } from './emitter'
 
 /**
@@ -35,5 +36,9 @@ export function transpile(source: string, options: TranspileOptions = {}): Trans
   // Compiling from the text (not the AST) keeps the code excerpts in error messages; the bytecode is discarded.
   compile(source, { fileName })
 
-  return { code: new Emitter(parse(source, { fileName }), source, fileName).emit() }
+  const program = parse(source, { fileName })
+
+  checkClassDefinitions(program, source, fileName)
+
+  return { code: new Emitter(program, source, fileName).emit() }
 }

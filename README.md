@@ -95,8 +95,10 @@ interpreter.defineModule('host:clock', { now: () => Date.now() })
 ### Transpiling to JavaScript (experimental)
 
 `transpile(source)` compiles a script to plain JavaScript with the interpreter's compile-time checks (arity, constant
-bindings, …). The output has JavaScript runtime semantics; see `docs/PLAN.md` §11 for the plan (classes, modules and
-a `psc` command line are next) and the list of differences.
+bindings, implicit members) plus the class checks the interpreter makes when a class is defined (`override`, `final`,
+access, `implements`). Classes become JavaScript classes (`private` members are `#private`), interfaces work with
+`instanceof`. The output has JavaScript runtime semantics; see `docs/PLAN.md` §11 for the plan (modules and a `psc`
+command line are next) and the list of differences.
 
 ```js
 import { transpile } from '@padcom/pscript'

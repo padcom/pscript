@@ -3119,8 +3119,8 @@ exports), not in reproducing the VM's runtime behaviour.
 | P4 | Cheap semantics kept | `==`/`!=` → `===`/`!==` (D1); `typeof` yields `'null'` for `null` (helper); `-x ** 2` → `-(x ** 2)`; `let x` and fields without initialiser start as `null` (D37); bare `return` returns `null`. |
 | P5 | Semantics left to JS | Operators converting objects (D5), array reads out of range (§4.4.7), functions falling off the end return `undefined`, strict arity of dynamic calls (D38: only callees known at compile time are checked), integer-like keys listed first, completion values (D12). |
 | P6 | Globals | Stdlib globals map to the JS ones of the same name. `print` maps to `console.log` (an inline `const print = …` when used); its PScript formatting (D18) is not reproduced. Unknown globals are left as free names (host globals). |
-| P7 | Classes (T2) | Implicit members become `this.x` / `C.x` (static). `private` members become `#x` (JS private names: per class, brand-checked). `o.x` inside a class where `x` resolves to a private member of an enclosing class becomes `o.#x`. `protected`, `override`, `final`, `final class`, `implements` are checked at compile time and erased. Fields without initialiser are `= null`. |
-| P8 | Interfaces (T2) | Interfaces are erased, except when used as values (`x instanceof I`): then `const I = $interface('I', [...])` with a `Symbol.hasInstance` that checks a hidden list of implemented interfaces set by each implementing class. |
+| P7 | Classes (T2) | Implicit members become `this.x` (`$this.x`, an alias saved by the member, inside nested plain functions). `private` members become JS private names (`#x`; `#x$2` when an enclosing class has a private `x` too). `o.x` follows §4.5.3: `this.x` and `C.x` are resolved statically; another plain-name receiver gets brand checks with the public member last (`#x in o ? o.#x : o.x`); globals never reach private names. `protected`, `override`, `final`, `final class`, `implements` are erased after the checks. Fields without initialiser are `= null`. A class that redefines one accessor half gets a forwarding other half (§4.5.4). **Checks**: the program's classes and interfaces (top-level ones, and nested ones whose superclass and interfaces are top-level) are defined in a throwaway interpreter with everything else stripped, so the VM's class-definition checks (overriding, `final`, signatures, access, `implements`, inherited-name ambiguity) become compile-time errors with the VM's messages. |
+| P8 | Interfaces (T2) | Every interface is a value: `const I = $interface('I', [parents])`, with a `Symbol.hasInstance` that checks the interfaces implementing classes record in a `static {}` block. Kept even when only used in `implements`, because modules export them (T3). |
 | P9 | Modules (T3) | Native ESM: `import { a } from './m'` → `'./m.js'` (the `.pscript`/`.psc` extension is replaced by `.js`, an extensionless relative specifier gets `.js`). Bare and `host:` specifiers are left as they are. ESM gives live bindings, TDZ and cycle order for free. |
 | P10 | Whole-program checks (T4) | `psc` compiles a set of files together, so checks the VM can only do when a class is defined or a module is linked (inherited members, `override`/`final` of imported superclasses, `implements` of imported interfaces, arity of imported functions, missing exports) are reported at compile time. |
 | P11 | Source maps (T5) | Version 3 source maps from AST `loc`s, written with a small VLQ encoder (no dependency). |
@@ -3148,6 +3148,13 @@ only use the interpreter.
 Programs that rely on these behave differently when compiled with `psc` (P5):
 
 - `[] + 1`, `{} < 1` and other operators on objects convert instead of throwing;
+- `protected` members, and private members read from outside their class, are plain property accesses at runtime
+  (`undefined` or a JS `TypeError` instead of an `AccessError`); `'x' in o` is true for protected members;
+- closed instances and sealed classes (D36, D29) are not enforced: writing an undeclared member creates it;
+- implicit access to an instance member from a static context, and assigning to a method, are not errors;
+- classes and interfaces whose superclass or interfaces `psc` cannot evaluate (calls, host classes, names declared
+  in functions) are checked when the program runs (by JavaScript, i.e. not at all);
+- implicit members in plain functions nested in field initialisers or derived constructors are not supported;
 - `arr[10]` and `arr[-1]` give `undefined`; writing past the end leaves holes;
 - reading an undeclared member of a class instance through an unknown receiver gives `undefined`;
 - a function without `return` returns `undefined`; a dynamic call with the wrong argument count is not an error;
@@ -3158,6 +3165,8 @@ Programs that rely on these behave differently when compiled with `psc` (P5):
 ### 11.5 Testing
 
 - Unit tests per construct: PScript in, expected JS text out (`tests/unit/transpiler/`).
+- `@pscript-only` programs with a `.out` must print it after transpiling, or fail `transpile()` with a message the
+  `.out` contains (a class-definition error the VM reports at runtime); the rest are listed with the §11.4 reason.
 - **Differential test**: every `tests/programs` program without `@pscript-only` that `psc` supports is transpiled,
   run in a fresh Node context, and must print the same lines and fail with the same error kind as the original in
   Node (`tests/transpiler.test.ts`). Programs using constructs of a later milestone are skipped until it lands.

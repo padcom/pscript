@@ -18,6 +18,9 @@ export interface ClassRecord {
   implicitNames: ImplicitName[]
 }
 
+/** The class and the (static or instance) context a bare name is used in. */
+export type MemberContext = Pick<ClassRecord, 'info' | 'isStatic'>
+
 /** Whether a bare name may be a member: own member, member of a visible superclass, none, or not known yet. */
 export type MemberCandidate = 'own' | 'inherited' | 'none' | 'unknown'
 
@@ -39,11 +42,11 @@ function inherits(info: ClassInfo, name: string, isStatic: boolean): boolean {
   return false
 }
 
-function ownsMember({ info, isStatic }: ClassRecord, name: string): boolean {
+function ownsMember({ info, isStatic }: MemberContext, name: string): boolean {
   return isStatic ? declaresOwn(info, name) : info.instance.has(name)
 }
 
-function inheritsMember({ info, isStatic }: ClassRecord, name: string): boolean {
+function inheritsMember({ info, isStatic }: MemberContext, name: string): boolean {
   return inherits(info, name, isStatic) || (isStatic && inherits(info, name, false))
 }
 
@@ -54,7 +57,7 @@ function inheritsMember({ info, isStatic }: ClassRecord, name: string): boolean 
  * @param name the bare name
  * @returns how the name relates to the class's members
  */
-export function memberCandidate(record: ClassRecord, name: string): MemberCandidate {
+export function memberCandidate(record: MemberContext, name: string): MemberCandidate {
   if (ownsMember(record, name)) return 'own'
   if (inheritsMember(record, name)) return 'inherited'
 

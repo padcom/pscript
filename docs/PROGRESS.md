@@ -35,6 +35,46 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | H3 | Performance | second pass (2026-10-27) |
 | H5 | CLI/REPL | done (2026-10-27) |
 | T1 | psc: emitter core | done (2026-10-27) |
+| T2 | psc: classes and interfaces | done (2026-10-27) |
+
+## T2 — psc: classes and interfaces
+
+`transpile()` now accepts classes and interfaces (`docs/PLAN.md` §11, P7, P8):
+
+- `src/transpiler/emitter.ts`: class declarations/expressions, fields (`= null`), accessors, statics, constructors
+  (a bare `return` stays `return;`), `super`. A `ClassRecord` stack (like the compiler's `enclosingClasses`) and a
+  `Frame` stack (function kinds) drive implicit members: `memberCandidate()` from `src/compiler/implicit-names.ts`
+  decides member vs. outer name (its parameter type was widened to `MemberContext`, no behaviour change). Inside a
+  nested plain function the member's `this` is saved as `const $this = this` (name made unique like the helpers).
+- Private members: `#x`, renamed `#x$2` when an enclosing class's private `x` would be shadowed. `o.x` /
+  `o['x']` / `'x' in o` follow §4.5.3: `this` → the innermost class; a class name → its static privates; a global
+  → public; any other plain name → brand checks innermost first, then the public member (`withMember` renders the
+  read/write/update/call into each branch, so `o.x++` and `o.m()` work). Other receivers use the innermost class.
+- `src/transpiler/classes.ts`: private-name helpers and forwarding accessor halves (a class overriding only the
+  getter gets `set x(value) { super.x = value; }` when the visible superclass has the setter).
+- `src/transpiler/class-checks.ts`: the VM's class-definition checks at compile time. A skeleton program keeps the
+  top-level functions, variables (initialised to null), classes (static field values dropped) and interfaces, plus
+  nested classes whose `extends`/`implements` are unshadowed top-level definitions (method bodies emptied, as
+  `const $n = class …`). It is compiled and executed in a fresh `Interpreter`; a `PScriptRuntimeError` becomes a
+  `PScriptSyntaxError` at the same location. A skeleton that fails to compile is ignored (the real program did).
+- Inherited member + outer name (the strict rule's class-definition-time case) is reported by the emitter when the
+  chain is visible, with `ambiguityMessage()`.
+- Interfaces: `const I = $interface('I', [parents])` (helper with a `WeakMap` of implemented interfaces and
+  `Symbol.hasInstance`), classes register with `static { $interface.implement(this, [I]); }`.
+- `globalThis.print` → the `print` helper.
+
+Tests: `tests/unit/transpiler/classes.test.ts`; `tests/transpiler.test.ts` now also runs every `@pscript-only`
+program with a `.out` (129 pass, 19 listed in `PSCRIPT_ONLY_DIFFERENCES` with their §11.4 reason; programs whose
+class errors psc reports at compile time must fail with a message the `.out` contains). All Node-compatible class
+programs pass.
+
+Notes for T3:
+
+- `transpile()` rejects `import`/`export` in `Emitter.emit()`; the skeleton already drops them.
+- Interfaces are always emitted, so exporting them works unchanged.
+- Classes extending imported classes are "not visible" today (unknown superclass): bare names without an outer
+  definition are taken as inherited members, and the skeleton leaves such classes out. T4 should feed imported
+  `ClassInfo`s and skeleton definitions across files.
 
 ## T1 — psc: emitter core
 
