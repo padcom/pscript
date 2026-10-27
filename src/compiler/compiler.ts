@@ -125,6 +125,13 @@ function searchesDeeper(node: object): boolean {
   return !hasOwnAwaitScope(node) && globalThis.Object.values(node).some(containsTopLevelAwait)
 }
 
+// GENERATOR, ASYNC, ASYNC_GENERATOR (D53), or nothing.
+function prologue(generator: boolean, async: boolean): Op[] {
+  if (generator) return [async ? Op.ASYNC_GENERATOR : Op.GENERATOR]
+
+  return async ? [Op.ASYNC] : []
+}
+
 function paramTarget(param: Pattern): PatternTarget {
   if (param.type === 'RestElement') return param.argument
 
@@ -435,6 +442,8 @@ interface FunctionContext {
   generator: boolean
   /** compiling an async function's body (D43): `await` is allowed (not in its parameters) */
   async: boolean
+  /** the `stackItems` positions of `for await` iterators (D53) */
+  asyncIterators: number[]
 }
 
 /**
@@ -487,6 +496,7 @@ class Compiler {
     usesThis: false,
     regions: [],
     stackItems: 0,
+    asyncIterators: [],
     classContext: null,
     isConstructor: false,
     superCall: false,
@@ -948,19 +958,15 @@ class Compiler {
 
   // for-of (§5.5): GET_ITER; top: ITER_NEXT done; [PUSH_ENV 1] bind; body; next: [POP_ENV] JUMP top;
   // break: [POP_ENV] POP (the iterator); done: (ITER_NEXT already popped it).
+  // for await (D53): GET_ASYNC_ITER; top: ASYNC_ITER_NEXT AWAIT ITER_STEP done; …; break: ASYNC_ITER_CLOSE AWAIT POP.
   forOfStatement(node: ForOfStatement) {
     this.resetCompletion()
-    this.expression(node.right)
-    this.emitAt(node.right.loc, Op.GET_ITER)
+    this.iterator(node)
     const top = this.out.code.length
-    const done = this.out.emitJump(Op.ITER_NEXT)
+    const done = this.iterationStep(node)
     const outer = this.scope
     const iteration = this.bindIterationValue(node.left, node.body)
-
-    this.fn.stackItems++ // the iterator
-    const loop = this.loopBody(node.body)
-
-    this.fn.stackItems--
+    const loop = this.withIterator(node.await, () => this.loopBody(node.body))
 
     this.scope = outer
     this.patchAll(loop.continues)
@@ -970,8 +976,50 @@ class Compiler {
     this.patchAll(loop.breaks)
 
     if (iteration.hasEnv) this.out.emit(Op.POP_ENV)
-    this.out.emit(Op.ITER_CLOSE) // `break`: a generator runs its finally blocks
+    this.closeIterator(node.await) // `break`: a generator runs its finally blocks
     this.out.patch(done)
+  }
+
+  private iterator({ right, await: async, loc }: ForOfStatement) {
+    if (async && !this.fn.async) throw this.error("'for await' is only valid in async functions", loc)
+    this.expression(right)
+    this.emitAt(right.loc, async ? Op.GET_ASYNC_ITER : Op.GET_ITER)
+  }
+
+  // Compiles code while an iterator is on the stack (`break` / `continue` / `return` close it).
+  private withIterator<T>(async: boolean, body: () => T): T {
+    this.fn.stackItems++
+
+    if (async) this.fn.asyncIterators.push(this.fn.stackItems)
+
+    try {
+      return body()
+    } finally {
+      if (async) this.fn.asyncIterators.pop()
+      this.fn.stackItems--
+    }
+  }
+
+  // Leaves the loop (pops the iterator and jumps) when the iteration is done; the value stays on the stack.
+  private iterationStep(node: ForOfStatement): number {
+    if (!node.await) return this.out.emitJump(Op.ITER_NEXT)
+
+    this.emitAt(node.right.loc, Op.ASYNC_ITER_NEXT)
+    this.out.emit(Op.AWAIT)
+
+    return this.out.emitJump(Op.ITER_STEP)
+  }
+
+  // Pops an iterator, closing it; an async iterator's return() is awaited (D53).
+  private closeIterator(async: boolean) {
+    if (!async) {
+      this.out.emit(Op.ITER_CLOSE)
+
+      return
+    }
+    this.out.emit(Op.ASYNC_ITER_CLOSE)
+    this.out.emit(Op.AWAIT)
+    this.out.emit(Op.POP)
   }
 
   // `let x` / `const { a }` get fresh bindings per iteration; other targets are assigned (D40).
@@ -1067,7 +1115,8 @@ class Compiler {
     const loop = this.jumpTarget(list)
     if (!loop) throw this.error(`Illegal ${list === 'breaks' ? 'break' : 'continue'} statement`, node.loc)
 
-    for (let n = this.fn.stackItems; n > loop.stackItems; n--) this.out.emit(Op.ITER_CLOSE) // inner for…of iterators
+    // inner for…of iterators
+    for (let n = this.fn.stackItems; n > loop.stackItems; n--) this.closeIterator(this.fn.asyncIterators.includes(n))
 
     const depth = this.leaveRegions(loop.regionDepth)
 
@@ -1967,12 +2016,18 @@ class Compiler {
   returnStatement(node: ReturnStatement) {
     if (this.tracksCompletion) throw this.error('Illegal return statement', node.loc)
     this.returnValue(node)
+    this.awaitReturned(node)
     this.fn.stackItems++
     this.leaveRegions(0)
     this.fn.stackItems--
 
     if (this.fn.stackItems > 0) this.out.emit(Op.CLOSE_ITERS) // leaving for…of loops
     this.out.emit(Op.RETURN)
+  }
+
+  // An async generator awaits the value it returns (D53).
+  private awaitReturned({ argument }: ReturnStatement) {
+    if (argument && this.fn.generator && this.fn.async) this.out.emit(Op.AWAIT)
   }
 
   // The returned value: the argument, null for a bare return (D37), `this` in constructors (which cannot return a value, D27).
@@ -2006,13 +2061,19 @@ class Compiler {
   }
 
   // `yield v` (or null, D37) suspends with v; `yield* iterable` delegates with YIELD_DELEGATE until it is done (D42).
+  // In an async generator (D53) the value is awaited first, and `yield*` yields what an async iterable produces.
   yieldExpression({ argument, delegate, loc }: YieldExpression) {
     if (!this.fn.generator) throw this.error("'yield' is only valid in generator functions", loc)
     if (argument) this.expression(argument)
     else this.out.emit(Op.NULL)
 
     if (delegate) this.yieldDelegate(loc)
-    else this.emitAt(loc, Op.YIELD)
+    else this.yieldValue(loc)
+  }
+
+  private yieldValue(loc: SourceLocation) {
+    if (this.fn.async) this.emitAt(loc, Op.AWAIT)
+    this.emitAt(loc, Op.YIELD)
   }
 
   // `await v` suspends the async function until v (as a promise) settles (D43).
@@ -2023,9 +2084,33 @@ class Compiler {
   }
 
   private yieldDelegate(loc: SourceLocation) {
+    if (this.fn.async) {
+      this.asyncYieldDelegate(loc)
+
+      return
+    }
     this.emitAt(loc, Op.GET_ITER)
     this.out.emit(Op.NULL) // the first step sends nothing
     this.emitAt(loc, Op.YIELD_DELEGATE)
+  }
+
+  // `yield* iterable` in an async generator (D53): yields each value the async (or sync) iterable produces, like
+  // `for await (const v of iterable) yield v`; the values sent by next() are not forwarded and the result is null.
+  private asyncYieldDelegate(loc: SourceLocation) {
+    this.emitAt(loc, Op.GET_ASYNC_ITER)
+    const top = this.out.code.length
+
+    this.emitAt(loc, Op.ASYNC_ITER_NEXT)
+    this.out.emit(Op.AWAIT)
+    const done = this.out.emitJump(Op.ITER_STEP)
+
+    this.withIterator(true, () => {
+      this.emitAt(loc, Op.YIELD)
+      this.out.emit(Op.POP)
+    })
+    this.out.patch(this.out.emitJump(Op.JUMP), top)
+    this.out.patch(done)
+    this.out.emit(Op.NULL)
   }
 
   // `this` is dynamic in functions and lexical in arrows (§4.4.5).
@@ -2066,6 +2151,7 @@ class Compiler {
       usesThis: false,
       regions: [],
       stackItems: 0,
+      asyncIterators: [],
       classContext: null,
       isConstructor: false,
       superCall: false,
@@ -2079,8 +2165,7 @@ class Compiler {
   // The parameters are bound by the call; a generator's body runs on the first next() (D42), an async function's
   // body runs now, until its first await (D43).
   private coroutinePrologue({ generator, async }: Pick<AnyFunction, 'generator' | 'async'>) {
-    if (generator) this.out.emit(Op.GENERATOR)
-    if (async) this.out.emit(Op.ASYNC)
+    for (const op of prologue(generator, async)) this.out.emit(op)
     this.fn.generator = generator
     this.fn.async = async
   }

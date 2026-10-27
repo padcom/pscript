@@ -38,6 +38,8 @@ interface Token {
   endsCase?: boolean
   /** a `*` or `async` where a class member or an object-literal key starts: a method's name follows (D42, D43) */
   startsMethod?: boolean
+  /** `await` in `for await (` (D53) */
+  forAwait?: boolean
   /** a `}` that closes a block */
   closesBlock?: boolean
   /** a `}` that closes a block statement or a function declaration's body: no `;` needed after it */
@@ -114,8 +116,9 @@ const EMIT_HOOKS: Record<string, (filter: TokenFilter, token: Token) => void> = 
   'CASE': filter => filter.caseStart(),
   'DEFAULT': filter => filter.caseStart(),
   '?': filter => filter.caseTernary(),
-  '*': (filter, token) => filter.markMethodStart(token),
+  '*': (filter, token) => filter.starStart(token),
   'ASYNC': (filter, token) => filter.asyncStart(token),
+  'AWAIT': (filter, token) => filter.awaitStart(token),
   ':': (filter, token) => filter.caseColon(token),
   'WHILE': (filter, token) => filter.whileStart(token),
 }
@@ -374,22 +377,23 @@ export class TokenFilter {
     return Boolean(this.prev?.startsMethod) && this.peek(0).name === '('
   }
 
+  // `*m() {}`, and `async *m() {}` (D53): a keyword after the star is the method's name.
+  starStart(token: Token) {
+    if (this.prev?.name === 'ASYNC' && this.prev.startsMethod) token.startsMethod = true
+    else this.markMethodStart(token)
+  }
+
   markMethodStart(token: Token) {
     token.startsMethod = this.inMemberPosition() || (this.top() === '{object}' && this.afterKeyPreceder())
   }
 
-  // `async function` at the start of a statement is a declaration; async generators are not supported (D43).
+  // `async function` at the start of a statement is a declaration.
   asyncStart(token: Token) {
     const next = this.peek(0)
 
     if (next.afterNewline) this.state.fail("Line terminator not permitted after 'async'", next.loc)
-    if (this.startsAsyncGenerator(next)) this.state.fail('async generators are not supported', token.loc)
     token.startsStatement = this.atStatementStart()
     this.markMethodStart(token)
-  }
-
-  private startsAsyncGenerator(next: Token): boolean {
-    return next.name === '*' || (next.name === 'FUNCTION' && this.peek(1).name === '*')
   }
 
   private inKeyPosition(): boolean {
@@ -669,8 +673,16 @@ export class TokenFilter {
     return this.afterHeaderKeyword() ? '(header)' : '('
   }
 
+  // `for await (` (D53) is a header too.
   private afterHeaderKeyword(): boolean {
-    return HEADER_KEYWORDS.has(this.prev?.name ?? '')
+    const { prev } = this
+    if (!prev) return false
+
+    return HEADER_KEYWORDS.has(prev.name) || prev.forAwait === true
+  }
+
+  awaitStart(token: Token) {
+    token.forAwait = this.prev?.name === 'FOR'
   }
 }
 

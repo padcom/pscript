@@ -3,7 +3,7 @@
 import { IDENT_PATTERN } from '@/parser/tokens'
 import { CollectionObject, MapObject, SetObject } from './collections'
 import { toStringIn } from './conversions'
-import { GeneratorObject } from './generators'
+import { AsyncGeneratorObject, GeneratorObject } from './generators'
 import { PromiseObject } from './promises'
 import { publicProps } from './members'
 import { toString } from './operators'
@@ -51,11 +51,18 @@ function formatNamed(value: ScriptFunction | Interface): string {
   return value instanceof Interface ? `[interface ${value.name}]` : formatFunction(value)
 }
 
-// Functions, classes, interfaces and generators (D42) print by kind and name, never by their properties.
+// Generators (D42) and async generators (D53) print by kind only.
+function generatorForm(object: ScriptObject): string | null {
+  if (object instanceof AsyncGeneratorObject) return '[AsyncGenerator]'
+
+  return object instanceof GeneratorObject ? '[Generator]' : null
+}
+
+// Functions, classes, interfaces and generators print by kind and name, never by their properties.
 function namedForm(object: ScriptObject): string | null {
   if (object instanceof ScriptFunction || object instanceof Interface) return formatNamed(object)
 
-  return object instanceof GeneratorObject ? '[Generator]' : null
+  return generatorForm(object)
 }
 
 /** How a promise's state prints (D43): `Promise(<pending>)`, `Promise(1)`, `Promise(<rejected> Error: x)`. */

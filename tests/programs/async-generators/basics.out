@@ -1,0 +1,22 @@
+0/false 1/false end/true none/true
+count 0
+count 1
+count 2
+array a
+array b
+letter p
+letter q
+letter 0
+letters cleanup
+after break
+sides 7
+feed 10
+feed 20
+feed 30
+of 7
+of 8
+failing before
+caught generator failed
+stopped true true
+thrown before start
+false,false,false,true

@@ -263,6 +263,26 @@ export class Interop implements HostAccess {
     return globalThis.Object.keys(target).filter(key => !BLOCKED_KEYS.has(key))
   }
 
+  asyncIterator(target: object): { /**
+                                    *
+                                    */
+    next(): Value /**
+                   *
+                   */
+    return(): Value
+  } | null {
+    const iterable = target as Partial<AsyncIterable<unknown>>
+    if (typeof iterable[Symbol.asyncIterator] !== 'function') return null
+
+    const iterator = this.call(() => (iterable as AsyncIterable<unknown>)[Symbol.asyncIterator]())
+    const finish = () => (typeof iterator.return === 'function' ? iterator.return() : { value: undefined, done: true })
+
+    return {
+      next: () => this.toScript(this.call(() => iterator.next())),
+      return: () => this.toScript(this.call(finish)),
+    }
+  }
+
   * iterate(target: object): Iterator<Value> {
     const iterable = target as Iterable<unknown>
     if (typeof iterable[Symbol.iterator] !== 'function') throw typeError('host object is not iterable')

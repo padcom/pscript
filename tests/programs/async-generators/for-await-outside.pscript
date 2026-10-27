@@ -1,0 +1,4 @@
+// @pscript-only: for await needs an async function (D53)
+function f() {
+  for await (const x of []) {}
+}

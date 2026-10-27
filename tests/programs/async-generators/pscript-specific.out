@@ -1,0 +1,8 @@
+[AsyncGenerator] [object AsyncGenerator] object
+{value: "first", done: false}
+sent null
+{value: null, done: true}
+{value: null, done: true}
+TypeError next() expects at most 1 argument, got 2
+TypeError object is not iterable
+TypeError number is not iterable

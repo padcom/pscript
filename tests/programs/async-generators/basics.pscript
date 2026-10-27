@@ -1,0 +1,83 @@
+// Async generators and for await (D53)
+async function* count(n) {
+  for (let i = 0; i < n; i++) {
+    await null
+    yield i
+  }
+  return 'end'
+}
+
+async function* letters() {
+  try {
+    yield* ['p', Promise.resolve('q')]
+    yield* count(2)
+  } finally {
+    print('letters cleanup')
+  }
+}
+
+const shapes = {
+  async *sides() {
+    yield 3
+    yield await Promise.resolve(4)
+  },
+}
+
+class Feed {
+  items = [1, 2, 3]
+  async *each() {
+    for (const item of this.items) yield item * 10
+  }
+  static async *of(...values) {
+    yield* values
+  }
+}
+
+async function* failing() {
+  yield 'before'
+  throw new Error('generator failed')
+}
+
+async function main() {
+  const g = count(2)
+  const steps = [await g.next(), await g.next(), await g.next(), await g.next()]
+  print(steps.map(({ value, done }) => `${value ?? 'none'}/${done}`).join(' '))
+
+  for await (const x of count(3)) print('count', x)
+  for await (const y of [Promise.resolve('a'), 'b']) print('array', y)
+
+  for await (const l of letters()) {
+    print('letter', l)
+    if (l == 0) break
+  }
+  print('after break')
+
+  let total = 0
+  for await (const side of shapes.sides()) total += side
+  print('sides', total)
+
+  for await (const f of new Feed().each()) print('feed', f)
+  for await (const v of Feed.of(7, 8)) print('of', v)
+
+  try {
+    for await (const z of failing()) print('failing', z)
+  } catch (e) {
+    print('caught', e.message)
+  }
+
+  const early = count(5)
+  const stopped = await early.return('stopped')
+  print(stopped.value, stopped.done, (await early.next()).done)
+
+  try {
+    await count(5).throw(new Error('thrown before start'))
+  } catch (e) {
+    print(e.message)
+  }
+
+  const queued = count(3)
+  const all = await Promise.all([queued.next(), queued.next(), queued.next(), queued.next()])
+  print(all.map(step => step.done).join(','))
+}
+
+main()

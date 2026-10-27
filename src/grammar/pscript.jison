@@ -160,6 +160,8 @@ FunctionDeclaration
     { $$ = yy.functionNode('FunctionDeclaration', { id: yy.identifier($3, @3), params: $5, generator: true }, yy.block($8, @7), @$) }
   | ASYNC FUNCTION_DECLARATION IDENT '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
     { $$ = yy.functionNode('FunctionDeclaration', { id: yy.identifier($3, @3), params: $5, async: true }, yy.block($8, @7), @$) }
+  | ASYNC FUNCTION_DECLARATION '*' IDENT '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
+    { $$ = yy.functionNode('FunctionDeclaration', { id: yy.identifier($4, @4), params: $6, async: true, generator: true }, yy.block($9, @8), @$) }
   ;
 
 FunctionExpression
@@ -175,6 +177,10 @@ FunctionExpression
     { $$ = yy.functionNode('FunctionExpression', { id: null, params: $4, async: true }, yy.block($7, @6), @$) }
   | ASYNC FUNCTION IDENT '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
     { $$ = yy.functionNode('FunctionExpression', { id: yy.identifier($3, @3), params: $5, async: true }, yy.block($8, @7), @$) }
+  | ASYNC FUNCTION '*' '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
+    { $$ = yy.functionNode('FunctionExpression', { id: null, params: $5, async: true, generator: true }, yy.block($8, @7), @$) }
+  | ASYNC FUNCTION '*' IDENT '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
+    { $$ = yy.functionNode('FunctionExpression', { id: yy.identifier($4, @4), params: $6, async: true, generator: true }, yy.block($9, @8), @$) }
   ;
 
 FormalParameters
@@ -465,6 +471,8 @@ ClassMember
     { $$ = { kind: 'method', key: $2, params: $4, body: yy.block($7, @6), generator: true, loc: @$ } }
   | ASYNC ClassMemberName '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
     { $$ = { kind: 'method', key: $2, params: $4, body: yy.block($7, @6), async: true, loc: @$ } }
+  | ASYNC '*' ClassMemberName '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
+    { $$ = { kind: 'method', key: $3, params: $5, body: yy.block($8, @7), async: true, generator: true, loc: @$ } }
   | GET ClassMemberName '(' ')' BLOCK_LBRACE StatementList '}'
     { $$ = { kind: 'get', key: $2, params: [], body: yy.block($6, @5), loc: @$ } }
   | SET ClassMemberName '(' Parameter ')' BLOCK_LBRACE StatementList '}'
@@ -556,6 +564,16 @@ ForOfStatement
     { $$ = yy.forOfStatement(yy.forOfDeclaration('const', $4, @3, @4), $6, $8, @$) }
   | FOR '(' LeftHandSideExpression OF AssignmentExpression ')' Statement
     { $$ = yy.forOfStatement(yy.forOfTarget($3), $5, $7, @$) }
+  | FOR AWAIT '(' LET IDENT OF AssignmentExpression ')' Statement
+    { $$ = yy.forAwait(yy.forOfStatement(yy.forOfDeclaration('let', yy.identifier($5, @5), @4, @5), $7, $9, @$)) }
+  | FOR AWAIT '(' LET BindingPattern OF AssignmentExpression ')' Statement
+    { $$ = yy.forAwait(yy.forOfStatement(yy.forOfDeclaration('let', $5, @4, @5), $7, $9, @$)) }
+  | FOR AWAIT '(' CONST IDENT OF AssignmentExpression ')' Statement
+    { $$ = yy.forAwait(yy.forOfStatement(yy.forOfDeclaration('const', yy.identifier($5, @5), @4, @5), $7, $9, @$)) }
+  | FOR AWAIT '(' CONST BindingPattern OF AssignmentExpression ')' Statement
+    { $$ = yy.forAwait(yy.forOfStatement(yy.forOfDeclaration('const', $5, @4, @5), $7, $9, @$)) }
+  | FOR AWAIT '(' LeftHandSideExpression OF AssignmentExpression ')' Statement
+    { $$ = yy.forAwait(yy.forOfStatement(yy.forOfTarget($4), $6, $8, @$)) }
   ;
 
 ForInit
@@ -928,6 +946,12 @@ Property
     { $$ = yy.property($2, yy.method(Object.assign($3, { generator: true }), @3), true, @$) }
   | ASYNC IDENT MethodTail
     { $$ = yy.property(yy.identifier($2, @2), yy.method(Object.assign($3, { async: true }), @3), true, @$) }
+  | ASYNC '*' IDENT MethodTail
+    { $$ = yy.property(yy.identifier($3, @3), yy.method(Object.assign($4, { async: true, generator: true }), @4), true, @$) }
+  | ASYNC '*' LiteralPropertyName MethodTail
+    { $$ = yy.property($3, yy.method(Object.assign($4, { async: true, generator: true }), @4), true, @$) }
+  | ASYNC '*' '[' AssignmentExpression ']' MethodTail
+    { $$ = yy.computed(yy.property($4, yy.method(Object.assign($6, { async: true, generator: true }), @6), true, @$)) }
   | ASYNC LiteralPropertyName MethodTail
     { $$ = yy.property($2, yy.method(Object.assign($3, { async: true }), @3), true, @$) }
   | LiteralPropertyName ':' AssignmentExpression

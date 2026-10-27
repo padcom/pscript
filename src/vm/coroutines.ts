@@ -31,6 +31,8 @@ export class Coroutine implements GeneratorDriver {
   delegating = false
   /** how a delegating coroutine was resumed */
   mode: ResumeMode = 'next'
+  /** suspended at an `await` rather than a `yield` (async generators tell them apart, D53) */
+  awaiting = false
 
   constructor(private readonly host: CoroutineHost, readonly frame: Frame) {}
 

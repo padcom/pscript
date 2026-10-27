@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D52).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D53).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -199,7 +199,10 @@ class Tree {
 - Where JavaScript has `undefined`, generators have `null`: a bare `yield` yields `null`, `next()` without an
   argument makes `yield` give `null`, and a finished generator answers `{ value: null, done: true }`.
 - A class field followed by a `*method()` on the next line needs a `;` (as in JavaScript).
-- Async generators and `for await` are not supported.
+- Async generators (`async function*`, `async *method()`) work as in JavaScript: `next()` / `return()` / `throw()`
+  return promises of `{ value, done }`, `yield` and `return` await their value, and `for await (const x of …)`
+  iterates them (as well as host async iterables, and any iterable with each value awaited). `yield*` in an async
+  generator yields the values of another iterable but does not forward `next(v)` values.
 
 ## Async functions and promises
 
@@ -218,8 +221,8 @@ loadAll([1, 2])
 
 - `async function`, `async` arrows and `async` methods (also `static`) return promises; `await` pauses until a
   promise settles, giving its value or throwing its reason (so `try`/`catch`/`finally` work). `await` is only allowed
-  inside async functions and at the top level of scripts and modules (see [Modules](#modules)). Async generators and
-  `for await` are not supported.
+  inside async functions and at the top level of scripts and modules (see [Modules](#modules)); so is
+  `for await`. Async generators: see [Generators](#generators).
 - `Promise` works as in JavaScript: `new Promise((resolve, reject) => …)`, `then`, `catch`, `finally`,
   `Promise.resolve`, `reject`, `all`, `allSettled`, `race`, `any` (with `AggregateError`) and `withResolvers`.
   Callbacks run in the same order as in JavaScript.
@@ -414,7 +417,7 @@ Values cross the boundary by reference and identity is kept in both directions.
 | Generators give `undefined` for missing values | Generators give `null` (`yield`, `next()`, finished steps) |
 | Any object with a `then` method is a thenable | Only promises are adopted; `Promise` is final |
 | Top-level `await` only in modules | In modules and scripts |
-| Async generators, `for await` | Not available (yet) |
+| `yield*` in async generators forwards `next(v)`, `throw`, `return` | It only yields the values |
 | Symbols, BigInt, getters on the global object | Not available |
 | Default exports, `export *` | Named exports only |
 | Integer-like keys are listed first | Insertion order for all keys |

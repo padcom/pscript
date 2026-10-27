@@ -682,14 +682,15 @@ export class Emitter {
     }
   }
 
-  forOfStatement({ left, right, body }: ForOfStatement): string {
+  forOfStatement({ left, right, body, await: async }: ForOfStatement): string {
     const iterated = this.expression(right, Precedence.Assignment)
-    if (left.type !== 'VariableDeclaration') return `for (${this.pattern(left, false)} of ${iterated}) ${this.body(body)}`
+    const keyword = async ? 'for await' : 'for' // D53
+    if (left.type !== 'VariableDeclaration') return `${keyword} (${this.pattern(left, false)} of ${iterated}) ${this.body(body)}`
 
     const [{ id }] = left.declarations
     const declare = () => boundNames(id).forEach(name => this.declare(name))
 
-    return `for (${left.kind} ${this.pattern(id, true)} of ${iterated}) ${this.body(body, declare)}`
+    return `${keyword} (${left.kind} ${this.pattern(id, true)} of ${iterated}) ${this.body(body, declare)}`
   }
 
   tryStatement({ block, handler, finalizer }: TryStatement): string {

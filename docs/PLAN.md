@@ -110,6 +110,7 @@ Each feature in this document has one of these tags:
 | R39 | Bitwise operators and hexadecimal, binary and octal literals (D50) | 4.1.4, 4.4.3 |
 | R40 | Top-level `await`, asynchronous module loaders and the asynchronous host API (D51) | 4.4.17, 4.7.4, 5.8 |
 | R41 | Dynamic `import(specifier)` (D52) | 4.7.5 |
+| R42 | Async generators and `for await` (D53) | 4.4.20 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -135,7 +136,7 @@ Each feature in this document has one of these tags:
 
 `var`, ~~generators~~ (done, D42), **default exports and default imports** (`export default`, `import x from`), `export * from`, `export * as ns from`, `import.meta`, regular-expression literals, labels, `with`, `eval`, symbols, BigInt, **tagged templates and `String.raw`** (D34, excluded for good), Unicode identifiers (ASCII only in v1).
 
-Planned for v2 (§1.7): ~~`async`/`await`~~ (done, D43), ~~an asynchronous module loader, top-level `await`~~ (done, D51), ~~dynamic `import()`~~ (done, D52), async generators and `for await`.
+Planned for v2 (§1.7): ~~`async`/`await`~~ (done, D43), ~~an asynchronous module loader, top-level `await`~~ (done, D51), ~~dynamic `import()`~~ (done, D52), ~~async generators and `for await`~~ (done, D53). The v2 roadmap is complete.
 
 ### 1.7 v2 roadmap and constraints on v1 (D19)
 
@@ -215,8 +216,8 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D39 | `typeof null` | **`'null'`** (JS gives `'object'`) | yes |
 | D40 | Destructuring and named parameters | **JavaScript destructuring, with strict named parameters**: object and array patterns everywhere a binding or assignment target is allowed. An object pattern inside a *parameter* rejects an argument object that has properties the pattern does not name (unless the pattern has `...rest`): at compile time for object literals passed to a known callee, otherwise at runtime. Details in §4.4.14 | yes |
 | D41 | `do … while`, `switch`, `void`, `delete` | **As in JavaScript, with two PScript rules**: `switch` compares with `==`, which is strict (D1), so it behaves like JS's `===` matching; `delete` removes own properties of **plain objects** (and host objects) only: on class instances, arrays, functions, classes, namespaces, frozen objects and primitives it is a `TypeError` (JS would leave a hole in an array or silently fail), and `delete x` / `delete 1` are `SyntaxError`s. `void x` gives `undefined`. Details in §4.4.15 | minor (delete errors) |
-| D42 | Generators | **JavaScript generators**: `function*`, `*method()` (classes and object literals, static too), `yield`, `yield*`, generator objects with `next`, `return` and `throw`, iterable by `for…of`, array patterns and `Array.from`; leaving a `for…of` early (`break`, `return`, an exception) or destructuring closes the generator (its `finally` blocks run), as in JS. **"No value" is `null` (D37)**: a bare `yield` yields `null`, `next()` without an argument makes the paused `yield` give `null`, a finished generator gives `{ value: null, done: true }`. No async generators. Generator objects print as `[Generator]`. Details in §4.4.16 | minor (null instead of undefined) |
-| D43 | `async` / `await` and Promises | **JavaScript semantics, including the order of callbacks**: `async` functions, arrows and methods, `await` (only inside async functions: no top-level `await` yet, no async generators or `for await`), and a built-in **final** class `Promise` with `then`/`catch`/`finally`, `resolve`, `reject`, `all`, `allSettled`, `race`, `any` and `withResolvers` (plus `AggregateError`). Jobs (microtasks) run when the script stack is empty: **`run()` drains them before it returns**, so script-only async code completes synchronously; jobs queued later (a host promise settled) run in a host microtask. An unhandled rejection left after `run()`'s drain is thrown like an uncaught exception. **Only `Promise` instances are adopted** (an object with a `then` method is a plain value; host thenables are converted at the boundary). "No value" is `null` (D37). Details in §4.4.17 | minor (thenables, null, final `Promise`) |
+| D42 | Generators | **JavaScript generators**: `function*`, `*method()` (classes and object literals, static too), `yield`, `yield*`, generator objects with `next`, `return` and `throw`, iterable by `for…of`, array patterns and `Array.from`; leaving a `for…of` early (`break`, `return`, an exception) or destructuring closes the generator (its `finally` blocks run), as in JS. **"No value" is `null` (D37)**: a bare `yield` yields `null`, `next()` without an argument makes the paused `yield` give `null`, a finished generator gives `{ value: null, done: true }`. Async generators came with D53. Generator objects print as `[Generator]`. Details in §4.4.16 | minor (null instead of undefined) |
+| D43 | `async` / `await` and Promises | **JavaScript semantics, including the order of callbacks**: `async` functions, arrows and methods, `await` (only inside async functions: no top-level `await` yet, no async generators or `for await` — they came with D51 and D53), and a built-in **final** class `Promise` with `then`/`catch`/`finally`, `resolve`, `reject`, `all`, `allSettled`, `race`, `any` and `withResolvers` (plus `AggregateError`). Jobs (microtasks) run when the script stack is empty: **`run()` drains them before it returns**, so script-only async code completes synchronously; jobs queued later (a host promise settled) run in a host microtask. An unhandled rejection left after `run()`'s drain is thrown like an uncaught exception. **Only `Promise` instances are adopted** (an object with a `then` method is a plain value; host thenables are converted at the boundary). "No value" is `null` (D37). Details in §4.4.17 | minor (thenables, null, final `Promise`) |
 | D44 | `setTimeout`, `clearTimeout`, `fetch` | **The JavaScript interface, backed by the host**: `setTimeout(callback, delay?, ...args)` returns a numeric id (as in browsers) that `clearTimeout` cancels; the callback runs as a **task** of the host's event loop (after `run()` returned), with a new step budget, followed by the jobs it queued (as JS drains microtasks after each task); its exception or an unhandled rejection goes to `stderr`, since there is no caller. Code strings are a `TypeError`. `fetch(resource, options?)` calls the host's `fetch` through interop (arguments `toHost`, the result `toScript`), so it returns a script promise of a host `Response`; a synchronous failure of the host's fetch rejects. The host's functions are looked up per call; `InterpreterOptions.fetch` replaces fetch (tests, sandboxing). `setInterval` came with D45. Details in §4.6.1, §5.6.10 | minor (no code strings; errors to stderr) |
 | D45 | `setInterval`, `clearInterval`, `queueMicrotask` | **The JavaScript interface, completing D44**: `setInterval(callback, delay?, ...args)` shares ids with `setTimeout` (so `clearTimeout` and `clearInterval` are interchangeable, as in browsers); it is built on the host's `setTimeout`, re-armed before each run, so the callback can clear its own interval, and an exception (to `stderr`) does not stop it. `queueMicrotask(callback)` queues a job (`AccessContext.enqueueJob`), ordered with promise reactions; an exception in the callback rejects an internal promise, so it is reported like an unhandled rejection (thrown by `run()` after the queue drained, or to `stderr` in the background) and the other jobs still run. Details in §4.6.1 | minor (no code strings) |
 | D46 | Spread `...x` | **As in JavaScript**: `f(...xs)`, `new C(...xs)`, `super(...xs)`, `[...xs]` take what an iterable produces (arrays, strings, generators, host iterables; anything else is a `TypeError`); `{ ...o }` copies the own enumerable public properties (getters run, later keys win; `null`, `undefined` and non-string primitives add nothing). Spread arguments keep **strict arity (D38) and named parameters (D40)** but move their check to runtime (`TypeError`), since the count is not known at compile time; the arguments before the first spread are still checked against named parameters at compile time. A spread in a literal that becomes an assignment pattern is its rest element, which must be a name. Details in §4.4.18 | no |
@@ -226,6 +227,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D50 | Bitwise operators, `0x` / `0b` / `0o` literals | **As in JavaScript**: `& \| ^ ~ << >> >>>` and `&= \|= ^= <<= >>= >>>=`, with JS precedence (shifts between `+` and `<`; `&`, `^`, `\|` between `==` and `&&`, so `a & b == c` is `a & (b == c)`), converting primitives to 32-bit integers. Object operands are a `TypeError` (D5). Literals `0xFF`, `0b1010`, `0o17` (either case); legacy octal (`017`) and numeric separators stay errors. Details in §4.1.4, §4.4.3 | no |
 | D51 | Top-level `await`, asynchronous loaders and host API | **Top-level `await` in modules and in scripts** (JS allows it in modules only; scripts get it too, so `run()` input and the CLI can await). A body with top-level `await` runs as a coroutine like an async function's. **Module graphs follow JavaScript's order**: every dependency is started in import order without waiting, and a module's body runs once all its dependencies are done (a module importing an async module is async itself); cycles are not re-entered. **The synchronous API keeps working** when the awaits settle while the job queue drains: `run()` returns the completion value (or, when the script still waits for the host, a host `Promise` of it), `runModule()` / `importModule()` throw `PScriptRuntimeError` asking for the asynchronous API (the evaluation continues in the background). **New host API**: `runAsync()`, `runModuleAsync()`, `importModuleAsync()` return promises and wait. **Loaders may return a promise** (asynchronous API only; graphs load one after another). A rejected top-level `await` errors the module: every later import rejects with the same error. Details in §4.4.17, §4.7.4, §5.8 | minor (top-level await in scripts) |
 | D52 | Dynamic `import()` | **As in JavaScript**: `import(specifier)` in scripts and modules returns a promise of the module's namespace; the module is loaded (with the asynchronous path, so asynchronous loaders work), linked and evaluated once, waiting for its top-level `await`; a failure (not found, link error, exception) rejects. Relative specifiers resolve against the module of the code that calls `import()` (scripts: none). The work starts in a host microtask, so it completes after `run()` returns even with a synchronous loader (`run()` / `runAsync()` of a script awaiting it give a promise / wait). No import attributes (`import(x, { with })`). psc emits native `import()` (a literal specifier is rewritten like a static one). Details in §4.7.5 | no |
+| D53 | Async generators and `for await` | **As in JavaScript**: `async function*` (declarations and expressions), `async *m()` methods (classes, also static, and object literals, also with computed keys); the object's `next` / `return` / `throw` return promises of `{ value, done }` and are queued, answered in order; `yield v` and `return v` await `v`; `for await (… of …)` in async functions, async generators and at the top level iterates async generators, host async iterables (`Symbol.asyncIterator`) and any sync iterable (each value awaited), with the same job order as Node. **Deviations**: "no value" is `null` (D37); `yield*` in an async generator yields the values of an async or sync iterable but does not forward `next(v)` / `throw` / `return` to it and gives `null`; leaving a `for await` by `return` or an exception calls the iterator's `return()` without awaiting it (`break` and `continue` await it); async generator objects are not sync iterable. They print as `[AsyncGenerator]` and reach the host as async iterators. Details in §4.4.20 | minor (null, `yield*` forwarding) |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -1066,7 +1068,7 @@ class Tree {
 
 **Host interop** (§5.8.1): a script generator reaches the host as a JS iterator (`next`/`return`/`throw`, `Symbol.iterator`); host generators and other host iterables work in `for…of` and `yield*`.
 
-**Not supported**: async generators and `for await` (§4.4.17).
+Async generators and `for await`: §4.4.20 (D53).
 
 #### 4.4.17 `async` / `await` and Promises (D43)
 
@@ -1093,7 +1095,7 @@ class Repository {
 loadAll([1, 2]).then(users => print(users.length))
 ```
 
-**Syntax**: `async function` (declarations and expressions), `async` arrows (`async x => …`, `async (a, b) => …`), `async` methods in classes (also `static async`) and object literals. `async` and `await` are keywords (D43); `async()` and `{ async: 1 }` still work as names. No line break is allowed after `async`. `await x` is a prefix operator (unary precedence: `await a + await b`) allowed only directly in an async function body — not in its parameters or in nested non-async functions (`SyntaxError: 'await' is only valid in async functions`). **Top-level `await`** (D51) is allowed in scripts and modules, outside functions and classes (§4.7.4). Async generators (`async function*`, `async *m()`), `for await` and async constructors, getters and setters are `SyntaxError`s.
+**Syntax**: `async function` (declarations and expressions), `async` arrows (`async x => …`, `async (a, b) => …`), `async` methods in classes (also `static async`) and object literals. `async` and `await` are keywords (D43); `async()` and `{ async: 1 }` still work as names. No line break is allowed after `async`. `await x` is a prefix operator (unary precedence: `await a + await b`) allowed only directly in an async function body — not in its parameters or in nested non-async functions (`SyntaxError: 'await' is only valid in async functions`). **Top-level `await`** (D51) is allowed in scripts and modules, outside functions and classes (§4.7.4). Async constructors, getters and setters are `SyntaxError`s. Async generators and `for await`: §4.4.20 (D53).
 
 **Promises** (`Promise` is a built-in **final** class: `instanceof Promise` works, it cannot be extended, instances are closed, D36):
 
@@ -1145,6 +1147,36 @@ const name = user?.profile.name     // undefined when user is nullish; profile m
 **Syntax**: `?.` before a property name (keywords too), a computed key `?.[k]` or an argument list `?.(args)`. The chain continues with `.x`, `[k]` and calls; a parenthesized chain ends it (`(a?.b).c` reads `c` of the result). `?.` immediately followed by a digit is the conditional operator and a number (`x?.5:1`).
 
 **Semantics** (as in JavaScript): the expression before each `?.` is evaluated once; if it is `null` or `undefined`, the rest of the chain is not evaluated (no property reads, no calls, no argument evaluation) and the whole chain gives `undefined`. Otherwise the chain continues normally, so a later `.x` on `null` still throws, and an undeclared member of a class instance is still an error (D36). `o.m?.(x)` calls `m` with `this = o`. A chain cannot be assigned to, incremented or deleted (`SyntaxError`), and `new a?.b()` is a syntax error. In a class body, `m?.()` on a bare name that may be an implicit member (§4.5.8) is a `SyntaxError`; write `this.m?.()`.
+
+#### 4.4.20 Async generators and `for await` (D53)
+
+```js
+async function* lines(url) {
+  const response = await fetch(url)
+  for (const line of (await response.text()).split('\n')) yield line
+}
+
+for await (const line of lines('/log.txt')) print(line)
+
+class Feed {
+  async *[name]() {}          // not allowed: class members have no computed keys (D48)
+  async *items() { yield* this.pages() }
+}
+```
+
+**Syntax**: `async function* name(…) {}` (declarations and expressions), `async *name(…) {}` methods in classes (also `static async *`) and object literals (also `async *[key]() {}`). `for await (… of …)` takes the same left sides as `for…of` and is allowed where `await` is: in async functions, async generators and at the top level of scripts and modules (D51); elsewhere it is a `SyntaxError` ("'for await' is only valid in async functions"). Both `yield` and `await` work in async generators.
+
+**Async generator objects** (as in JavaScript): calling the function binds the parameters and returns the object without running the body. `next(v)`, `return(v)` and `throw(e)` (at most one argument) return **promises** of `{ value, done }` objects. Requests are queued and answered one at a time, in order; the body runs until its next `yield` (answering the oldest request) or its end, and each `await` in it lets other jobs run. `yield v` awaits `v` first, `return v` awaits `v`. `return` / `throw` before the first `next` complete the generator without running it; an exception in the body rejects the current request and completes the generator. Callbacks run in the same order as in Node (checked by the differential tests).
+
+**`for await`** gets an async iterator from:
+- an async generator object (its `next()` / `return()`);
+- a host async iterable (`Symbol.asyncIterator`, e.g. a Node stream), whose promises cross the boundary as usual (§5.8.1);
+- any other iterable (arrays, strings, generators, maps, sets, host iterables): it is iterated synchronously and each value is awaited (JS's async-from-sync iterator).
+Each step awaits the promise of the `{ value, done }` object. `break` and `continue` of an outer loop call the iterator's `return()` and await it (an async generator runs its `finally` blocks first); `return` and exceptions call it without awaiting.
+
+**Deviations**: "no value" is `null` (D37), as for generators (`{ value: null, done: true }`); `yield*` in an async generator iterates an async (or sync) iterable and yields its values, but does not forward the values sent by `next(v)`, nor `throw` / `return`, and evaluates to `null`; async generator objects are not iterable by a plain `for…of`.
+
+`typeof g == 'object'`; async generator objects print as `[AsyncGenerator]`, `String(g)` is `[object AsyncGenerator]`. The host sees them as JS async iterators (`for await` works on the host side).
 
 ### 4.5 Classes, access control and interfaces (R12, R24)
 
@@ -2107,6 +2139,11 @@ export interface ModuleRecord {
 | `YIELD_DELEGATE` | — | iter sent → iter \| result | one step of `yield*`: forwards the resumption mode to the delegate; when the delegate is not done, suspends with its value and runs again on resumption |
 | `ITER_CLOSE` | — | iter → | pops a value; closes it if it is a generator iterator that is not done (`break`, array patterns) |
 | `CLOSE_ITERS` | — | v → v | `return` inside `for…of`: closes the iterators on the frame's stack below the returned value |
+| `ASYNC_GENERATOR` | — | → | async generator prologue (D53): like `GENERATOR`, returning an async generator object whose requests run the body |
+| `GET_ASYNC_ITER` | — | iterable → iter | `for await` (D53): async generators and host async iterables step with `next()`; other iterables are iterated synchronously, each value awaited |
+| `ASYNC_ITER_NEXT` | — | iter → iter promise | the promise (or value) of the next `{ value, done }` object; followed by `AWAIT` |
+| `ITER_STEP` | target | iter step → iter value \| (pops both, jumps) | reads `done` / `value` of a step object (`TypeError` for a non-object) |
+| `ASYNC_ITER_CLOSE` | — | iter → promise | `break` out of `for await`: the iterator's `return()`, then `AWAIT` and `POP` |
 | `THROW` | — | v → | |
 | `TRY` | catchTarget finallyTarget | → | push handler (−1 = none); records stack height and env depth |
 | `END_TRY` | — | → | pop handler |

@@ -1,0 +1,20 @@
+// Async generator steps interleave with other promise callbacks as in JavaScript (D53)
+async function* gen() {
+  yield 1
+  await null
+  yield 2
+}
+
+async function main() {
+  Promise.resolve()
+    .then(() => print('p1'))
+    .then(() => print('p2'))
+    .then(() => print('p3'))
+    .then(() => print('p4'))
+    .then(() => print('p5'))
+    .then(() => print('p6'))
+  for await (const v of gen()) print('v', v)
+  print('done')
+}
+
+main()

@@ -1,5 +1,6 @@
 // Generator objects (D42, §4.4.16): script objects whose `next` / `return` / `throw` resume a suspended frame. The VM
 // owns the frame; the object only holds the driver that resumes it.
+import type { PromiseObject } from './promises'
 import { Object as ScriptObject, type Value } from './values'
 
 /** How a suspended generator is resumed: with a value, with an exception, or forced to return. */
@@ -33,6 +34,28 @@ export interface GeneratorDriver {
 
 export class GeneratorObject extends ScriptObject {
   constructor(proto: ScriptObject, readonly driver: GeneratorDriver) {
+    super(proto)
+    this.extensible = false
+  }
+}
+
+/**
+ * Runs an async generator (implemented by the VM, D53): requests are queued and answered in order with promises of
+ * step objects.
+ */
+export interface AsyncGeneratorDriver {
+  /**
+   * Queues a `next`, `return` or `throw` request.
+   *
+   * @param mode the request
+   * @param value the value sent, returned or thrown
+   * @returns the promise of the step object `{ value, done }`
+   */
+  enqueue(mode: ResumeMode, value: Value): PromiseObject
+}
+
+export class AsyncGeneratorObject extends ScriptObject {
+  constructor(proto: ScriptObject, readonly driver: AsyncGeneratorDriver) {
     super(proto)
     this.extensible = false
   }

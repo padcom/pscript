@@ -84,8 +84,7 @@ describe('async syntax', () => {
   })
 
   it.each([
-    ['async function* g() {}', 'async generators are not supported'],
-    ['const o = { async *g() {} }', 'async generators are not supported'],
+    ['class A { async *constructor() {} }', 'Class constructor may not be a generator'],
     ['async\nfunction f() {}', "Line terminator not permitted after 'async'"],
     ['class A { async constructor() {} }', 'Class constructor may not be an async method'],
     ['let async = 1', "Unexpected token 'async'"],

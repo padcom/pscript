@@ -318,3 +318,24 @@ describe('maps and sets (D49)', () => {
     expect(host.run('new Set([key, same()]).size')).toBe(1)
   })
 })
+
+describe('async generators and for await (D53)', () => {
+  it('gives script async generators to the host as async iterators', async () => {
+    const source = 'async function* g() { yield 1; yield await Promise.resolve(2) }\ng()'
+    const generator = interpreter().run(source) as AsyncIterable<number>
+    const values: number[] = []
+
+    for await (const value of generator) values.push(value)
+    expect(values).toEqual([1, 2])
+  })
+
+  it('iterates host async iterables with for await', async () => {
+    async function* numbers() {
+      yield 1
+      yield 2
+    }
+    const host = interpreter({ numbers })
+
+    await expect(host.runAsync('let total = 0\nfor await (const n of numbers()) total += n\ntotal')).resolves.toBe(3)
+  })
+})

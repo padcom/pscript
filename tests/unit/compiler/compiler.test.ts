@@ -124,3 +124,20 @@ describe('compiler: computed keys (D48)', () => {
     expect(code).toEqual(expect.arrayContaining(['DEFINE_GETTER_INDEX', 'DEFINE_SETTER_INDEX']))
   })
 })
+
+describe('compiler: async generators and for await (D53)', () => {
+  const ops = (source: string) => disassemble(compile(source)).split('\n').map(line => line.slice(6).trim())
+
+  it('awaits yielded and returned values of async generators', () => {
+    const code = ops('async function* g() { yield 1\nreturn 2 }')
+
+    expect(code).toEqual(expect.arrayContaining(['ASYNC_GENERATOR', 'AWAIT', 'YIELD', 'RETURN']))
+  })
+
+  it('steps for await loops with promises and awaits return() on break', () => {
+    const code = ops('async function f(xs) { for await (const x of xs) break }')
+
+    expect(code).toEqual(expect.arrayContaining(['GET_ASYNC_ITER', 'ASYNC_ITER_NEXT', 'ASYNC_ITER_CLOSE']))
+    expect(code.some(op => op.startsWith('ITER_STEP'))).toBe(true)
+  })
+})

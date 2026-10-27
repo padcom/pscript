@@ -1,0 +1,22 @@
+// @pscript-only: async generators print, missing values are null (D37), host-style errors
+async function* gen() {
+  const sent = yield 'first'
+  print('sent', sent)
+}
+
+async function main() {
+  const g = gen()
+  print(g, String(g), typeof g)
+  print(await g.next())
+  print(await g.next())
+  print(await g.next())
+  try { await g.next(1, 2) } catch (e) { print(e.name, e.message) }
+  try { for (const x of gen()) print(x) } catch (e) { print(e.name, e.message) }
+  try {
+    for await (const x of 5) print(x)
+  } catch (e) {
+    print(e.name, e.message)
+  }
+}
+
+main()

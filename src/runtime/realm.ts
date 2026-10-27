@@ -18,6 +18,7 @@ export function createRealm(): Realm {
     BooleanPrototype: new ScriptObject(ObjectPrototype),
     ErrorPrototype: new ScriptObject(ObjectPrototype),
     GeneratorPrototype: new ScriptObject(ObjectPrototype),
+    AsyncGeneratorPrototype: new ScriptObject(ObjectPrototype),
     globals: new Map(),
   }
 }

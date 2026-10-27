@@ -52,6 +52,26 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L11 | Bitwise operators, `0x` / `0b` / `0o` literals (D50) | done (2026-10-27) |
 | L12 | Top-level `await`, asynchronous loaders and host API (D51) | done (2026-10-27) |
 | L13 | Dynamic `import()` (D52) | done (2026-10-27) |
+| L14 | Async generators and `for await` (D53) | done (2026-10-27) — v2 roadmap complete |
+
+## L14 — Async generators and `for await` (D53)
+
+Design in `docs/PLAN.md` D53 (R42), §4.4.20; user docs in `docs/LANGUAGE.md` → Generators.
+
+- **Parser**: `async function*`, `async *m()` (classes, object literals, computed keys), `for await (… of …)`
+  (`yy.forAwait`); the token filter marks the `await` of `for await (` so its `)` is a header's, and lets a keyword
+  follow `async *` as a method name.
+- **Compiler**: `ASYNC_GENERATOR` prologue; `yield` / `return` in async generators await the value; `for await`
+  (`GET_ASYNC_ITER`, `ASYNC_ITER_NEXT AWAIT ITER_STEP`, `ASYNC_ITER_CLOSE AWAIT POP` on `break`; `fn.asyncIterators`
+  records which stack items are async iterators); `yield*` in async generators is a `for await` loop that yields.
+- **VM**: `src/vm/async-generators.ts`: `AsyncGeneratorRunner` (request queue, `Coroutine.awaiting` tells `await`
+  from `yield`), `AsyncIterator` (stack-only); `asyncIterator` / `syncAsAsync` / `iterationDone` in `vm.ts`;
+  `stepObject`. Host async iterables through `HostAccess.asyncIterator`.
+- **Runtime / stdlib**: `AsyncGeneratorObject`, `realm.AsyncGeneratorPrototype` (next/return/throw), printing,
+  host proxies (JS async iterators).
+- **psc**: prints `for await` (async generators were already printed).
+- **Tests**: `tests/programs/async-generators/` (basics and job interleaving against Node), compiler and interop
+  unit tests.
 
 ## L13 — Dynamic `import()` (D52)
 

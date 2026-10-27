@@ -51,6 +51,8 @@ export interface HostAccess {
   keys(target: object): string[]
   /** iterates a host iterable, converting each value */
   iterate(target: object): Iterator<Value>
+  /** a host async iterable's iterator for `for await` (D53): each call gives the promise of a step object */
+  asyncIterator(target: object): { next(): Value, return(): Value } | null
 }
 
 export type NativeImpl = (ctx: AccessContext, thisValue: Value, args: Value[]) => Value
@@ -308,6 +310,8 @@ export interface Realm {
   ErrorPrototype: Object
   /** `next`, `return` and `throw` of generator objects (D42) */
   GeneratorPrototype: Object
+  /** `next`, `return` and `throw` of async generator objects (D53) */
+  AsyncGeneratorPrototype: Object
   /** global bindings */
   globals: Map<string, GlobalBinding>
 }

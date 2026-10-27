@@ -521,8 +521,8 @@ export interface ForOfStatement extends NodeBase {
   right: Expression
   /** loop body */
   body: Statement
-  /** `for await` is not supported (v2) */
-  await: false
+  /** `for await (… of …)` (D53) */
+  await: boolean
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   instanceOf,
   inheritedProperty,
   isErrorObject,
+  isObject,
   kindOf,
   strictEquals,
   toNumber,
@@ -20,7 +21,8 @@ import {
 } from '@/runtime/operators'
 import { formatNested } from '@/runtime/format'
 import { DONE, GeneratorIterator, ScriptIterator, getIterator } from '@/runtime/iterators'
-import { GeneratorObject, type IteratorStep, type ResumeMode } from '@/runtime/generators'
+import { AsyncGeneratorObject, GeneratorObject, type IteratorStep, type ResumeMode } from '@/runtime/generators'
+import { AsyncGeneratorRunner, AsyncIterator } from './async-generators'
 import {
   defineAccessor,
   defineProperty,
@@ -44,6 +46,7 @@ import {
   Environment,
   Function as ScriptFunction,
   HostFunction,
+  HostObject,
   Interface,
   NativeFunction,
   Object as ScriptObject,
@@ -1106,6 +1109,82 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
   // Generators (D42, §5.6.9)
 
   // GENERATOR: the parameters are bound; the frame leaves the frame stack and waits for the first next().
+  // ASYNC_GENERATOR (D53): like GENERATOR; the requests of the object run the body.
+  private startAsyncGenerator(frame: Frame): AsyncGeneratorObject {
+    const coroutine = new Coroutine(this, frame)
+
+    frame.coroutine = coroutine
+    this.suspend(frame)
+    coroutine.state = 'suspended-start'
+
+    return new AsyncGeneratorObject(this.realm.AsyncGeneratorPrototype, new AsyncGeneratorRunner(this, coroutine))
+  }
+
+  /**
+   * A new `{ value, done }` object (async generators, D53).
+   *
+   * @param value the value
+   * @param done whether the iteration is over
+   * @returns the object
+   */
+  stepObject(value: Value, done: boolean): ScriptObject {
+    const object = new ScriptObject(this.realm.ObjectPrototype)
+
+    object.props.set('value', value)
+    object.props.set('done', done)
+
+    return object
+  }
+
+  // GET_ASYNC_ITER (D53): async generators and host async iterables step with their next(); other iterables are
+  // iterated synchronously, each value awaited.
+  private asyncIterator(value: Value): AsyncIterator {
+    if (value instanceof AsyncGeneratorObject) {
+      return new AsyncIterator(() => value.driver.enqueue('next', null), () => value.driver.enqueue('return', null))
+    }
+
+    const host = value instanceof HostObject ? value.host.asyncIterator(value.target) : null
+
+    return host ? new AsyncIterator(host.next, host.return) : this.syncAsAsync(getIterator(value))
+  }
+
+  private syncAsAsync(iterator: ScriptIterator): AsyncIterator {
+    const step = (): Value => {
+      const next = iterator.next()
+      if (next === DONE) return this.stepObject(undefined, true)
+
+      const result = this.promises.create()
+
+      const fulfilled = (value: Value) => this.promises.resolve(result, this.stepObject(value, false))
+
+      this.promises.react(this.promises.promiseResolve(next), fulfilled, (reason, frames) => {
+        this.promises.reject(result, reason, frames)
+      })
+
+      return result
+    }
+    const finish = (): Value => {
+      iterator.close()
+
+      return this.stepObject(null, true)
+    }
+
+    return new AsyncIterator(step, finish)
+  }
+
+  // ITER_STEP (D53): iter step → iter value, or pops both when the step object says done.
+  private iterationDone(stack: Value[]): boolean {
+    const step = stack.pop()
+    if (!isObject(step)) throw typeError(`Iterator result ${kindOf(step)} is not an object`)
+
+    const done = truthy(getProperty(this, step, 'done'))
+
+    if (done) stack.pop()
+    else stack.push(getProperty(this, step, 'value'))
+
+    return done
+  }
+
   private startGenerator(frame: Frame): GeneratorObject {
     const coroutine = new Coroutine(this, frame)
 
@@ -1730,9 +1809,28 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
         case Op.YIELD:
           a = stack.pop()
           frame.ip = ip
-          this.suspend(frame)
+          this.suspend(frame);
+          (frame.coroutine as Coroutine).awaiting = code[ip - 1] === Op.AWAIT
 
           return a
+        case Op.ASYNC_GENERATOR: {
+          frame.ip = ip
+          const generator = this.startAsyncGenerator(frame)
+
+          if (this.frames.length < entryDepth) return generator
+          frame = this.frames[this.frames.length - 1];
+          ({ code, constants } = frame.proto)
+          ip = frame.ip
+          stack.push(generator)
+          break
+        }
+        case Op.GET_ASYNC_ITER: stack.push(this.asyncIterator(stack.pop()) as unknown as Value); break
+        case Op.ASYNC_ITER_NEXT: stack.push((stack[stack.length - 1] as unknown as AsyncIterator).nextStep()); break
+        case Op.ASYNC_ITER_CLOSE: stack.push((stack.pop() as unknown as AsyncIterator).closeStep()); break
+        case Op.ITER_STEP:
+          if (this.iterationDone(stack)) ip = code[ip]
+          else ip++
+          break
         case Op.YIELD_DELEGATE: {
           const coroutine = frame.coroutine as Coroutine
 

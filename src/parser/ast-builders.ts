@@ -224,6 +224,11 @@ export const builders = {
     return { type: 'MemberExpression', object, property, computed, optional: false, loc: toLoc(loc) }
   },
 
+  // `for await (… of …)` (D53).
+  forAwait(statement: ForOfStatement): ForOfStatement {
+    return { ...statement, await: true }
+  },
+
   importExpression(source: Expression, loc: JisonLoc): ImportExpression {
     return { type: 'ImportExpression', source, options: null, loc: toLoc(loc) }
   },

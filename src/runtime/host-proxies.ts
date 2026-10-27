@@ -3,7 +3,7 @@
 // arrays over arrays (live `items`), other objects over plain objects (reads and writes go through the runtime with
 // no home class, so private and protected members stay inaccessible), generators over JS iterators (D42).
 import { CollectionObject } from './collections'
-import { GeneratorObject, type ResumeMode } from './generators'
+import { AsyncGeneratorObject, GeneratorObject, type ResumeMode } from './generators'
 import { PromiseObject, type PromiseOps } from './promises'
 import { ScriptThrow } from './script-error'
 import { publicProps } from './members'
@@ -175,6 +175,23 @@ class Proxies {
     }
   }
 
+  // A JS async iterator (D53): `for await` works on the host side; each method gives a host promise.
+  asyncGenerator(generator: AsyncGeneratorObject): object {
+    const step = (mode: ResumeMode, args: unknown[]) => this.enter(() => {
+      const sent = args.length === 0 ? null : this.convert.toScript(args[0])
+
+      return this.convert.toHost(generator.driver.enqueue(mode, sent))
+    })
+
+    return {
+      next: (...args: unknown[]) => step('next', args),
+      return: (...args: unknown[]) => step('return', args),
+      throw: (...args: unknown[]) => step('throw', args),
+      [Symbol.asyncIterator]() { return this },
+      [Symbol.toStringTag]: 'AsyncGenerator',
+    }
+  }
+
   // A real host promise that follows the script promise (D43); a rejection arrives as a PScriptRuntimeError.
   promise(promise: PromiseObject): object {
     const promises = this.host.hostContext.promises as PromiseOps
@@ -233,11 +250,16 @@ class Proxies {
   }
 }
 
-function objectProxy(proxies: Proxies, value: ScriptObject): object {
+// Generators, async generators (D53) and promises become their host counterparts.
+function iterationProxy(proxies: Proxies, value: ScriptObject): object | null {
   if (value instanceof GeneratorObject) return proxies.generator(value)
-  if (value instanceof PromiseObject) return proxies.promise(value)
+  if (value instanceof AsyncGeneratorObject) return proxies.asyncGenerator(value)
 
-  return value instanceof ScriptArray ? proxies.array(value) : proxies.object(value)
+  return value instanceof PromiseObject ? proxies.promise(value) : null
+}
+
+function objectProxy(proxies: Proxies, value: ScriptObject): object {
+  return iterationProxy(proxies, value) ?? (value instanceof ScriptArray ? proxies.array(value) : proxies.object(value))
 }
 
 /**

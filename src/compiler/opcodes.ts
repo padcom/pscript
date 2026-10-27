@@ -105,12 +105,17 @@ export enum Op {
   ARRAY_SPREAD,
   OBJECT_SPREAD,
   GENERATOR,
+  ASYNC_GENERATOR,
   YIELD,
   ASYNC,
   AWAIT,
   YIELD_DELEGATE,
   ITER_CLOSE,
   CLOSE_ITERS,
+  GET_ASYNC_ITER,
+  ASYNC_ITER_NEXT,
+  ITER_STEP,
+  ASYNC_ITER_CLOSE,
   THROW,
   TRY,
   END_TRY,
@@ -266,11 +271,16 @@ export const OPCODES: Readonly<Record<Op, OpcodeInfo>> = {
   [Op.ARRAY_SPREAD]: info('', 'arr iterable → arr'), // `[...x]`, and spread arguments; TypeError if not iterable
   [Op.OBJECT_SPREAD]: info('', 'obj v → obj'), // `{ ...x }`: own enumerable public properties; null/undefined: none
   [Op.GENERATOR]: info('', '→'), // generator prologue (D42): suspends the frame and returns a generator object
+  [Op.ASYNC_GENERATOR]: info('', '→'), // async generator prologue (D53): suspends the frame, returns an async generator
   [Op.YIELD]: info('', 'v → sent'), // suspends with v; resumes with the value sent by next()
   [Op.ASYNC]: info('', '→'), // async prologue (D43): runs the body until its first await; the call returns a promise
   [Op.AWAIT]: info('', 'v → result'), // suspends until PromiseResolve(v) settles; resumes with its value or throws
   [Op.YIELD_DELEGATE]: info('', 'iter sent → iter | result'), // yield*: one step of the delegate; re-runs on resume
   [Op.ITER_CLOSE]: info('', 'iter →'), // pops; closes a generator iterator that is not done (break, patterns)
+  [Op.GET_ASYNC_ITER]: info('', 'iterable → iter'), // for await (D53): async generators, host async iterables, sync iterables
+  [Op.ASYNC_ITER_NEXT]: info('', 'iter → iter promise'), // the promise of the next step object { value, done }
+  [Op.ITER_STEP]: info('target', 'iter step → iter value | (pops both, jumps)'), // reads done / value of a step object
+  [Op.ASYNC_ITER_CLOSE]: info('', 'iter → promise'), // pops; the promise of return() (break out of for await)
   [Op.CLOSE_ITERS]: info('', 'v → v'), // return inside for…of: closes the frame's iterators below the value
   [Op.THROW]: info('', 'v →'),
   [Op.TRY]: info('catchTarget finallyTarget', '→'), // push handler (-1 = none)

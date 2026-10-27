@@ -1,5 +1,6 @@
-// `next`, `return` and `throw` of generator objects (D42, §4.4.16). Each returns a plain `{ value, done }` object.
-import { GeneratorObject, type IteratorStep, type ResumeMode } from '@/runtime/generators'
+// `next`, `return` and `throw` of generator objects (D42, §4.4.16). Each returns a plain `{ value, done }` object; for
+// async generators (D53), a promise of one.
+import { AsyncGeneratorObject, GeneratorObject, type IteratorStep, type ResumeMode } from '@/runtime/generators'
 import { typeError } from '@/runtime/script-error'
 import { Object as ScriptObject, type NativeImpl, type Realm, type Value } from '@/runtime/values'
 import { defineMethods, method } from './native'
@@ -23,6 +24,16 @@ function resumeWith(realm: Realm, mode: ResumeMode): NativeImpl {
   }
 }
 
+// A missing argument is null (D37), as for generators.
+function enqueue(mode: ResumeMode): NativeImpl {
+  return (_, self, args) => {
+    if (!(self instanceof AsyncGeneratorObject)) throw typeError(`AsyncGenerator.prototype.${mode} called on a non-generator`)
+    if (args.length > 1) throw typeError(`${mode}() expects at most 1 argument, got ${args.length}`)
+
+    return self.driver.enqueue(mode, args.length === 0 ? null : args[0] as Value)
+  }
+}
+
 /**
  * Installs the methods of generator objects.
  *
@@ -34,5 +45,11 @@ export function installGenerator(realm: Realm) {
     return: method(1, resumeWith(realm, 'return')),
     throw: method(1, resumeWith(realm, 'throw')),
     toString: method(0, () => '[object Generator]'),
+  })
+  defineMethods(realm, realm.AsyncGeneratorPrototype, {
+    next: method(1, enqueue('next')),
+    return: method(1, enqueue('return')),
+    throw: method(1, enqueue('throw')),
+    toString: method(0, () => '[object AsyncGenerator]'),
   })
 }
