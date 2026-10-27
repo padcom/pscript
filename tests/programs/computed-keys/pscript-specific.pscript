@@ -1,0 +1,9 @@
+// @pscript-only: computed keys and print, insertion order of integer-like keys
+const k = 'b'
+print({ a: 1, [k]: 2, [1 + 1]: 3, [`${k}${k}`]() {} })
+class Point {
+  x = 1
+  y = 2
+}
+const p = new Point()
+print({ [p.x + p.y]: 'three' })

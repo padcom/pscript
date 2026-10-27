@@ -888,6 +888,18 @@ Property
     { $$ = yy.coverInitializedName(yy.identifier($1, @1), $3, @$) }
   | '...' AssignmentExpression
     { $$ = yy.spread($2, @$) }
+  | '[' AssignmentExpression ']' ':' AssignmentExpression
+    { $$ = yy.computed(yy.property($2, $5, false, @$)) }
+  | '[' AssignmentExpression ']' MethodTail
+    { $$ = yy.computed(yy.property($2, yy.method($4, @4), true, @$)) }
+  | '*' '[' AssignmentExpression ']' MethodTail
+    { $$ = yy.computed(yy.property($3, yy.method(Object.assign($5, { generator: true }), @5), true, @$)) }
+  | ASYNC '[' AssignmentExpression ']' MethodTail
+    { $$ = yy.computed(yy.property($3, yy.method(Object.assign($5, { async: true }), @5), true, @$)) }
+  | GET '[' AssignmentExpression ']' '(' ')' BLOCK_LBRACE StatementList '}'
+    { $$ = yy.computed(yy.accessorProperty('get', $3, yy.method({ params: [], body: yy.block($8, @7) }, @5), @$)) }
+  | SET '[' AssignmentExpression ']' '(' Parameter ')' BLOCK_LBRACE StatementList '}'
+    { $$ = yy.computed(yy.accessorProperty('set', $3, yy.method({ params: [$6], body: yy.block($9, @8) }, @5), @$)) }
   | GET PropertyKey '(' ')' BLOCK_LBRACE StatementList '}'
     { $$ = yy.accessorProperty('get', $2, yy.method({ params: [], body: yy.block($6, @5) }, @3), @$) }
   | SET PropertyKey '(' Parameter ')' BLOCK_LBRACE StatementList '}'

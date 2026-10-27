@@ -223,6 +223,11 @@ export const builders = {
     return { type: 'MemberExpression', object, property, computed, optional: false, loc: toLoc(loc) }
   },
 
+  // `[k]: v`, `[k]() {}`, `get [k]() {}` in an object literal (D48).
+  computed(property: Property): Property {
+    return { ...property, computed: true }
+  },
+
   // `base?.x`, `base?.[k]` or `base?.(args)` (D47).
   optionalLink(base: Expression, link: OptionalLink, loc: JisonLoc): MemberExpression | CallExpression {
     const node = 'arguments' in link

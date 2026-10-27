@@ -1,0 +1,4 @@
+// @pscript-only: patterns have no computed keys (D48)
+const k = 'a'
+let a
+;({ [k]: a } = { a: 1 })

@@ -713,7 +713,7 @@ export interface Property extends NodeBase {
   method: boolean
   /** shorthand `{ a }` */
   shorthand: boolean
-  /** computed key `[k]: v` (COULD) */
+  /** computed key `[k]: v`, `[k]() {}`, `get [k]() {}` (D48) */
   computed: boolean
 }
 

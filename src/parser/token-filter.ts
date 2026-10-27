@@ -303,9 +303,14 @@ export class TokenFilter {
     return keyword && this.isAccessorKeyword(this.peek(0)) ? keyword : undefined
   }
 
-  // `get x() {}` / `set x(v) {}` in a class body or an object literal; `get() {}`, `{ get: 1 }` stay names.
+  // `get x() {}` / `set x(v) {}` in a class body or an object literal (also `get [k]() {}` there, D48); `get() {}`,
+  // `{ get: 1 }` stay names.
   private isAccessorKeyword(next: Token): boolean {
-    return this.inAccessorPosition() && !next.afterNewline && isName(next.name)
+    return this.inAccessorPosition() && !next.afterNewline && this.isAccessorName(next)
+  }
+
+  private isAccessorName(next: Token): boolean {
+    return isName(next.name) || (next.name === '[' && this.top() === '{object}')
   }
 
   private inAccessorPosition(): boolean {

@@ -107,3 +107,20 @@ describe('compiler: optional chaining (D47)', () => {
     expect(disassemble(compile('a?.b.c(d)'))).toContain(`${String(target).padStart(4, '0')}  STORE_POP`)
   })
 })
+
+describe('compiler: computed keys (D48)', () => {
+  const ops = (source: string) => disassemble(compile(source)).split('\n').map(line => line.slice(6).trim())
+
+  it('names anonymous definitions and methods after the key, not other values', () => {
+    expect(ops('({ [k]: () => 1 })')).toContain('DEFINE_PROP_INDEX 1')
+    expect(ops('({ [k]() {} })')).toContain('DEFINE_PROP_INDEX 1')
+    expect(ops('({ [k]: function f() {} })')).toContain('DEFINE_PROP_INDEX 0')
+    expect(ops('({ [k]: v })')).toContain('DEFINE_PROP_INDEX 0')
+  })
+
+  it('defines accessors with computed keys', () => {
+    const code = ops('({ get [k]() { return 1 }, set [k](v) {} })')
+
+    expect(code).toEqual(expect.arrayContaining(['DEFINE_GETTER_INDEX', 'DEFINE_SETTER_INDEX']))
+  })
+})

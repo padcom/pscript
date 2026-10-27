@@ -1,0 +1,57 @@
+// Computed keys in object literals (D48)
+const prefix = 'item'
+let setCalls = 0
+const store = {
+  [prefix]: 1,
+  [`${prefix}Count`]: 2,
+  [prefix + 'Label']() { return `label of ${this.item}` },
+  *[prefix + 's']() {
+    yield 'a'
+    yield 'b'
+  },
+  get [prefix + 'Double']() { return this.item * 2 },
+  set [prefix + 'Double'](value) {
+    setCalls++
+    this.item = value / 2
+  },
+}
+print(store.item, store.itemCount, store.itemLabel(), [...store.items()].join(''), store.itemDouble)
+store.itemDouble = 10
+print(store.item, setCalls)
+print(Object.keys(store).join(','))
+
+// keys are converted to strings; later keys replace earlier ones
+const counts = { ['x']: 1, x: 2, [true]: 'yes', [null]: 'nothing' }
+print(JSON.stringify(counts))
+
+// keys are evaluated in order, each before its value
+const order = []
+function key(name) {
+  order.push(`key ${name}`)
+  return name
+}
+function value(name) {
+  order.push(`value ${name}`)
+  return name
+}
+const ordered = { [key('a')]: value('a'), [key('b')]: value('b') }
+print(order.join(', '), JSON.stringify(ordered))
+
+// functions defined under a computed key are named after it
+const k = 'dyn'
+const fns = { [k]: function () {}, [k + 'Arrow']: () => 1, [k + 'Own']: function own() {}, [k + 'Method']() {} }
+print(fns.dyn.name, fns.dynArrow.name, fns.dynOwn.name, fns.dynMethod.name)
+
+// methods under computed keys get this like other methods
+const base = { greet() { return 'hello' } }
+const derived = {
+  ['gr' + 'eet']() { return `${this.name}: ${base.greet()}` },
+  name: 'derived',
+}
+print(derived.greet())
+
+async function main() {
+  const api = { async ['fe' + 'tch']() { return 'data' } }
+  print(await api.fetch())
+}
+main()

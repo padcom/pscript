@@ -291,6 +291,20 @@ const PROTO_KINDS: Record<string, FunctionKind> = { method: 'method', get: 'gett
 
 const DEFINE_OPS: Record<Property['kind'], Op> = { init: Op.DEFINE_PROP, get: Op.DEFINE_GETTER, set: Op.DEFINE_SETTER }
 
+// `function () {}`, `() => {}`, `class {}`: definitions that take the name of what they are assigned to.
+function isAnonymousDefinition(node: Expression): boolean {
+  if (node.type === 'ArrowFunctionExpression') return true
+
+  return (node.type === 'FunctionExpression' || node.type === 'ClassExpression') && node.id === null
+}
+
+/** With a computed key (D48): the key is on the stack below the value. */
+const DEFINE_INDEX_OPS: Record<Property['kind'], Op> = {
+  init: Op.DEFINE_PROP_INDEX,
+  get: Op.DEFINE_GETTER_INDEX,
+  set: Op.DEFINE_SETTER_INDEX,
+}
+
 /** Indexed by `Reference.baseSize` (1 or 2). */
 const DUPLICATE_BASE: Record<number, Op> = { 1: Op.DUP, 2: Op.DUP2 }
 const ROTATE_BELOW_BASE: Record<number, Op> = { 1: Op.ROT3, 2: Op.ROT4 }
@@ -1677,13 +1691,34 @@ class Compiler {
   }
 
   // `key: value` / `m() {}` → DEFINE_PROP; `get k() {}` / `set k(v) {}` → DEFINE_GETTER / DEFINE_SETTER (own accessors, R18).
-  private property({ key, value, method, kind, loc }: Property) {
-    const name = keyName(key as Identifier | Literal)
+  private property(property: Property) {
+    if (property.computed) {
+      this.computedProperty(property)
 
+      return
+    }
+    const name = keyName(property.key as Identifier | Literal)
+
+    this.propertyValue(property, name)
+    this.emitAt(property.loc, DEFINE_OPS[property.kind], this.out.constant(name))
+  }
+
+  // `[k]: v` → <k> <v> DEFINE_PROP_INDEX named (D48). As in JS, an anonymous function, arrow or class, a method or an
+  // accessor defined there is named after the key at runtime.
+  private computedProperty(property: Property) {
+    const { key, value, kind, method, loc } = property
+
+    this.expression(key)
+    this.propertyValue(property, '')
+
+    if (kind === 'init') this.emitAt(loc, Op.DEFINE_PROP_INDEX, method || isAnonymousDefinition(value) ? 1 : 0)
+    else this.emitAt(loc, DEFINE_INDEX_OPS[kind])
+  }
+
+  private propertyValue({ value, method, kind }: Property, name: string) {
     if (kind !== 'init') this.closure(this.functionProto(value as FunctionExpression, name, PROTO_KINDS[kind]))
     else if (method) this.closure(this.functionProto(value as FunctionExpression, name, 'method'))
     else this.namedExpression(value, name)
-    this.emitAt(loc, DEFINE_OPS[kind], this.out.constant(name))
   }
 
   // ---------------------------------------------------------------------------

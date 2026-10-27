@@ -1,0 +1,8 @@
+1 2 label of 1 ab 2
+5 1
+item,itemCount,itemLabel,items,itemDouble
+{"x":2,"true":"yes","null":"nothing"}
+key a, value a, key b, value b {"a":"a","b":"b"}
+dyn dynArrow own dynMethod
+derived: hello
+data

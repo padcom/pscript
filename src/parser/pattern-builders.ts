@@ -146,9 +146,10 @@ export class PatternBuilder {
     return patternProperty(key as Identifier | Literal, target, shorthand, loc)
   }
 
-  // Methods and accessors are not targets.
+  // Methods and accessors are not targets; patterns have no computed keys (D48).
   private dataProperty(property: Property): Property {
     if (property.kind !== 'init' || property.method) throw this.errors.at(`Invalid ${DESTRUCTURING} target`, property.loc)
+    if (property.computed) throw this.errors.at('Computed keys are not supported in destructuring patterns', property.key.loc)
 
     return property
   }

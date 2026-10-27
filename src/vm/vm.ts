@@ -223,6 +223,16 @@ function spreadArgc(stack: Value[], argc: number): number {
   return items.length
 }
 
+/** The accessor half DEFINE_GETTER_INDEX / DEFINE_SETTER_INDEX define (D48). */
+const INDEX_ACCESSORS: Record<number, 'get' | 'set'> = { [Op.DEFINE_GETTER_INDEX]: 'get', [Op.DEFINE_SETTER_INDEX]: 'set' }
+
+// A function defined under a computed key takes its name (D48).
+function named<T extends ScriptFunction>(fn: T, name: string): T {
+  fn.name = name
+
+  return fn
+}
+
 // ARRAY_PUSH: arr v → arr.
 function arrayPush(stack: Value[]) {
   const value = stack.pop() as Value
@@ -1474,6 +1484,17 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
           break
         case Op.DEFINE_PROP:
           this.defineProperty(stack.pop(), stack[stack.length - 1] as ScriptObject, constants[code[ip++]] as string)
+          break
+        case Op.DEFINE_PROP_INDEX:
+          b = stack.pop()
+          a = propertyKey(stack.pop())
+          this.defineProperty(code[ip++] ? named(b as ScriptFunction, a) : b, stack[stack.length - 1] as ScriptObject, a)
+          break
+        case Op.DEFINE_GETTER_INDEX:
+        case Op.DEFINE_SETTER_INDEX:
+          b = stack.pop()
+          a = propertyKey(stack.pop())
+          defineAccessor(stack[stack.length - 1] as ScriptObject, a, INDEX_ACCESSORS[code[ip - 1]], named(b as Closure, a))
           break
         case Op.LOAD_IMPORT: stack.push(readImport(frame, code[ip++])); break
         case Op.LOAD_IMPLICIT: {

@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D47).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D48).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -129,7 +129,8 @@ const point = { x: 1, y: 2, move(dx) { this.x += dx; return this }, get norm() {
 const list = [1, 2, 3]
 ```
 
-- Object literals: properties, shorthand properties, methods, getters and setters. Computed keys are not supported.
+- Object literals: properties, shorthand properties, methods, getters and setters, spread (`...o`) and computed keys
+  (`[k]: v`, `[k]() {}`, `get [k]() {}`). Class members and destructuring patterns have no computed keys.
 - Reading a missing property of a plain object gives `undefined`; writing creates it.
 - Arrays have integer indices only. Reading an index outside `0 … length-1` (including negative) is a `RangeError`;
   writing past the end fills the gap with `null`. Assigning `length` truncates or extends.
@@ -396,7 +397,8 @@ Values cross the boundary by reference and identity is kept in both directions.
 | ASI quirks (`(`/`[` continue the previous line) | A line starting with `(` or `[` starts a new statement |
 | `delete` leaves holes in arrays, ignores frozen objects | `delete` works on plain objects only; elsewhere `TypeError` |
 | `var`, labels, `with`, `for…in` | Not available |
-| Bitwise operators, computed keys | Not available (yet) |
+| Bitwise operators | Not available (yet) |
+| Computed keys in classes and destructuring patterns | Not available (object literals only) |
 | Tagged templates | Not available |
 | Generators give `undefined` for missing values | Generators give `null` (`yield`, `next()`, finished steps) |
 | Any object with a `then` method is a thenable | Only promises are adopted; `Promise` is final |

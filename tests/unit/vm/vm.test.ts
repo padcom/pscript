@@ -49,9 +49,9 @@ describe('vm', () => {
   })
 
   it('reports unimplemented opcodes', () => {
-    const main = proto([Op.DEFINE_PROP_INDEX, Op.HALT])
+    const main = proto([9999 as Op, Op.HALT])
 
-    expect(() => vm().execute({ main })).toThrow('Opcode DEFINE_PROP_INDEX is not implemented')
+    expect(() => vm().execute({ main })).toThrow('Opcode undefined is not implemented')
   })
 })
 

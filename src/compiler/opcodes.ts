@@ -71,6 +71,8 @@ export enum Op {
   DEFINE_PROP_INDEX,
   DEFINE_GETTER,
   DEFINE_SETTER,
+  DEFINE_GETTER_INDEX,
+  DEFINE_SETTER_INDEX,
   CLOSURE,
   CALL,
   CALL_METHOD,
@@ -219,9 +221,11 @@ export const OPCODES: Readonly<Record<Op, OpcodeInfo>> = {
   [Op.ARRAY]: info('n', 'v1…vn → arr'),
   [Op.OBJECT]: info('', '→ obj'),
   [Op.DEFINE_PROP]: info('k', 'obj v → obj'), // object literal init; sets home object for methods
-  [Op.DEFINE_PROP_INDEX]: info('', 'obj key v → obj'), // computed keys (COULD)
+  [Op.DEFINE_PROP_INDEX]: info('named', 'obj key v → obj'), // computed keys (D48); named: name the new function v after key
   [Op.DEFINE_GETTER]: info('k', 'obj fn → obj'), // object-literal getter (R18)
   [Op.DEFINE_SETTER]: info('k', 'obj fn → obj'), // object-literal setter (R18)
+  [Op.DEFINE_GETTER_INDEX]: info('', 'obj key fn → obj'), // getter with a computed key (D48), named after it
+  [Op.DEFINE_SETTER_INDEX]: info('', 'obj key fn → obj'), // setter with a computed key (D48), named after it
   [Op.CLOSURE]: info('k', '→ fn'), // captures env, this (arrows), home class/object
   [Op.CALL]: info('argc', 'fn a1…an → r'), // this = null (D37); argc SPREAD_ARGC: one array of arguments (D46)
   [Op.CALL_METHOD]: info('argc', 'recv fn a1…an → r'), // this = recv

@@ -47,6 +47,19 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L6 | `setInterval` / `clearInterval` and `queueMicrotask` (D45) | done (2026-10-27) |
 | L7 | Spread (D46) | done (2026-10-27) |
 | L8 | Optional chaining (D47) | done (2026-10-27) |
+| L9 | Computed keys (D48) | done (2026-10-27) |
+
+## L9 — Computed keys (D48)
+
+Design in `docs/PLAN.md` D48 (R37), §4.4.6; user docs in `docs/LANGUAGE.md` → Objects and arrays.
+
+- **Parser**: `Property` rules for `[k]` keys (data, method, generator, async, get, set); `yy.computed`. The token
+  filter makes `get` / `set` accessor keywords before `[` in object literals. A literal with a computed key that
+  becomes a pattern is a `SyntaxError`.
+- **Compiler / VM**: `DEFINE_PROP_INDEX named` (the opcode existed, unimplemented), new `DEFINE_GETTER_INDEX` /
+  `DEFINE_SETTER_INDEX`; functions defined under a computed key get the key as their name at runtime.
+- **psc**: already printed computed keys.
+- **Tests**: `tests/programs/computed-keys/`, compiler unit tests.
 
 ## L8 — Optional chaining (D47)
 

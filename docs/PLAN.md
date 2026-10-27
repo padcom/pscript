@@ -105,6 +105,7 @@ Each feature in this document has one of these tags:
 | R34 | `setInterval` / `clearInterval` and `queueMicrotask` (D45) | 4.6.1 |
 | R35 | Spread `...x` in calls, `new`, `super(...)`, array literals and object literals (D46) | 4.4.18 |
 | R36 | Optional chaining `a?.b`, `a?.[k]`, `f?.(x)` (D47) | 4.4.19 |
+| R37 | Computed keys in object literals: `{ [k]: v, [k]() {}, get [k]() {} }` (D48) | 4.4.6 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -124,7 +125,7 @@ Each feature in this document has one of these tags:
 
 ### 1.5 COULD (Phase 3+)
 
-~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), computed keys `{ [k]: v }`, the comma operator in `for` headers, ~~`do … while`, `switch`~~ (done, D41), `for … in`, bitwise operators, hex/binary/octal literals, ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, Map/Set, a CLI/REPL, a disassembler CLI, source maps for errors.
+~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), the comma operator in `for` headers, ~~`do … while`, `switch`~~ (done, D41), `for … in`, bitwise operators, hex/binary/octal literals, ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, Map/Set, a CLI/REPL, a disassembler CLI, source maps for errors.
 
 ### 1.6 WON'T (v1)
 
@@ -216,6 +217,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D45 | `setInterval`, `clearInterval`, `queueMicrotask` | **The JavaScript interface, completing D44**: `setInterval(callback, delay?, ...args)` shares ids with `setTimeout` (so `clearTimeout` and `clearInterval` are interchangeable, as in browsers); it is built on the host's `setTimeout`, re-armed before each run, so the callback can clear its own interval, and an exception (to `stderr`) does not stop it. `queueMicrotask(callback)` queues a job (`AccessContext.enqueueJob`), ordered with promise reactions; an exception in the callback rejects an internal promise, so it is reported like an unhandled rejection (thrown by `run()` after the queue drained, or to `stderr` in the background) and the other jobs still run. Details in §4.6.1 | minor (no code strings) |
 | D46 | Spread `...x` | **As in JavaScript**: `f(...xs)`, `new C(...xs)`, `super(...xs)`, `[...xs]` take what an iterable produces (arrays, strings, generators, host iterables; anything else is a `TypeError`); `{ ...o }` copies the own enumerable public properties (getters run, later keys win; `null`, `undefined` and non-string primitives add nothing). Spread arguments keep **strict arity (D38) and named parameters (D40)** but move their check to runtime (`TypeError`), since the count is not known at compile time; the arguments before the first spread are still checked against named parameters at compile time. A spread in a literal that becomes an assignment pattern is its rest element, which must be a name. Details in §4.4.18 | no |
 | D47 | Optional chaining | **As in JavaScript**: `a?.b`, `a?.[k]`, `f?.(x)` and `o.m?.(x)`; when the value before `?.` is `null` or `undefined`, the rest of the chain (including its arguments) is skipped and the chain gives **`undefined`** (not `null`, D37: like a missing property, it is JavaScript's "nothing read"). Only the base is tested: an undeclared member of a class instance is still an error (D36). A chain is not an assignment, `++`/`--` or `delete` target. Inside a class body, an optional call of a bare name that may be an implicit member (`m?.()`, D33) is a `SyntaxError` (write `this.m?.()`). `?.` followed by a digit is `?` and a number, as in JS. Details in §4.4.19 | no |
+| D48 | Computed keys | **In object literals, as in JavaScript**: `[k]: v`, `[k]() {}`, `*[k]() {}`, `async [k]() {}`, `get [k]() {}`, `set [k](v) {}`. The key is evaluated before its value and converted like `o[k]` (ToString); later keys replace earlier ones; an anonymous function, arrow, class, method or accessor defined there is named after the key at runtime. **Not in classes** (class members are declared, D29, D36) **nor in destructuring patterns** (`SyntaxError`). Details in §4.4.6 | no |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -658,7 +660,8 @@ Property        := PropName ':' AssignExpr
                  | SET PropName '(' Param ')' Block               (setter, R18)
                  | IDENT                                          (shorthand { a }: SHOULD)
                  | '...' AssignExpr                               (spread, D46)
-                 | '[' AssignExpr ']' ':' AssignExpr              (computed: COULD)
+                 | '[' AssignExpr ']' ':' AssignExpr              (computed keys, D48: also with methods,
+                                                                  generators, async methods and accessors)
 PropName        := IDENT | STRING | NUMBER
 
 ArrowFunction   := ARROW_IDENT '=>' ArrowBody
@@ -781,6 +784,7 @@ Semantics:
   - `JSON.stringify` calls the getter;
   - `print` shows `[Getter]`, `[Setter]` or `[Getter/Setter]` without calling it.
 - Later definitions with the same key replace earlier ones (a data property after an accessor replaces it, and vice versa), as in JS.
+- **Computed keys** (D48): `{ [k]: v, [k]() {}, *[k]() {}, async [k]() {}, get [k]() {}, set [k](v) {} }`. The key expression is evaluated before the value, in source order, and converted like `o[k]`. Anonymous functions, arrows, classes, methods and accessors defined under a computed key are named after the key (`{ [k]() {} }[k].name == k`), as in JS. Class members and destructuring patterns have no computed keys.
 - Keys are strings; number keys are converted to strings. Insertion order is preserved; integer-like keys are **not** reordered (a deviation from JS; document it).
 - Methods defined by shorthand are ordinary closures with dynamic `this`. They are not constructible.
 - Access: `o.k`, `o['k']`. A missing property gives `undefined` (the one place `undefined` comes from, D37). Object literals stay open: properties can be added at any time. Property access on `null`/`undefined` → `TypeError: Cannot read properties of null (reading 'k')`.
@@ -2002,7 +2006,8 @@ export interface ModuleRecord {
 | `ARRAY` | n | v1…vn → arr | |
 | `OBJECT` | — | → obj | |
 | `DEFINE_PROP` | k(name) | obj v → obj | object literal init; sets home object for methods |
-| `DEFINE_PROP_INDEX` | — | obj key v → obj | computed keys (COULD) |
+| `DEFINE_PROP_INDEX` | named | obj key v → obj | computed keys (D48); `named` = 1: v is a function defined there, which takes the key as its name |
+| `DEFINE_GETTER_INDEX` / `DEFINE_SETTER_INDEX` | — | obj key fn → obj | accessors with a computed key (D48), named after the key |
 | `DEFINE_GETTER` / `DEFINE_SETTER` | k(name) | obj fn → obj | object-literal accessors (R18); combines with an existing accessor of the same key |
 | `CLOSURE` | k(proto) | → fn | captures current env, `this` (if arrow), home class/object |
 | `CALL` | argc | fn a1…an → r | `this = null` (D37). In all calls (`CALL`, `CALL_METHOD`, `CALL_IMPLICIT`, `NEW`, `SUPER_CALL`), argc `SPREAD_ARGC` (−1) means the arguments are one array (built with `ARRAY`, `ARRAY_PUSH` and `ARRAY_SPREAD`) that the VM spreads onto the stack (D46) |
