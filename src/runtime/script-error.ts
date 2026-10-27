@@ -30,6 +30,16 @@ export function referenceError(message: string): ScriptError {
 }
 
 /**
+ * Creates an AccessError (a TypeError for access-modifier violations, §4.5.2).
+ *
+ * @param message error message
+ * @returns an AccessError
+ */
+export function accessError(message: string): ScriptError {
+  return new ScriptError('AccessError', message)
+}
+
+/**
  * Creates a RangeError.
  *
  * @param message error message

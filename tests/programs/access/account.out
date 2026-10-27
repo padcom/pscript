@@ -1,0 +1,5 @@
+Ann has 50
+[] {}
+AccessError Cannot access protected member 'owner' of class 'Account' from outside its class hierarchy
+<html>
+base derived

@@ -1,0 +1,42 @@
+// @pscript-only: access modifiers (D30, D4) are not JS syntax
+class Account {
+  private balance = 0
+  protected owner
+  constructor(owner) { this.owner = owner }
+  deposit(amount) { this.check(amount); this.balance += amount; return this }
+  get total() { return this.balance }
+  sameBalance(other) { return this.balance == other.balance }   // private is per class, not per instance
+  private check(amount) { if (amount <= 0) throw new RangeError('amount must be positive') }
+}
+
+class Savings extends Account {
+  describe() { return this.owner + ' has ' + this.total }        // protected + public: OK
+  // peek() { return this.balance }     // AccessError at call time: 'balance' is private to Account
+}
+
+const s = new Savings('Ann').deposit(50)
+print(s.describe())                     // → Ann has 50
+print(Object.keys(s), JSON.stringify(s))   // → [] {}   (reflection shows public members only)
+try { s.owner } catch (e) { print(e.name, e.message) }
+// → AccessError Cannot access protected member 'owner' of class 'Account' from outside its class hierarchy
+
+// Protected works along the whole inheritance line, so a base class can call a subclass hook:
+class Report {
+  // `this.body()` would be rejected at compile time (D36: Report declares no `body`); another receiver is
+  // checked at runtime, where the protected hook of a subclass is accessible from its superclass.
+  final render() { const page = this; return '<' + page.body() + '>' }
+}
+class Html extends Report {
+  protected body() { return 'html' }
+}
+print(new Html().render())              // → <html>
+
+// A private member and a public member with the same name never clash:
+class Base {
+  private tag = 'base'
+  showTag() { return this.tag }         // always Base's private `tag`
+}
+class Derived extends Base {
+  tag = 'derived'                       // a new public member; no `override`, Base.tag is private
+}
+print(new Derived().showTag(), new Derived().tag)   // → base derived

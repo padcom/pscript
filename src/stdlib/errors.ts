@@ -7,7 +7,7 @@ import { defineGlobal } from '@/runtime/realm'
 import { Class, Object as ScriptObject, type AccessContext, type Realm, type Value } from '@/runtime/values'
 import { defineMethods, method } from './native'
 
-export const ERROR_CLASSES = ['TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'AccessError'] as const
+export const ERROR_CLASSES = ['TypeError', 'RangeError', 'ReferenceError', 'SyntaxError'] as const
 
 function builtinTemplate(name: string, hasSuper: boolean): ClassTemplate {
   return {
@@ -74,5 +74,9 @@ export function installErrors(realm: Realm) {
     toString: method(0, (_, self) => errorToString(self as ScriptObject)),
   })
 
-  for (const name of ERROR_CLASSES) errorClass(realm, name, base, new ScriptObject(realm.ErrorPrototype))
+  const classes = ERROR_CLASSES.map(name => errorClass(realm, name, base, new ScriptObject(realm.ErrorPrototype)))
+  const [typeErrorClass] = classes
+
+  // AccessError is a TypeError (§4.5.2)
+  errorClass(realm, 'AccessError', typeErrorClass, new ScriptObject(typeErrorClass.prototype))
 }

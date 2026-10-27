@@ -311,6 +311,9 @@ class Compiler {
   /** compile-time knowledge of class declarations, by binding (§4.5.9) */
   private classInfos = new Map<Binding, ClassInfo>()
 
+  /** classes whose bodies lexically enclose the code being compiled, innermost last (§4.5.3) */
+  private enclosingClasses: ClassInfo[] = []
+
   constructor(private source: string | undefined, private fileName: string | undefined) {}
 
   get out(): ProtoBuilder {
@@ -716,6 +719,16 @@ class Compiler {
   }
 
   private classTemplate(node: ClassNode, info: ClassInfo): ClassTemplate {
+    this.enclosingClasses.push(info)
+
+    try {
+      return this.classBody(node, info)
+    } finally {
+      this.enclosingClasses.pop()
+    }
+  }
+
+  private classBody(node: ClassNode, info: ClassInfo): ClassTemplate {
     const members = node.body.body
     const memberRefs: ClassMemberRef[] = []
     const context = (isStatic: boolean): ClassContext => ({ info, isStatic, memberRefs })
@@ -782,15 +795,41 @@ class Compiler {
     }
   }
 
-  private fieldInitializer({ key, value, loc }: PropertyDefinition) {
+  // Private fields are stored under the class's private key: SET_PROP_PRIV 0 k.
+  private fieldInitializer({ key, value, loc, access }: PropertyDefinition) {
     const name = keyName(key)
 
     this.out.emit(Op.THIS)
 
     if (value) this.namedExpression(value, name)
     else this.out.emit(Op.NULL) // fields without initialiser start as null (D37)
-    this.emitAt(loc, Op.DEFINE_PROP, this.out.constant(name))
+    if (access === 'private') this.emitAt(loc, Op.SET_PROP_PRIV, 0, this.out.constant(name))
+    else this.emitAt(loc, Op.DEFINE_PROP, this.out.constant(name))
     this.out.emit(Op.POP)
+  }
+
+  // How many classes out from the home class the innermost class declaring `name` private is, or -1 (§5.4).
+  private privateDepth(name: string): number {
+    const index = this.enclosingClasses.findLastIndex(info => info.privates.has(name))
+
+    return index < 0 ? -1 : this.enclosingClasses.length - 1 - index
+  }
+
+  // GET_PROP k, or GET_PROP_PRIV depth k when an enclosing class declares `name` private (K16).
+  private emitGetProp(loc: SourceLocation, name: string) {
+    this.emitProp(loc, name, Op.GET_PROP, Op.GET_PROP_PRIV)
+  }
+
+  private emitSetProp(loc: SourceLocation, name: string) {
+    this.emitProp(loc, name, Op.SET_PROP, Op.SET_PROP_PRIV)
+  }
+
+  private emitProp(loc: SourceLocation, name: string, op: Op, privateOp: Op) {
+    const depth = this.privateDepth(name)
+    const k = this.out.constant(name)
+
+    if (depth < 0) this.emitAt(loc, op, k)
+    else this.emitAt(loc, privateOp, depth, k)
   }
 
   // `this.x` / `C.x` with a name the class chain does not declare (D36): SyntaxError when the chain is
@@ -1085,7 +1124,7 @@ class Compiler {
     if (computed) {
       this.expression(property)
       this.emitAt(loc, Op.GET_INDEX)
-    } else this.emitAt(loc, Op.GET_PROP, this.out.constant((property as Identifier).name))
+    } else this.emitGetProp(loc, (property as Identifier).name)
   }
 
   member(node: MemberExpression) {
@@ -1165,13 +1204,13 @@ class Compiler {
   }
 
   private propertyReference({ property, loc }: MemberExpression, object: Expression): Reference {
-    const name = this.out.constant((property as Identifier).name)
+    const { name } = property as Identifier
 
     return {
       baseSize: 1,
       prepare: () => this.expression(object),
-      get: () => this.emitAt(loc, Op.GET_PROP, name),
-      set: () => this.emitAt(loc, Op.SET_PROP, name),
+      get: () => this.emitGetProp(loc, name),
+      set: () => this.emitSetProp(loc, name),
     }
   }
 

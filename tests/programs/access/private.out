@@ -1,0 +1,15 @@
+4/8 4
+4/8
+2 0
+[12, 22]
+2 2
+[true, true, true] false
+read AccessError Cannot access private member 'count' of class 'Counter'
+write AccessError Cannot access private member 'count' of class 'Counter'
+index AccessError Cannot access private member 'count' of class 'Counter'
+method AccessError Cannot access private member 'reset' of class 'Counter'
+getter AccessError Cannot access private member 'doubled' of class 'Counter'
+static AccessError Cannot access private member 'created' of class 'Counter'
+[] {}
+subclass read AccessError Cannot access private member 'count' of class 'Counter'
+subclass write AccessError Cannot access private member 'count' of class 'Counter'

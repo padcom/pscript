@@ -1,0 +1,67 @@
+// @pscript-only: access modifiers (D30, D4) are not JS syntax
+// Protected members (§4.5.2, D4): usable along the declaring class's inheritance line, from nested classes too.
+function attempt(label, f) {
+  try { print(label, f()) } catch (e) { print(label, e.name, e.message) }
+}
+
+class Animal {
+  protected name
+  protected static count = 0
+  constructor(name) { this.name = name; Animal.count++ }
+  protected sound() { return '...' }
+  speak() { return this.name + ' says ' + this.sound() }
+  greet(other) { return this.name + ' greets ' + other.name }
+  static population() { return Animal.count }
+}
+
+class Dog extends Animal {
+  protected override sound() { return 'woof' }
+  rename(name) { this.name = name; this.name += '!'; return this }
+  sniff(other) { return other.sound() }
+  helper() {
+    class Tracker {
+      track(dog) { return 'tracking ' + dog.name }
+    }
+    return new Tracker().track(this)
+  }
+  has() { return ['name' in this, 'sound' in this] }
+}
+
+class Cat extends Animal {}
+
+class Stranger {
+  peek(animal) { return animal.name }
+}
+
+const rex = new Dog('Rex')
+const tom = new Cat('Tom')
+print(rex.speak(), tom.speak())                 // Rex says woof Tom says ...
+print(rex.rename('Max').speak())                // Max! says woof
+print(rex.greet(tom), rex.sniff(tom))           // Max! greets Tom ...
+print(rex.helper(), rex.has())                  // tracking Max! [true, true]
+print(Animal.population(), 'name' in rex)       // 2 false
+attempt('outside read', () => rex.name)
+attempt('outside write', () => { rex.name = 'x' })
+attempt('outside call', () => rex.sound())
+attempt('outside static', () => Animal.count)
+attempt('index', () => rex['name'])
+attempt('unrelated class', () => new Stranger().peek(rex))
+attempt('function', () => (function () { return tom.name })())
+print(Object.keys(rex), JSON.stringify(tom))    // [] {}
+
+// Accessor halves may differ in access (§10.17)
+class Temperature {
+  private celsius = 0
+  get fahrenheit() { return this.celsius * 9 / 5 + 32 }
+  set fahrenheit(f) { this.celsius = (f - 32) * 5 / 9 }
+  get kelvin() { return this.celsius + 273.15 }
+  protected set kelvin(k) { this.celsius = k - 273.15 }
+}
+class Lab extends Temperature {
+  freeze() { this.kelvin = 273.15; return this.fahrenheit }
+}
+const t = new Temperature()
+t.fahrenheit = 212
+print(t.fahrenheit, t.kelvin)                   // 212 373.15
+attempt('protected setter', () => { t.kelvin = 0 })
+print(new Lab().freeze())                       // 32

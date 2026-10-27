@@ -106,6 +106,10 @@ export interface MemberEntry {
   get?: Closure | null
   /** accessors */
   set?: Closure | null
+  /** accessors whose halves differ in access (§4.5.2): access of the getter */
+  getAccess?: Access
+  /** accessors whose halves differ in access: access of the setter */
+  setAccess?: Access
 }
 
 /**

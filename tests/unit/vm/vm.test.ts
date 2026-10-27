@@ -50,9 +50,9 @@ describe('vm', () => {
   })
 
   it('reports unimplemented opcodes', () => {
-    const main = proto([Op.GET_PROP_PRIV, 0, 0, Op.HALT])
+    const main = proto([Op.INTERFACE, 0, 0, Op.HALT])
 
-    expect(() => vm().execute({ main })).toThrow('Opcode GET_PROP_PRIV is not implemented')
+    expect(() => vm().execute({ main })).toThrow('Opcode INTERFACE is not implemented')
   })
 })
 

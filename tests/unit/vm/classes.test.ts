@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { compile } from '@/compiler/compiler'
-import type { ClassTemplate } from '@/compiler/function-proto'
+import type { ClassTemplate, FunctionProto } from '@/compiler/function-proto'
+import { Op } from '@/compiler/opcodes'
 import { Interpreter } from '@/index'
 
 function run(source: string): unknown {
@@ -46,5 +47,60 @@ describe('construction', () => {
 
   it('makes class bindings constant', () => {
     expect(() => compile('class A {}\nA = 1')).toThrow("Assignment to constant variable 'A'")
+  })
+})
+
+function templateOf(source: string): ClassTemplate {
+  return compile(source).main.constants.find(c => typeof c === 'object' && c !== null && 'memberRefs' in c) as ClassTemplate
+}
+
+function protoOps(source: string, name: string): Op[] {
+  const template = templateOf(source)
+  const method = template.methods.find(m => m.key === name) as ClassTemplate['methods'][number]
+  const { code } = compile(source).main.constants[method.protoIndex] as FunctionProto
+
+  return [...code] as Op[]
+}
+
+it('makes AccessError a TypeError', () => {
+  const check = "e instanceof TypeError && e.name == 'AccessError'"
+
+  expect(run(`class A { private x = 1 }\ntry { new A().x } catch (e) { ${check} }`)).toBe(true)
+})
+
+describe('access modifiers (§4.5.2, §5.6.6)', () => {
+  it('emits GET_PROP_PRIV / SET_PROP_PRIV only for names an enclosing class declares private', () => {
+    const ops = protoOps('class A { private x = 1\n y = 2\n m(o) { o.x = o.y; return o.x } }', 'm')
+
+    expect(ops).toContain(Op.GET_PROP_PRIV)
+    expect(ops).toContain(Op.SET_PROP_PRIV)
+    expect(ops).toContain(Op.GET_PROP)
+  })
+
+  it('falls back to the generic path when the receiver lacks the private member', () => {
+    expect(run('class A { private x = 1\n read(o) { return o.x } }\nnew A().read({ x: 5 })')).toBe(5)
+    expect(run('class A { private x = 1\n write(o) { o.x = 3; return o.x } }\nnew A().write({})')).toBe(3)
+  })
+
+  it('keeps private fields out of reflection and shows only public fields', () => {
+    const source = 'class A { private a = 1\n protected b = 2\n c = 3 }\nconst o = new A()\n'
+
+    const reflected = 'JSON.stringify([Object.keys(o), Object.values(o), Object.entries(o)])'
+
+    expect(run(`${source}${reflected}`)).toBe('[["c"],[3],[["c",3]]]')
+    expect(run(`${source}JSON.stringify(o) + String(o)`)).toBe('{"c":3}A(c = 3)')
+  })
+})
+
+describe('private members', () => {
+  it('rejects assigning to private methods', () => {
+    expect(() => run('class A { private m() {}\n n() { this.m = 1 } }\nnew A().n()')).toThrow("Cannot assign to method 'm'")
+  })
+
+  it('reports a private accessor without the needed half', () => {
+    const getterOnly = 'class A { private get g() { return 1 }\n n() { this.g = 1 } }\nnew A().n()'
+
+    expect(() => run(getterOnly)).toThrow('Cannot set property g of A which has only a getter')
+    expect(() => run('class A { private set s(v) {}\n n() { return this.s } }\nnew A().n()')).toThrow("'s' has only a setter")
   })
 })

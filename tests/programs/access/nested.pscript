@@ -1,0 +1,39 @@
+// @pscript-only: access modifiers (D30, D4) are not JS syntax
+// Code in a nested class may use the private members of its lexically enclosing classes (§4.5.2).
+class Outer {
+  private secret = 'outer secret'
+  private static code = 42
+  private hidden() { return 'hidden' }
+  inspector() {
+    class Inspector {
+      private secret = 'inspector secret'
+      look(outer) { return [outer.secret, this.secret, outer.hidden(), Outer.code] }
+      change(outer) { outer.secret = 'changed'; Outer.code += 1; return outer['secret'] }
+    }
+    return new Inspector()
+  }
+  get current() { return this.secret + ' ' + Outer.code }
+}
+
+const outer = new Outer()
+const inspector = outer.inspector()
+print(inspector.look(outer))    // ["outer secret", "inspector secret", "hidden", 42]
+print(inspector.change(outer))  // changed
+print(outer.current)            // changed 43
+
+// Private names don't collide along the inheritance line: each class resolves its own.
+class A {
+  private x = 'A'
+  readA() { return this.x }
+}
+class B extends A {
+  private x = 'B'
+  readB() { return this.x }
+}
+class C extends B {
+  x = 'C'
+}
+const c = new C()
+print(c.readA(), c.readB(), c.x)  // A B C
+c.x = 'c'
+print(c.readA(), c.readB(), c.x)  // A B c

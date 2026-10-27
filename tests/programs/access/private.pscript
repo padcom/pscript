@@ -1,0 +1,46 @@
+// @pscript-only: access modifiers (D30, D4) are not JS syntax
+// Private members (§4.5.2, §4.5.3): per class, not per instance; hidden from subclasses and outside code.
+function attempt(label, f) {
+  try { print(label, f()) } catch (e) { print(label, e.name, e.message) }
+}
+
+class Counter {
+  private count = 0
+  private static created = 0
+  constructor() { Counter.created++ }
+  increment() { this.count++; this.count += 1; return this }
+  private get doubled() { return this.count * 2 }
+  private set doubled(v) { this.count = v / 2 }
+  private reset() { this.count = 0 }
+  report() { return this.count + '/' + this.doubled }
+  computed() { return this['count'] }
+  copyFrom(other) { this.count = other.count; return this }
+  halve() { this.doubled = this.count; return this.count }
+  clear() { this.reset(); return this.count }
+  mapped(xs) { return xs.map(x => x + this.count) }
+  nested() { const self = this; return function () { return self.count }() }
+  has() { return ['count' in this, 'doubled' in this, 'reset' in this] }
+  static total() { return Counter.created }
+}
+
+const c = new Counter().increment().increment()
+print(c.report(), c.computed())                 // 4/8 4
+print(new Counter().copyFrom(c).report())       // 4/8
+print(c.halve(), c.clear())                     // 2 0
+print(c.increment().mapped([10, 20]))           // [12, 22]
+print(c.nested(), Counter.total())              // 2 2
+print(c.has(), 'count' in c)                    // [true, true, true] false
+attempt('read', () => c.count)
+attempt('write', () => { c.count = 5 })
+attempt('index', () => c['count'])
+attempt('method', () => c.reset())
+attempt('getter', () => c.doubled)
+attempt('static', () => Counter.created)
+print(Object.keys(c), JSON.stringify(c))        // [] {}
+
+class Sub extends Counter {
+  peek() { return this.count }
+  poke() { this.count = 1 }
+}
+attempt('subclass read', () => new Sub().peek())
+attempt('subclass write', () => new Sub().poke())

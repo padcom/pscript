@@ -12,6 +12,7 @@ import {
   type Value,
 } from '@/runtime/values'
 import { defineMethods, integerArgument, method } from './native'
+import { publicProps } from '@/runtime/members'
 
 // Own accessors of object literals are serialized through their getter (§4.4.6).
 function readOwn(ctx: AccessContext, object: ScriptObject, stored: Value | Accessor): Value {
@@ -60,7 +61,7 @@ class Serializer {
   private object(object: ScriptObject, indent: string): string {
     const inner = indent + this.unit
     const separator = this.unit ? ': ' : ':'
-    const members = [...object.props].flatMap(([key, item]) => {
+    const members = publicProps(object).flatMap(([key, item]) => {
       const text = this.value(readOwn(this.ctx, object, item), inner)
 
       return text === undefined ? [] : [`${JSON.stringify(key)}${separator}${text}`]

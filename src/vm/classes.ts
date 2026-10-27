@@ -1,6 +1,12 @@
 // Class definition (§5.6.7): the CLASS instruction builds a sealed class with flattened member indexes.
 // Override/final checks (M18), access modifiers (M17), accessors (M16) and interfaces (M19) build on this.
-import type { ClassMemberRef, ClassMethodTemplate, ClassTemplate, FunctionProto } from '@/compiler/function-proto'
+import type {
+  ClassFieldTemplate,
+  ClassMemberRef,
+  ClassMethodTemplate,
+  ClassTemplate,
+  FunctionProto,
+} from '@/compiler/function-proto'
 import { kindOf } from '@/runtime/operators'
 import { typeError } from '@/runtime/script-error'
 import {
@@ -9,8 +15,10 @@ import {
   Closure,
   Function as ScriptFunction,
   Object as ScriptObject,
+  PrivateKey,
   type Environment,
   type MemberEntry,
+  type PrivateEntry,
   type Realm,
   type Value,
 } from '@/runtime/values'
@@ -87,8 +95,12 @@ function implicitLength(cls: Class): number {
   return cls.superClass ? cls.superClass.length : 0
 }
 
-function accessorHalves(entry: MemberEntry | undefined): Pick<MemberEntry, 'get' | 'set'> {
-  return entry?.kind === 'accessor' ? { get: entry.get, set: entry.set } : {}
+function accessorHalves(entry: MemberEntry | undefined): Partial<MemberEntry> {
+  if (entry?.kind !== 'accessor') return {}
+
+  const { get, set, getAccess, setAccess } = entry
+
+  return { get, set, getAccess, setAccess }
 }
 
 class ClassBuilder {
@@ -112,19 +124,38 @@ class ClassBuilder {
     return closure
   }
 
+  // Public and protected members go into the (inherited) member indexes, private ones into the class's own
+  // private indexes (§5.6.7).
   members() {
-    const { cls, template, site } = this
+    for (const method of this.template.methods) this.method(method)
 
-    for (const method of template.methods) {
-      const fn = this.closure(site.constants[method.protoIndex] as FunctionProto, method.isStatic)
+    for (const field of this.template.fields) this.field(field)
+  }
 
-      if (method.kind === 'method') this.index(method.isStatic).set(method.key, this.entry(method, { kind: 'method', fn }))
-      else this.accessor(method, fn)
-    }
+  private method(method: ClassMethodTemplate) {
+    const fn = this.closure(this.site.constants[method.protoIndex] as FunctionProto, method.isStatic)
 
-    for (const field of template.fields) {
-      this.index(field.isStatic).set(field.key, { kind: 'field', access: field.access, owner: cls, final: field.final })
-    }
+    if (method.access === 'private') this.privateMethod(method, fn)
+    else if (method.kind === 'method') this.index(method.isStatic).set(method.key, this.entry(method, { kind: 'method', fn }))
+    else this.accessor(method, fn)
+  }
+
+  private field({ key, access, isStatic, final }: ClassFieldTemplate) {
+    const { cls } = this
+
+    if (access === 'private') this.privates(isStatic).set(key, { kind: 'field', key: new PrivateKey(cls, key) })
+    else this.index(isStatic).set(key, { kind: 'field', access, owner: cls, final })
+  }
+
+  private privateMethod(method: ClassMethodTemplate, fn: Closure) {
+    const index = this.privates(method.isStatic)
+
+    if (method.kind === 'method') index.set(method.key, { kind: 'method', fn })
+    else index.set(method.key, { kind: 'accessor', ...index.get(method.key), [method.kind]: fn })
+  }
+
+  private privates(isStatic: boolean): Map<string, PrivateEntry> {
+    return isStatic ? this.cls.staticPrivateIndex : this.cls.privateIndex
   }
 
   functions() {
@@ -165,11 +196,14 @@ class ClassBuilder {
   }
 
   // A get/set pair combines into one accessor; an inherited half the class does not redefine stays in effect (§4.5.6).
+  // The halves may differ in access (C# style): each keeps its own.
   private accessor(method: ClassMethodTemplate, fn: Closure) {
     const index = this.index(method.isStatic)
     const halves = accessorHalves(index.get(method.key))
 
-    index.set(method.key, this.entry(method, { kind: 'accessor', ...halves, [method.kind]: fn }))
+    const half = { [method.kind]: fn, [`${method.kind}Access`]: method.access }
+
+    index.set(method.key, this.entry(method, { kind: 'accessor', ...halves, ...half }))
   }
 
   private index(isStatic: boolean): Map<string, MemberEntry> {

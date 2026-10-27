@@ -23,7 +23,34 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M14 | Template literals | done (2026-10-27) |
 | M15 | Classes | done (2026-10-27) |
 | M16 | Accessors | done (2026-10-27) |
-| M17 | Access modifiers | next |
+| M17 | Access modifiers | done (2026-10-27) |
+| M18 | Overriding | next |
+
+## M17 — Access modifiers
+
+Done: access programs pass (`tests/programs/access/`: §10.16 example, private/protected matrices, nested classes, accessor halves with different access, hidden-private error). `npm run check` and `npm run build` green; 816 tests.
+
+What exists:
+
+- `src/runtime/members.ts`: §4.5.3 member resolution for class instances and classes (`MemberAccess`): (1) private members of the home class and its enclosing classes, when the receiver has them (fields in `object.privates` under the class's `PrivateKey`); (2) the member index with protected checks per accessor half (`getAccess`/`setAccess`); built-in data on prototypes; (4) a hidden private in the receiver's chain → `AccessError`; (5) D36 "no member". `src/runtime/lookup.ts` holds the shared prototype-chain lookup helpers used by `properties.ts`.
+- `AccessError` is a subclass of `TypeError` (`src/stdlib/errors.ts`), messages exactly as §4.5.2.
+- `vm/classes.ts`: private methods/accessors/fields go into `privateIndex`/`staticPrivateIndex` (not inherited); public/protected into the member indexes. Accessor halves keep their own access.
+- Compiler: `ClassInfo.privates`; a lexical stack of enclosing classes; `o.x` / `o.x = v` / `o.m()` emit `GET_PROP_PRIV depth k` / `SET_PROP_PRIV depth k` when an enclosing class declares `x` private (K16), else `GET_PROP`/`SET_PROP`. Private field initialisers use `SET_PROP_PRIV 0 k`. The VM tries that class's private member first, else falls back to the generic path (which runs the whole algorithm, also for computed `o[k]`).
+- `IN` uses the access rules (`hasPropertyIn`): class members count only when accessible. Reflection (`Object.keys/values/entries`, `JSON.stringify`, D35 `ClassName(...)`) lists public fields only (`publicProps`).
+- **Fix:** every closure (not only arrows) inherits the creating frame's home class, so nested `function` expressions inside methods can use private/protected members (§4.5.2). `homeObject` (for `super`) stays arrow-only.
+
+Deviations / gaps:
+
+- §10.16's `Report.render()` calls `this.body()`, which Report does not declare; with D36 that is a compile-time SyntaxError (whole chain visible). The program calls the subclass hook through another receiver (`const page = this; page.body()`), which exercises the "superclass may use a subclass's protected member" rule at runtime. PLAN §10.16 should be adjusted.
+- `this.x` where `x` is private to a superclass compiles (the compile-time member check counts all access levels) and fails at runtime with `AccessError` (§4.5.3 step 4), as the spec allows.
+- An accessor whose halves are split between `private` and a non-private access ends up as two separate members (private half in the private index); untested corner.
+- `super.x` does not check access yet (`superMember` reads the superclass member index, which only holds public/protected; private superclass members are therefore "no member").
+- `tests/unit/vm/vm.test.ts` "unimplemented opcode" now uses `INTERFACE` (change again in M19).
+
+Notes for next session (M18):
+
+- Override/final checks belong in `defineClass` (`vm/classes.ts`) before `members()` replaces entries: compare against the inherited `MemberEntry` (`owner`, `access`, `final`, `kind`); private members are skipped (they are not in the member index). `Class.isFinal`/`template.isFinal` for `Cannot extend final class`.
+- `§10.16`/`§10.17` programs already use `override` (not yet checked); keep them valid.
 
 ## M16 — Accessors
 

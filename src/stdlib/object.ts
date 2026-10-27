@@ -8,11 +8,12 @@ import { defineGlobal } from '@/runtime/realm'
 import { typeError } from '@/runtime/script-error'
 import { Array as ScriptArray, Object as ScriptObject, type AccessContext, type Realm, type Value } from '@/runtime/values'
 import { defineMethods, method } from './native'
+import { publicProps } from '@/runtime/members'
 
 type Entry = [string, Value]
 
 function objectEntries(value: ScriptObject): Entry[] {
-  return value instanceof ScriptArray ? value.items.map((item, i) => [String(i), item]) : [...value.props] as Entry[]
+  return value instanceof ScriptArray ? value.items.map((item, i) => [String(i), item]) : publicProps(value) as Entry[]
 }
 
 function primitiveEntries(value: Value): Entry[] {
@@ -62,7 +63,7 @@ function instanceToString(ctx: AccessContext, instance: ScriptObject): string {
   converting.add(instance)
 
   try {
-    const fields = [...instance.props].map(([key, value]) => `${key} = ${formatNested(value as Value, ctx)}`)
+    const fields = publicProps(instance).map(([key, value]) => `${key} = ${formatNested(value as Value, ctx)}`)
 
     return `${instance.klass?.name || 'anonymous'}(${fields.join(', ')})`
   } finally {

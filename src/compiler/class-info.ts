@@ -16,6 +16,8 @@ export interface ClassInfo {
   superClass: ClassInfo | null
   /** whether every class in the chain is known (members can be proven absent) */
   visible: boolean
+  /** names of private members (instance or static), resolved first inside the class (§4.5.3) */
+  privates: Set<string>
 }
 
 /** Inherited by every class instance from Object.prototype. */
@@ -40,6 +42,10 @@ function isConstructor(member: MethodDefinition | PropertyDefinition): boolean {
 
 type ClassNode = ClassDeclaration | ClassExpression
 
+function privateNames(node: ClassNode): Set<string> {
+  return new Set(node.body.body.filter(member => member.access === 'private').map(member => keyName(member.key)))
+}
+
 function memberNames(node: ClassNode, isStatic: boolean): Set<string> {
   const members = node.body.body.filter(member => !isConstructor(member) && member.static === isStatic)
 
@@ -56,8 +62,10 @@ function memberNames(node: ClassNode, isStatic: boolean): Set<string> {
  */
 export function classInfoOf(node: ClassNode, name: string, superClass: ClassInfo | null | undefined): ClassInfo {
   const visible = superClass === null || Boolean(superClass?.visible)
+  const instance = memberNames(node, false)
+  const statics = memberNames(node, true)
 
-  return { name, instance: memberNames(node, false), statics: memberNames(node, true), superClass: superClass ?? null, visible }
+  return { name, instance, statics, superClass: superClass ?? null, visible, privates: privateNames(node) }
 }
 
 function declares(info: ClassInfo, name: string, isStatic: boolean): boolean {

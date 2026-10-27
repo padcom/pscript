@@ -1,0 +1,8 @@
+// @pscript-only: access modifiers (D30, D4) are not JS syntax
+class Account {
+  private balance = 0
+}
+class Savings extends Account {
+  peek() { return this.balance }
+}
+new Savings().peek()

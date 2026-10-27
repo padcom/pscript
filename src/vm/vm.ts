@@ -6,7 +6,6 @@ import { addIn, toStringIn } from '@/runtime/conversions'
 import {
   arithmetic,
   compare,
-  hasProperty,
   instanceOf,
   inheritedProperty,
   isErrorObject,
@@ -18,7 +17,8 @@ import {
 } from '@/runtime/operators'
 import { formatNested } from '@/runtime/format'
 import { DONE, getIterator, type ScriptIterator } from '@/runtime/iterators'
-import { defineAccessor, defineProperty, getProperty, propertyKey, setProperty } from '@/runtime/properties'
+import { defineAccessor, defineProperty, getProperty, hasPropertyIn, propertyKey, setProperty } from '@/runtime/properties'
+import { getPrivateMember, setPrivateMember } from '@/runtime/members'
 import { toHost } from '@/runtime/interop'
 import { ScriptError, ScriptThrow, rangeError, referenceError, typeError } from '@/runtime/script-error'
 import { arityError } from '@/compiler/signature'
@@ -330,16 +330,15 @@ export class VM implements AccessContext {
     return source === undefined ? undefined : formatExcerpt(source, line, column)
   }
 
-  // Arrows that read `this` capture it from the creating frame (§4.4.5).
-  // Arrows capture `this` (when they read it) and the home class/object (for `super`, private access) lexically.
+  // Arrows capture `this` (when they read it, §4.4.5) and the home object (for `super`) lexically; every nested
+  // function inherits the home class, which decides private and protected access (§4.5.2).
   private closure(proto: FunctionProto, frame: Frame): Closure {
     const closure = new Closure(this.realm.FunctionPrototype, proto, frame.env, null)
 
+    closure.homeClass = frame.homeClass
+
     if (proto.usesThis) closure.thisValue = frame.thisValue
-    if (proto.kind === 'arrow') {
-      closure.homeClass = frame.homeClass
-      closure.homeObject = frame.homeObject
-    }
+    if (proto.kind === 'arrow') closure.homeObject = frame.homeObject
 
     return closure
   }
@@ -559,7 +558,7 @@ export class VM implements AccessContext {
           break
         case Op.IN:
           b = stack.pop()
-          stack.push(hasProperty(stack.pop(), b))
+          stack.push(hasPropertyIn(this, stack.pop(), b))
           break
         case Op.INC: stack.push((stack.pop() as number) + 1); break
         case Op.DEC: stack.push((stack.pop() as number) - 1); break
@@ -581,6 +580,24 @@ export class VM implements AccessContext {
           stack.push(getProperty(this, stack.pop(), constants[code[ip++]] as string))
           break
 
+        case Op.GET_PROP_PRIV: {
+          const receiver = stack.pop()
+          const depth = code[ip++]
+          const key = constants[code[ip++]] as string
+
+          stack.push((getPrivateMember(this, receiver, { depth, key }) ?? [getProperty(this, receiver, key)])[0])
+          break
+        }
+        case Op.SET_PROP_PRIV: {
+          const value = stack.pop()
+          const receiver = stack.pop()
+          const depth = code[ip++]
+          const key = constants[code[ip++]] as string
+
+          if (!setPrivateMember(this, receiver, { depth, key }, value)) setProperty(this, receiver, key, value)
+          stack.push(value)
+          break
+        }
         case Op.SET_PROP: {
           const value = stack.pop()
 

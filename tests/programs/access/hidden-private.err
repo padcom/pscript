@@ -1,0 +1,1 @@
+access/hidden-private.pscript:6:19 AccessError: Cannot access private member 'balance' of class 'Account'

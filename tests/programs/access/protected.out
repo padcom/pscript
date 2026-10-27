@@ -1,0 +1,16 @@
+Rex says woof Tom says ...
+Max! says woof
+Max! greets Tom ...
+tracking Max! [true, true]
+2 false
+outside read AccessError Cannot access protected member 'name' of class 'Animal' from outside its class hierarchy
+outside write AccessError Cannot access protected member 'name' of class 'Animal' from outside its class hierarchy
+outside call AccessError Cannot access protected member 'sound' of class 'Dog' from outside its class hierarchy
+outside static AccessError Cannot access protected member 'count' of class 'Animal' from outside its class hierarchy
+index AccessError Cannot access protected member 'name' of class 'Animal' from outside its class hierarchy
+unrelated class AccessError Cannot access protected member 'name' of class 'Animal' from outside its class hierarchy
+function AccessError Cannot access protected member 'name' of class 'Animal' from outside its class hierarchy
+[] {}
+212 373.15
+protected setter AccessError Cannot access protected member 'kelvin' of class 'Temperature' from outside its class hierarchy
+32
