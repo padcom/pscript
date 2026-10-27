@@ -16,6 +16,7 @@ import type {
   ClassExpression,
   ContinueStatement,
   DoWhileStatement,
+  ForInStatement,
   ForOfStatement,
   ForStatement,
   IfStatement,
@@ -290,6 +291,10 @@ export const builders = {
 
   array(elements: ArrayExpression['elements'], loc: JisonLoc): ArrayExpression {
     return { type: 'ArrayExpression', elements, loc: toLoc(loc) }
+  },
+
+  forInStatement(left: ForInStatement['left'], right: Expression, body: Statement, loc: JisonLoc): ForInStatement {
+    return { type: 'ForInStatement', left, right, body, loc: toLoc(loc) }
   },
 
   forOfStatement(left: ForOfStatement['left'], right: Expression, body: Statement, loc: JisonLoc): ForOfStatement {

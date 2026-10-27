@@ -88,6 +88,7 @@ const SCOPE_NAMES: Partial<Record<Node['type'], ScopeNames>> = {
   CatchClause: (node: Extract<Node, { type: 'CatchClause' }>) => node.param ? boundNames(node.param) : [],
   ForStatement: (node: Extract<Node, { type: 'ForStatement' }>) => declarationsOf(node.init),
   ForOfStatement: (node: Extract<Node, { type: 'ForOfStatement' }>) => declarationsOf(node.left),
+  ForInStatement: (node: Extract<Node, { type: 'ForInStatement' }>) => declarationsOf(node.left),
 }
 
 function isNode(value: unknown): value is Node {

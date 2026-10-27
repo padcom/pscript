@@ -20,7 +20,7 @@ import {
   type ArithmeticOperator,
 } from '@/runtime/operators'
 import { formatNested } from '@/runtime/format'
-import { DONE, GeneratorIterator, ScriptIterator, getIterator } from '@/runtime/iterators'
+import { DONE, GeneratorIterator, KeyIterator, ScriptIterator, getIterator } from '@/runtime/iterators'
 import { AsyncGeneratorObject, GeneratorObject, type IteratorStep, type ResumeMode } from '@/runtime/generators'
 import { AsyncGeneratorRunner, AsyncIterator, asyncGeneratorIterator, syncAsAsync } from './async-generators'
 import {
@@ -1604,6 +1604,7 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
           break
         }
         case Op.GET_ITER: stack.push(getIterator(stack.pop()) as unknown as Value); break
+        case Op.GET_KEYS: stack.push(new KeyIterator(stack.pop()) as unknown as Value); break
         case Op.ITER_NEXT: {
           const next = (stack[stack.length - 1] as unknown as ScriptIterator).next()
 

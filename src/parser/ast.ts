@@ -114,7 +114,7 @@ export interface ExportSpecifier extends NodeBase {
 
 export type Statement
   = VariableDeclaration | FunctionDeclaration | ClassDeclaration | InterfaceDeclaration | ReturnStatement | IfStatement
-    | ForStatement | ForOfStatement | WhileStatement | DoWhileStatement | SwitchStatement | BreakStatement
+    | ForStatement | ForOfStatement | ForInStatement | WhileStatement | DoWhileStatement | SwitchStatement | BreakStatement
     | ContinueStatement | ThrowStatement | TryStatement | BlockStatement | ExpressionStatement | EmptyStatement
 
 export type Expression
@@ -533,6 +533,20 @@ export interface ForOfStatement extends NodeBase {
   body: Statement
   /** `for await (… of …)` (D53) */
   await: boolean
+}
+
+/**
+ * `for (k in object) body` (D56): the keys of the object.
+ */
+export interface ForInStatement extends NodeBase {
+  /** node type */
+  type: 'ForInStatement'
+  /** loop variable */
+  left: VariableDeclaration | PatternTarget
+  /** the object */
+  right: Expression
+  /** loop body */
+  body: Statement
 }
 
 /**

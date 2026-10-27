@@ -20,6 +20,7 @@ import type {
   ContinueStatement,
   DoWhileStatement,
   Expression,
+  ForInStatement,
   ForOfStatement,
   ForStatement,
   FunctionDeclaration,
@@ -124,6 +125,17 @@ function containsTopLevelAwait(node: unknown): boolean {
 
 function searchesDeeper(node: object): boolean {
   return !hasOwnAwaitScope(node) && globalThis.Object.values(node).some(containsTopLevelAwait)
+}
+
+function isForAwait(node: ForOfStatement | ForInStatement): boolean {
+  return node.type === 'ForOfStatement' && node.await
+}
+
+/** What a loop iterates: values, values awaited (D53), or keys (D56). */
+const ITERATOR_OPS: Record<'ForOfStatement' | 'ForInStatement' | 'await', Op> = {
+  ForOfStatement: Op.GET_ITER,
+  ForInStatement: Op.GET_KEYS,
+  await: Op.GET_ASYNC_ITER,
 }
 
 // GENERATOR, ASYNC, ASYNC_GENERATOR (D53), or nothing.
@@ -371,6 +383,7 @@ const STATEMENTS: { [K in TopLevel['type']]?: Handler<Extract<TopLevel, { type: 
   SwitchStatement: (c, node) => c.switchStatement(node),
   ForStatement: (c, node) => c.forStatement(node),
   ForOfStatement: (c, node) => c.forOfStatement(node),
+  ForInStatement: (c, node) => c.forOfStatement(node),
   BreakStatement: (c, node) => c.jump(node, 'breaks'),
   ContinueStatement: (c, node) => c.jump(node, 'continues'),
   ReturnStatement: (c, node) => c.returnStatement(node),
@@ -961,14 +974,17 @@ class Compiler {
   // for-of (§5.5): GET_ITER; top: ITER_NEXT done; [PUSH_ENV 1] bind; body; next: [POP_ENV] JUMP top;
   // break: [POP_ENV] POP (the iterator); done: (ITER_NEXT already popped it).
   // for await (D53): GET_ASYNC_ITER; top: ASYNC_ITER_NEXT AWAIT ITER_STEP done; …; break: ASYNC_ITER_CLOSE AWAIT POP.
-  forOfStatement(node: ForOfStatement) {
+  // for-in (D56) is a for-of over the keys (GET_KEYS instead of GET_ITER).
+  forOfStatement(node: ForOfStatement | ForInStatement) {
+    const async = isForAwait(node)
+
     this.resetCompletion()
-    this.iterator(node)
+    this.iterator(node, async)
     const top = this.out.code.length
-    const done = this.iterationStep(node)
+    const done = this.iterationStep(node, async)
     const outer = this.scope
     const iteration = this.bindIterationValue(node.left, node.body)
-    const loop = this.withIterator(node.await, () => (node.await ? this.closingLoopBody(node.body) : this.loopBody(node.body)))
+    const loop = this.withIterator(async, () => (async ? this.closingLoopBody(node.body) : this.loopBody(node.body)))
 
     this.scope = outer
     this.patchAll(loop.continues)
@@ -978,7 +994,7 @@ class Compiler {
     this.patchAll(loop.breaks)
 
     if (iteration.hasEnv) this.out.emit(Op.POP_ENV)
-    this.closeIterator(node.await) // `break`: a generator runs its finally blocks
+    this.closeIterator(async) // `break`: a generator runs its finally blocks
     this.out.patch(done)
   }
 
@@ -1002,10 +1018,10 @@ class Compiler {
     })
   }
 
-  private iterator({ right, await: async, loc }: ForOfStatement) {
+  private iterator({ type, right, loc }: ForOfStatement | ForInStatement, async: boolean) {
     if (async && !this.fn.async) throw this.error("'for await' is only valid in async functions", loc)
     this.expression(right)
-    this.emitAt(right.loc, async ? Op.GET_ASYNC_ITER : Op.GET_ITER)
+    this.emitAt(right.loc, ITERATOR_OPS[async ? 'await' : type])
   }
 
   // Compiles code while an iterator is on the stack (`break` / `continue` / `return` close it).
@@ -1023,8 +1039,8 @@ class Compiler {
   }
 
   // Leaves the loop (pops the iterator and jumps) when the iteration is done; the value stays on the stack.
-  private iterationStep(node: ForOfStatement): number {
-    if (!node.await) return this.out.emitJump(Op.ITER_NEXT)
+  private iterationStep(node: ForOfStatement | ForInStatement, async: boolean): number {
+    if (!async) return this.out.emitJump(Op.ITER_NEXT)
 
     this.emitAt(node.right.loc, Op.ASYNC_ITER_NEXT)
     this.out.emit(Op.AWAIT)

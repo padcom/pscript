@@ -197,6 +197,9 @@ function controlFlowBuilders(errors: SyntaxErrorFactory) {
     forOfStatement(left: ForOfStatement['left'], right: Expression, body: Statement, loc: JisonLoc) {
       return builders.forOfStatement(left, right, checkBody(errors, body), loc)
     },
+    forInStatement(left: ForOfStatement['left'], right: Expression, body: Statement, loc: JisonLoc) {
+      return builders.forInStatement(left, right, checkBody(errors, body), loc)
+    },
   }
 }
 

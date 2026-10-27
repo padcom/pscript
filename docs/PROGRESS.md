@@ -55,6 +55,15 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L14 | Async generators and `for await` (D53) | done (2026-10-27) — v2 roadmap complete |
 | L15 | Async `yield*` forwarding, awaited `for await` cleanup (D54) | done (2026-10-27) |
 | L16 | The comma operator (D55) | done (2026-10-27) |
+| L17 | `for … in` (D56) | done (2026-10-27) |
+
+## L17 — `for … in` (D56)
+
+- **Token filter**: a `for` / `for await` header's `(` is a `(for)` bracket; an `in` at its top level before the
+  first `;` / `of` / `in` becomes `FOR_IN`. **Grammar**: five `FOR_IN` rules → `ForInStatement`.
+- **Compiler**: `forOfStatement` handles both (`GET_KEYS` instead of `GET_ITER`). **Runtime**: `KeyIterator`
+  (`src/runtime/iterators.ts`). **psc**: prints `for … in`.
+- **Tests**: `tests/programs/control-flow/for-in*.pscript`.
 
 ## L16 — The comma operator (D55)
 

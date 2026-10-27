@@ -16,6 +16,7 @@ import type {
   ExportNamedDeclaration,
   Expression,
   DoWhileStatement,
+  ForInStatement,
   ForOfStatement,
   ForStatement,
   FunctionDeclaration,
@@ -195,6 +196,15 @@ const EXPRESSIONS: { [K in Expression['type']]?: Printer<Extract<Expression, { t
   SequenceExpression: (e, node) => node.expressions.map(item => e.expression(item, Precedence.Assignment)).join(', '),
 }
 
+/** The words of `for…of`, `for await…of` (D53) and `for…in` (D56). */
+const LOOP_WORDS = { of: ['for', 'of'], await: ['for await', 'of'], in: ['for', 'in'] } as const
+
+function loopKind(node: ForOfStatement | ForInStatement): keyof typeof LOOP_WORDS {
+  if (node.type === 'ForInStatement') return 'in'
+
+  return node.await ? 'await' : 'of'
+}
+
 /** Unary operators not printed as `<operator><operand>` with the `- -x` guard. */
 const SPECIAL_UNARY: Partial<Record<UnaryExpression['operator'], (e: Emitter, argument: Expression) => string>> = {
   'typeof': (e, argument) => e.typeofText(argument),
@@ -214,6 +224,7 @@ const STATEMENTS: { [K in Statement['type']]?: Printer<Extract<Statement, { type
   SwitchStatement: (e, node) => e.switchStatement(node),
   ForStatement: (e, node) => e.forStatement(node),
   ForOfStatement: (e, node) => e.forOfStatement(node),
+  ForInStatement: (e, node) => e.forOfStatement(node),
   BreakStatement: () => 'break;',
   ContinueStatement: () => 'continue;',
   ThrowStatement: (e, { argument }) => `throw ${e.expression(argument)};`,
@@ -683,15 +694,17 @@ export class Emitter {
     }
   }
 
-  forOfStatement({ left, right, body, await: async }: ForOfStatement): string {
-    const iterated = this.expression(right, Precedence.Assignment)
-    const keyword = async ? 'for await' : 'for' // D53
-    if (left.type !== 'VariableDeclaration') return `${keyword} (${this.pattern(left, false)} of ${iterated}) ${this.body(body)}`
+  // for…of, for await…of (D53) and for…in (D56).
+  forOfStatement(node: ForOfStatement | ForInStatement): string {
+    const { left, right, body } = node
+    const [keyword, word] = LOOP_WORDS[loopKind(node)]
+    const iterated = `${word} ${this.expression(right, Precedence.Assignment)}`
+    if (left.type !== 'VariableDeclaration') return `${keyword} (${this.pattern(left, false)} ${iterated}) ${this.body(body)}`
 
     const [{ id }] = left.declarations
     const declare = () => boundNames(id).forEach(name => this.declare(name))
 
-    return `${keyword} (${left.kind} ${this.pattern(id, true)} of ${iterated}) ${this.body(body, declare)}`
+    return `${keyword} (${left.kind} ${this.pattern(id, true)} ${iterated}) ${this.body(body, declare)}`
   }
 
   tryStatement({ block, handler, finalizer }: TryStatement): string {

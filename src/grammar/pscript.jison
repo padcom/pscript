@@ -574,6 +574,16 @@ ForOfStatement
     { $$ = yy.forAwait(yy.forOfStatement(yy.forOfDeclaration('const', $5, @4, @5), $7, $9, @$)) }
   | FOR AWAIT '(' LeftHandSideExpression OF AssignmentExpression ')' Statement
     { $$ = yy.forAwait(yy.forOfStatement(yy.forOfTarget($4), $6, $8, @$)) }
+  | FOR '(' LET IDENT FOR_IN Expression ')' Statement
+    { $$ = yy.forInStatement(yy.forOfDeclaration('let', yy.identifier($4, @4), @3, @4), $6, $8, @$) }
+  | FOR '(' LET BindingPattern FOR_IN Expression ')' Statement
+    { $$ = yy.forInStatement(yy.forOfDeclaration('let', $4, @3, @4), $6, $8, @$) }
+  | FOR '(' CONST IDENT FOR_IN Expression ')' Statement
+    { $$ = yy.forInStatement(yy.forOfDeclaration('const', yy.identifier($4, @4), @3, @4), $6, $8, @$) }
+  | FOR '(' CONST BindingPattern FOR_IN Expression ')' Statement
+    { $$ = yy.forInStatement(yy.forOfDeclaration('const', $4, @3, @4), $6, $8, @$) }
+  | FOR '(' LeftHandSideExpression FOR_IN Expression ')' Statement
+    { $$ = yy.forInStatement(yy.forOfTarget($3), $5, $7, @$) }
   ;
 
 ForInit

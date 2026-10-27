@@ -37,6 +37,7 @@ const PSCRIPT_ONLY_DIFFERENCES: Record<string, string> = {
   'classes/to-string.pscript': 'the default `toString()` of instances (D35)',
   'collections/pscript-specific.pscript': 'native Map and Set: missing entries are `undefined`, open, extendable; `print`',
   'computed-keys/pscript-specific.pscript': '`print` formatting (D18) and key order',
+  'control-flow/for-in-pscript.pscript': 'JS lists integer-like keys first; native Map keys',
   'destructuring/named-parameters.pscript': 'named parameters are checked at compile time only; no arity checks at runtime',
   'exceptions/runtime-errors.pscript': 'operator, index and arity errors at runtime',
   'exceptions/stack.pscript': 'JavaScript stack traces',

@@ -94,6 +94,7 @@ export enum Op {
   CALL_IMPLICIT,
   INTERFACE,
   GET_ITER,
+  GET_KEYS,
   ITER_NEXT,
   ITER_VALUE,
   ITER_REST,
@@ -264,6 +265,7 @@ export const OPCODES: Readonly<Record<Op, OpcodeInfo>> = {
   [Op.CALL_IMPLICIT]: info('i argc fallbackA fallbackB', 'a1…an → r'), // implicit method call
   [Op.INTERFACE]: info('k n', 'p1…pn → iface'), // interface from template and n parents
   [Op.GET_ITER]: info('', 'iterable → iter'), // arrays/strings; else TypeError
+  [Op.GET_KEYS]: info('', 'object → iter'), // for-in (D56): the own enumerable public keys
   [Op.ITER_NEXT]: info('target', 'iter → iter v | (pops iter, jumps)'),
   [Op.ITER_VALUE]: info('', 'iter → iter v'), // array patterns: undefined when done (D40)
   [Op.ITER_REST]: info('', 'iter → arr'), // array pattern rest (D40)

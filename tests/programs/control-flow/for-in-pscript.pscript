@@ -1,0 +1,8 @@
+// @pscript-only: for…in lists integer-like keys in insertion order (PScript objects keep insertion order)
+const o = { b: 1, 2: 'two', a: 3, 1: 'one' }
+const keys = []
+for (const k in o) keys.push(k)
+print(keys.join(','))
+const ns = new Map([['m', 1]])
+for (const k in ns) print('map key', k)
+print('done')

@@ -1,0 +1,3 @@
+// a for-in initialiser cannot use the in operator without parentheses (as in JavaScript)
+const o = {}
+for (let n = 'a' in o; n; ) {}

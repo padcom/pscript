@@ -1,0 +1,14 @@
+// for…in (D56): own enumerable keys, as JavaScript visits them for these objects
+const o = { a: 1, b: 2, c: 3 }
+for (const k in o) print(k, o[k])
+for (const i in ['x', 'y']) print(i, typeof i)
+for (const i in 'hi') print(i)
+for (const k in null) print('never')
+let key
+for (key in { z: 1 }) print('key', key)
+const del = { p: 1, q: 2, r: 3 }
+for (const k in del) { print(k); delete del.r }
+class P { x = 1; y = 2; get sum() { return this.x + this.y } m() {} }
+for (const k in new P()) print('field', k)
+for (let i = 0, n = ('a' in o) ? 2 : 0; i < n; i++) print('i', i)
+for (const k of ['in']) print(k in o)

@@ -4,7 +4,8 @@ import { CollectionObject } from './collections'
 import { GeneratorObject, type IteratorStep } from './generators'
 import { kindOf } from './operators'
 import { type ScriptError, typeError } from './script-error'
-import { HostObject, Array as ScriptArray, type Value } from './values'
+import { publicProps } from './members'
+import { HostObject, Array as ScriptArray, Object as ScriptObject, type Value } from './values'
 
 /** Returned by `ScriptIterator.next()` when the iteration is over. */
 export const DONE: unique symbol = Symbol('DONE')
@@ -76,6 +77,46 @@ export class JsIterator extends ScriptIterator {
     const step = this.iterator.next()
 
     return step.done ? DONE : step.value
+  }
+}
+
+function enumerableKeys(value: Value): string[] {
+  if (typeof value === 'string') return [...value].map((_, i) => String(i))
+  if (value instanceof ScriptArray) return value.items.map((_, i) => String(i))
+
+  return value instanceof ScriptObject ? publicProps(value).map(([key]) => key) : []
+}
+
+/**
+ * The keys a `for…in` loop visits (D56), as JS does for PScript's objects: own enumerable public properties (plain
+ * objects, the fields of class instances, the exports of namespaces, host objects), the indices of arrays and strings,
+ * nothing for null, undefined and other primitives. A key deleted before it is reached is skipped.
+ */
+export class KeyIterator extends ScriptIterator {
+  private readonly keys: string[]
+  private position = 0
+
+  constructor(private readonly object: Value) {
+    super(() => 0, () => undefined)
+    this.keys = enumerableKeys(object)
+  }
+
+  override next(): Value | typeof DONE {
+    while (this.position < this.keys.length) {
+      const key = this.keys[this.position++]
+
+      if (this.present(key)) return key
+    }
+
+    return DONE
+  }
+
+  private present(key: string): boolean {
+    const { object } = this
+
+    if (object instanceof ScriptArray) return globalThis.Number(key) < object.items.length
+
+    return !(object instanceof ScriptObject) || object instanceof HostObject || object.props.has(key)
   }
 }
 

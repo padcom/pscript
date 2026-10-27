@@ -117,7 +117,7 @@ describe('psc: other statements', () => {
   })
 
   it('parenthesises `in` in a for initialiser', () => {
-    expect(js("const o = {}\nfor (let a = 'x' in o; a;) break")).toContain("for (let a = ('x' in o); a;) {")
+    expect(js("const o = {}\nfor (let a = ('x' in o); a;) break")).toContain("for (let a = ('x' in o); a;) {")
   })
 })
 

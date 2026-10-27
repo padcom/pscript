@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D55).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D56).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -104,7 +104,9 @@ Precedence and associativity follow JavaScript, with these rules:
   Its clauses share one block scope; `continue` inside it continues the enclosing loop.
 - `for…of` iterates arrays (live: elements pushed during the loop are visited), strings (by UTF-16 code unit),
   generators and host iterables. The loop variable may be a pattern (see [Destructuring](#destructuring)).
-- No labels, `for…in` or `with`.
+- `for (const key in object)` visits the own keys of an object (array and string indices, class-instance fields) in
+  insertion order. As in JavaScript, an `in` operator inside a `for` initialiser needs parentheses.
+- No labels or `with`.
 - A script's value is the value of the last expression statement executed (as with `eval`).
 
 ## Functions
@@ -411,7 +413,7 @@ Values cross the boundary by reference and identity is kept in both directions.
 | `this.` required for members | Members usable without `this.` inside class bodies |
 | ASI quirks (`(`/`[` continue the previous line) | A line starting with `(` or `[` starts a new statement |
 | `delete` leaves holes in arrays, ignores frozen objects | `delete` works on plain objects only; elsewhere `TypeError` |
-| `var`, labels, `with`, `for…in` | Not available |
+| `var`, labels, `with` | Not available |
 | Computed keys in classes and destructuring patterns | Not available (object literals only) |
 | Tagged templates | Not available |
 | Generators give `undefined` for missing values | Generators give `null` (`yield`, `next()`, finished steps) |

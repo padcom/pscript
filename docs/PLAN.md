@@ -113,6 +113,7 @@ Each feature in this document has one of these tags:
 | R42 | Async generators and `for await` (D53) | 4.4.20 |
 | R43 | Async `yield*` forwarding and awaited `for await` cleanup (D54) | 4.4.20 |
 | R44 | The comma operator (D55) | 4.4.3 |
+| R45 | `for (k in object)` (D56) | 4.4.8 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -132,7 +133,7 @@ Each feature in this document has one of these tags:
 
 ### 1.5 COULD (Phase 3+)
 
-~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), ~~the comma operator in `for` headers~~ (done, D55: everywhere), ~~`do … while`, `switch`~~ (done, D41), `for … in`, ~~bitwise operators, hex/binary/octal literals~~ (done, D50), ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, ~~Map/Set~~ (done, D49), a CLI/REPL, a disassembler CLI, source maps for errors.
+~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), ~~the comma operator in `for` headers~~ (done, D55: everywhere), ~~`do … while`, `switch`~~ (done, D41), ~~`for … in`~~ (done, D56), ~~bitwise operators, hex/binary/octal literals~~ (done, D50), ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, ~~Map/Set~~ (done, D49), a CLI/REPL, a disassembler CLI, source maps for errors.
 
 ### 1.6 WON'T (v1)
 
@@ -232,6 +233,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D53 | Async generators and `for await` | **As in JavaScript**: `async function*` (declarations and expressions), `async *m()` methods (classes, also static, and object literals, also with computed keys); the object's `next` / `return` / `throw` return promises of `{ value, done }` and are queued, answered in order; `yield v` and `return v` await `v`; `for await (… of …)` in async functions, async generators and at the top level iterates async generators, host async iterables (`Symbol.asyncIterator`) and any sync iterable (each value awaited), with the same job order as Node. **Deviations**: "no value" is `null` (D37); async generator objects are not sync iterable. (D53 also had `yield*` without forwarding and an unawaited `return()` on `return` / exceptions; D54 removed both.) They print as `[AsyncGenerator]` and reach the host as async iterators. Details in §4.4.20 | minor (null, `yield*` forwarding) |
 | D54 | Async `yield*` and `for await` cleanup | **Exactly as in JavaScript**: `yield*` in an async generator forwards `next(v)`, `throw(e)` and `return(v)` to the delegate (an async generator, a host async iterator, a sync generator, or any iterable for `next`), and evaluates to the delegate's return value; a forwarded `return` that completes ends the generator. Leaving a `for await` by `return`, by an exception or by `generator.return()` calls the iterator's `return()` and awaits it (on an exception, a failure of `return()` is ignored and the original exception goes on), innermost loop first. Details in §4.4.20 | no |
 | D55 | The comma operator | **As in JavaScript**, everywhere an expression is allowed (not only in `for` headers): `a, b` evaluates `a`, then `b`, and gives `b`. Arguments, array elements and declarators keep using `,` as a separator, so a sequence there needs parentheses. ESTree `SequenceExpression` (flat; a parenthesized sequence stays one element). Details in §4.4.3 | no |
+| D56 | `for … in` | **As in JavaScript for PScript's objects** (which have no prototype chains of their own, no symbols and no non-enumerable data properties): the own enumerable public keys — plain objects (including own accessors), the fields of class instances (not methods or class accessors), namespace exports, host objects' own keys —, the indices of arrays and strings as strings, nothing for `null`, `undefined` and other primitives. Keys are snapshotted when the loop starts; a key deleted before it is reached is skipped. Order: insertion order (integer-like keys are not moved first, §4.4.6). As in JS, `in` directly in a `for` initialiser needs parentheses (`for (let a = ('x' in o); …)`), which PScript accepted before. Details in §4.4.8 | minor (key order) |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -831,6 +833,7 @@ Semantics:
   - Anything else → `TypeError: x is not iterable`.
   - The binding is fresh per iteration.
   - COULD: a user-defined protocol (an object with an `iterator()` method returning `{ next() }`).
+- `for (k in object) body`, also with `const`, patterns or an existing target (D56): the own enumerable public keys of `object` as strings (plain objects, class-instance fields, namespace exports, host objects; indices of arrays and strings), in insertion order; `null` / `undefined` give no iterations. A key deleted before it is reached is skipped. An `in` operator in a `for` initialiser must be parenthesized (the token filter turns an `in` at the top level of a `for (` header, before its first `;`, into the for-in keyword).
 - `do body while (test)` (D41): the body runs before the first test. ASI as in JS: the statement ends after the `)` even on the same line (`do x++; while (c) y()`).
 - `break` and `continue` apply to the innermost loop (`break` also leaves a `switch`, §4.4.15). Labels are WON'T.
 - `maxSteps` (default `Infinity`) counts executed instructions → `RangeError: Execution step limit exceeded`. The check costs one comparison per instruction; with `Infinity` the VM may skip counting entirely.
@@ -2129,6 +2132,7 @@ export interface ModuleRecord {
 | `CALL_IMPLICIT` | i argc | a1…an → r | member: method call with `this`; fallback: plain call |
 | `INTERFACE` | k(template) n | p1…pn → iface | builds an interface from its template and `n` parent interfaces (§4.5.7) |
 | `GET_ITER` | — | iterable → iter | arrays/strings; else TypeError |
+| `GET_KEYS` | — | object → iter | `for … in` (D56): an iterator over the own enumerable public keys |
 | `ITER_NEXT` | target | iter → iter v \| (pops iter, jumps) | |
 | `ITER_VALUE` | — | iter → iter v | array patterns: the next value, `undefined` when done (D40) |
 | `ITER_REST` | — | iter → arr | array pattern rest: the remaining values (D40) |

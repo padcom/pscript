@@ -63,7 +63,7 @@ const UNSUPPORTED_EXPORTS: Record<string, string> = {
  * bodies), `{block}` (bodies of function expressions, arrows and methods: the expression goes on
  * after the `}`) or `{object}` (object literals).
  */
-type Bracket = '(' | '(header)' | '(do-while)' | '[' | '{statement}' | '{block}' | '{object}' | '{template}' | '{class}'
+type Bracket = '(' | '(header)' | '(for)' | '(do-while)' | '[' | '{statement}' | '{block}' | '{object}' | '{template}' | '{class}'
   | '{class-statement}' | '{specifiers}'
 
 /** Brackets whose contents are statements or class members: ASI applies inside them. */
@@ -101,6 +101,11 @@ function isModuleClause(kind: 'import' | 'export', next: Token): boolean {
   return (kind === 'import' && next.name !== '(') || next.name === '{'
 }
 
+// The `(` of `for` / `for await` (D56: `in` is the for-in keyword at its top level) or of another header.
+function headerKind(keyword: Token): Bracket {
+  return keyword.name === 'FOR' || keyword.forAwait ? '(for)' : '(header)'
+}
+
 /** Context-dependent renaming when a token is handed to the parser. */
 const EMIT_HOOKS: Record<string, (filter: TokenFilter, token: Token) => void> = {
   'FUNCTION': (filter, token) => filter.functionStart(token),
@@ -109,7 +114,12 @@ const EMIT_HOOKS: Record<string, (filter: TokenFilter, token: Token) => void> = 
   'INTERFACE': filter => filter.interfaceStart(),
   'IMPORT': filter => filter.moduleStart('import'),
   'EXPORT': filter => filter.moduleStart('export'),
-  ';': filter => filter.moduleEnd(),
+  ';': filter => {
+    filter.moduleEnd()
+    filter.forHeaderRest()
+  },
+  'OF': filter => filter.forHeaderRest(),
+  'IN': (filter, token) => filter.forInKeyword(token),
   'STRING': filter => filter.moduleEnd(),
   '{': (filter, token) => filter.classifyBrace(token),
   'DO': filter => filter.doStart(),
@@ -657,7 +667,7 @@ export class TokenFilter {
   }
 
   private close(token: Token, bracket: Bracket | undefined) {
-    token.closesHeader = bracket === '(header)'
+    token.closesHeader = bracket === '(header)' || bracket === '(for)'
     token.closesDoWhile = bracket === '(do-while)'
     token.closesBlock = BLOCK_LIKE.has(bracket)
     token.closesStatement = STATEMENT_BRACKETS.has(bracket)
@@ -668,9 +678,24 @@ export class TokenFilter {
   }
 
   private parenKind(): Bracket {
-    if (this.prev?.endsDo) return '(do-while)'
+    const { prev } = this
+    if (!prev) return '('
+    if (prev.endsDo) return '(do-while)'
 
-    return this.afterHeaderKeyword() ? '(header)' : '('
+    return this.afterHeaderKeyword() ? headerKind(prev) : '('
+  }
+
+  // `for (x in o)` (D56): an `in` directly in a `for` header, before its first `;`, is the for-in keyword (as in
+  // JS, an initialiser that uses the `in` operator needs parentheses).
+  forInKeyword(token: Token) {
+    if (this.top() !== '(for)') return
+    token.name = 'FOR_IN'
+    this.forHeaderRest()
+  }
+
+  // After the first `;`, `of` or `in` of a `for` header, `in` is the operator again.
+  forHeaderRest() {
+    if (this.top() === '(for)') this.brackets[this.brackets.length - 1] = '(header)'
   }
 
   // `for await (` (D53) is a header too.
