@@ -142,6 +142,8 @@ Statement
 FunctionDeclaration
   : FUNCTION_DECLARATION IDENT '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
     { $$ = yy.functionNode('FunctionDeclaration', { id: yy.identifier($2, @2), params: $4 }, yy.block($7, @6), @$) }
+  | FUNCTION_DECLARATION '*' IDENT '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
+    { $$ = yy.functionNode('FunctionDeclaration', { id: yy.identifier($3, @3), params: $5, generator: true }, yy.block($8, @7), @$) }
   ;
 
 FunctionExpression
@@ -149,6 +151,10 @@ FunctionExpression
     { $$ = yy.functionNode('FunctionExpression', { id: null, params: $3 }, yy.block($6, @5), @$) }
   | FUNCTION IDENT '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
     { $$ = yy.functionNode('FunctionExpression', { id: yy.identifier($2, @2), params: $4 }, yy.block($7, @6), @$) }
+  | FUNCTION '*' '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
+    { $$ = yy.functionNode('FunctionExpression', { id: null, params: $4, generator: true }, yy.block($7, @6), @$) }
+  | FUNCTION '*' IDENT '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
+    { $$ = yy.functionNode('FunctionExpression', { id: yy.identifier($3, @3), params: $5, generator: true }, yy.block($8, @7), @$) }
   ;
 
 FormalParameters
@@ -435,6 +441,8 @@ MemberModifier
 ClassMember
   : ClassMemberName '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
     { $$ = { kind: 'method', key: $1, params: $3, body: yy.block($6, @5), loc: @$ } }
+  | '*' ClassMemberName '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
+    { $$ = { kind: 'method', key: $2, params: $4, body: yy.block($7, @6), generator: true, loc: @$ } }
   | GET ClassMemberName '(' ')' BLOCK_LBRACE StatementList '}'
     { $$ = { kind: 'get', key: $2, params: [], body: yy.block($6, @5), loc: @$ } }
   | SET ClassMemberName '(' Parameter ')' BLOCK_LBRACE StatementList '}'
@@ -579,6 +587,7 @@ Expression
 AssignmentExpression
   : ConditionalExpression
   | ArrowFunction
+  | YieldExpression
   | LeftHandSideExpression AssignmentOperator AssignmentExpression
     { $$ = yy.assignment($2, $1, $3, @$) }
   ;
@@ -595,6 +604,16 @@ ArrowBody
   : BLOCK_LBRACE StatementList '}'
     { $$ = yy.block($2, @$) }
   | AssignmentExpression
+  ;
+
+/* Only in generator functions (checked by the compiler). Like JS, `yield` takes the lowest-precedence operand. */
+YieldExpression
+  : YIELD
+    { $$ = yy.yieldExpression(null, false, @$) }
+  | YIELD AssignmentExpression
+    { $$ = yy.yieldExpression($2, false, @$) }
+  | YIELD '*' AssignmentExpression
+    { $$ = yy.yieldExpression($3, true, @$) }
   ;
 
 AssignmentOperator
@@ -804,6 +823,10 @@ Property
     { $$ = yy.property(yy.identifier($1, @1), $3, false, @$) }
   | IDENT MethodTail
     { $$ = yy.property(yy.identifier($1, @1), yy.method($2, @2), true, @$) }
+  | '*' IDENT MethodTail
+    { $$ = yy.property(yy.identifier($2, @2), yy.method(Object.assign($3, { generator: true }), @3), true, @$) }
+  | '*' LiteralPropertyName MethodTail
+    { $$ = yy.property($2, yy.method(Object.assign($3, { generator: true }), @3), true, @$) }
   | LiteralPropertyName ':' AssignmentExpression
     { $$ = yy.property($1, $3, false, @$) }
   | LiteralPropertyName MethodTail

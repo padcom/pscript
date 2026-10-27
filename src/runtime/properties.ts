@@ -1,6 +1,7 @@
 // Property access (§5.7): the single entry points for reads and writes, including accessors (§4.5.4):
 // getters and setters are called with the original receiver. Class members follow §4.5.3 (members.ts);
 // module namespaces, `globalThis` and host objects are exotic.
+import { GeneratorObject } from './generators'
 import { GlobalObject } from './global-object'
 import { find, functionProperty, onlyGetter, own, resolve } from './lookup'
 import { getClassMember, getInstanceMember, hasClassMember, setClassMember, setInstanceMember } from './members'
@@ -12,6 +13,7 @@ import {
   Class,
   Function as ScriptFunction,
   HostObject,
+  Interface,
   ModuleNamespace,
   Object as ScriptObject,
   type AccessContext,
@@ -323,7 +325,9 @@ const EXOTIC_KINDS: [abstract new (...args: any[]) => unknown, string][] = [
   [ModuleNamespace, 'a module namespace'],
   [GlobalObject, 'globalThis'],
   [ScriptFunction, 'a function'],
-  [ScriptObject, 'an interface'],
+  [Interface, 'an interface'],
+  [GeneratorObject, 'a generator'],
+  [ScriptObject, 'a built-in object'],
 ]
 
 // Only plain objects (and host objects) lose properties: class instances, arrays, functions, classes and namespaces

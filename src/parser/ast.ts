@@ -121,7 +121,7 @@ export type Expression
   = Identifier | Literal | ArrayExpression | ObjectExpression | FunctionExpression
     | ArrowFunctionExpression | ClassExpression | UnaryExpression | UpdateExpression
     | BinaryExpression | LogicalExpression | AssignmentExpression | ConditionalExpression
-    | CallExpression | NewExpression | MemberExpression | ThisExpression | TemplateLiteral
+    | CallExpression | NewExpression | MemberExpression | ThisExpression | TemplateLiteral | YieldExpression
 
 /** What binds names: a name, or an object or array pattern of names (D40). */
 export type BindingPattern = Identifier | ObjectPattern | ArrayPattern
@@ -213,6 +213,10 @@ interface FunctionBase {
   params: Pattern[]
   /** function body */
   body: BlockStatement
+  /** `function*` / `*method()` (D42) */
+  generator: boolean
+  /** `async function` / `async method()` (D43) */
+  async: boolean
 }
 
 /**
@@ -247,6 +251,10 @@ export interface ArrowFunctionExpression extends NodeBase {
   body: BlockStatement | Expression
   /** true for an expression body */
   expression: boolean
+  /** arrows are never generators */
+  generator: false
+  /** `async () => …` (D43) */
+  async: boolean
 }
 
 /**
@@ -710,6 +718,18 @@ export interface UnaryExpression extends NodeBase {
   prefix: true
   /** the operand */
   argument: Expression
+}
+
+/**
+ * `yield`, `yield value`, `yield* iterable` (D42); only in generator functions.
+ */
+export interface YieldExpression extends NodeBase {
+  /** node type */
+  type: 'YieldExpression'
+  /** the yielded value or the delegated iterable; `null` for a bare `yield` (yields null, D37) */
+  argument: Expression | null
+  /** `yield*` */
+  delegate: boolean
 }
 
 /**

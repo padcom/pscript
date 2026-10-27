@@ -1,0 +1,41 @@
+// @pscript-only: "no value" is null in generators too (D37)
+function* gen() {
+  const received = yield
+  print('received', received)
+  yield
+}
+const g = gen()
+print(JSON.stringify(g.next()))
+print(JSON.stringify(g.next()))
+print(JSON.stringify(g.next()))
+print(JSON.stringify(g.next()))
+print(g)
+
+function* self() {
+  yield s.next()
+}
+const s = self()
+try {
+  s.next()
+} catch (e) {
+  print(e.name, e.message)
+}
+
+try {
+  gen().next(1, 2)
+} catch (e) {
+  print(e.name, e.message)
+}
+
+try {
+  delete g.next
+} catch (e) {
+  print(e.name, e.message)
+}
+
+const next = g.next
+try {
+  next()
+} catch (e) {
+  print(e.name, e.message)
+}

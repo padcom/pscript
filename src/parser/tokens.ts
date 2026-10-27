@@ -43,6 +43,7 @@ export const KEYWORDS = [
   'default',
   'delete',
   'void',
+  'yield',
 ] as const
 
 export type Keyword = typeof KEYWORDS[number]
@@ -57,7 +58,6 @@ export const FUTURE_RESERVED_WORDS = [
   'var',
   'async',
   'await',
-  'yield',
   'enum',
   'package',
   'abstract',
@@ -93,6 +93,7 @@ export const ENDERS: ReadonlySet<TokenName> = new Set([
   'RETURN',
   'BREAK',
   'CONTINUE',
+  'YIELD',
 ])
 
 /**

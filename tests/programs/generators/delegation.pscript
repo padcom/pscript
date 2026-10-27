@@ -1,0 +1,65 @@
+// yield* delegates to generators, arrays, strings; it evaluates to the delegate's return value
+function* inner(label) {
+  const received = yield label + ':1'
+  print('inner received', received)
+  yield label + ':2'
+  return label + ' done'
+}
+
+function* outer() {
+  const result = yield* inner('in')
+  print('yield* gave', result)
+  yield* [10, 20]
+  yield* 'ab'
+  yield 'last'
+}
+
+const o = outer()
+let step = o.next()
+while (!step.done) {
+  print('step', step.value)
+  step = o.next('sent ' + step.value)
+}
+
+// recursion through yield*
+class Node {
+  value
+  children
+  constructor(value, children = []) {
+    this.value = value
+    this.children = children
+  }
+  *walk() {
+    yield this.value
+    for (const child of this.children) yield* child.walk()
+  }
+}
+const tree = new Node(1, [new Node(2, [new Node(3), new Node(4)]), new Node(5)])
+print('tree', Array.from(tree.walk()).join(' '))
+
+// throw() and return() are forwarded to the delegate
+function* guarded() {
+  try {
+    yield 'guarded 1'
+    yield 'guarded 2'
+  } catch (e) {
+    print('delegate caught', e)
+    yield 'after catch'
+  } finally {
+    print('delegate finally')
+  }
+}
+function* wrapper() {
+  yield* guarded()
+  yield 'wrapper end'
+}
+const w = wrapper()
+print(w.next().value)
+print(w.throw('oops').value)
+print(w.next().value)
+print(w.next().done)
+
+const r = wrapper()
+r.next()
+const returned = r.return('early')
+print('return through yield*', returned.value, returned.done)

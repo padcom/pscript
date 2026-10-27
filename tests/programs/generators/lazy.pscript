@@ -1,0 +1,47 @@
+// infinite generators are lazy: take what you need
+function* naturals() {
+  let n = 0
+  while (true) yield n++
+}
+
+function* take(iterable, count) {
+  if (count <= 0) return
+  for (const item of iterable) {
+    yield item
+    if (--count == 0) return
+  }
+}
+
+function* map(iterable, f) {
+  for (const item of iterable) yield f(item)
+}
+
+function* filter(iterable, keep) {
+  for (const item of iterable) if (keep(item)) yield item
+}
+
+const squaresOfOdd = map(filter(naturals(), n => n % 2 == 1), n => n * n)
+print(Array.from(take(squaresOfOdd, 5)).join(' '))
+
+function* fibonacci() {
+  let [a, b] = [0, 1]
+  while (true) {
+    yield a
+    ;[a, b] = [b, a + b]
+  }
+}
+const fib = []
+for (const n of fibonacci()) {
+  if (n > 100) break
+  fib.push(n)
+}
+print(fib.join(','))
+
+// a generator object is its own iterator: partially consumed, then iterated
+const numbers = naturals()
+numbers.next()
+numbers.next()
+for (const n of numbers) {
+  if (n > 4) break
+  print('rest', n)
+}

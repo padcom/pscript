@@ -1,0 +1,30 @@
+open break
+got 1
+got 2
+close break
+open return
+close return
+returned 1
+open throw
+got 1
+close throw
+caught failed in loop
+open destructuring
+close destructuring
+one 1
+open inner 1
+close inner 1
+open inner 2
+close inner 2
+open return()
+close return()
+99 true true
+1 true
+recovered from first
+waiting
+recovered from second
+waiting
+propagated broken
+fragile done true
+cleanup step
+r true

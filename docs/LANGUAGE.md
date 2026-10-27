@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D41).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D42).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -12,6 +12,7 @@ document describes the language as implemented; the design rationale is in `docs
 - [Functions](#functions)
 - [Objects and arrays](#objects-and-arrays)
 - [Destructuring](#destructuring)
+- [Generators](#generators)
 - [Classes](#classes)
 - [Interfaces](#interfaces)
 - [Exceptions](#exceptions)
@@ -33,7 +34,7 @@ document describes the language as implemented; the design rationale is in `docs
   ends a statement when the line could end there and the next line cannot continue it. A line starting with `(` or
   `[` starts a new statement (no accidental calls or indexing of the previous line); a line starting with `.`, an
   operator, `,`, `?`, `:` or `=>` continues the previous one.
-- Reserved for the future (always errors as names): `var`, `async`, `await`, `yield`, `enum`, `package`, `abstract`.
+- Reserved for the future (always errors as names): `var`, `async`, `await`, `enum`, `package`, `abstract`.
 - `get`, `set`, `as`, `from`, `final` and `override` are keywords only where they have a meaning; elsewhere they are
   ordinary names. Keywords may be used as property names (`o.class`, `{ if: 1 }`).
 
@@ -91,8 +92,8 @@ Precedence and associativity follow JavaScript, with these rules:
   and expression statements.
 - `switch` compares with `==` (which is strict), falls through until `break`, and may have its `default` anywhere.
   Its clauses share one block scope; `continue` inside it continues the enclosing loop.
-- `for…of` iterates arrays (live: elements pushed during the loop are visited), strings (by UTF-16 code unit) and
-  host iterables. The loop variable is a single name (no destructuring).
+- `for…of` iterates arrays (live: elements pushed during the loop are visited), strings (by UTF-16 code unit),
+  generators and host iterables. The loop variable may be a pattern (see [Destructuring](#destructuring)).
 - No labels, `for…in` or `with`.
 - A script's value is the value of the last expression statement executed (as with `eval`).
 
@@ -152,6 +153,42 @@ for (const [key, value] of Object.entries(map)) print(key, value)
   literal passed to a known function, otherwise at runtime. Patterns in declarations, loops and assignments pick
   the properties they name and ignore the rest, as in JavaScript.
 - A pattern parameter without a default is a required parameter; `= {}` makes it optional (strict arity applies).
+
+## Generators
+
+```js
+function* naturals() {
+  let n = 0
+  while (true) yield n++
+}
+
+function* take(iterable, count) {
+  for (const item of iterable) {
+    if (count-- <= 0) return
+    yield item
+  }
+}
+
+print(Array.from(take(naturals(), 3)))     // [0, 1, 2]
+
+class Tree {
+  *walk() {
+    yield this.value
+    for (const child of this.children) yield* child.walk()
+  }
+}
+```
+
+- `function*` declarations and expressions, and `*method()` in classes and object literals (also `static`), work as
+  in JavaScript: calling one binds the arguments and returns a generator object; `next(v)`, `return(v)` and
+  `throw(e)` resume it. `yield* iterable` delegates to another generator, an array, a string or a host iterable.
+- Generators are iterable (`for … of`, array patterns, `Array.from`, `yield*`). Leaving a `for … of` early (`break`,
+  `return`, an exception) closes the generator, so its `finally` blocks run.
+- `yield` is only allowed directly in a generator body (not in nested functions or arrows).
+- Where JavaScript has `undefined`, generators have `null`: a bare `yield` yields `null`, `next()` without an
+  argument makes `yield` give `null`, and a finished generator answers `{ value: null, done: true }`.
+- A class field followed by a `*method()` on the next line needs a `;` (as in JavaScript).
+- Async generators and `for await` are not supported.
 
 ## Classes
 
@@ -297,7 +334,8 @@ Values cross the boundary by reference and identity is kept in both directions.
 | `var`, labels, `with`, `for…in` | Not available |
 | Bitwise operators, spread, optional chaining, computed keys | Not available (yet) |
 | Tagged templates | Not available |
-| Generators, `async`/`await`, Promises | Not available |
+| Generators give `undefined` for missing values | Generators give `null` (`yield`, `next()`, finished steps) |
+| `async`/`await`, Promises | Not available |
 | Symbols, BigInt, getters on the global object | Not available |
 | Default exports, `export *`, dynamic `import()` | Named exports only |
 | Integer-like keys are listed first | Insertion order for all keys |

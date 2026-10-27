@@ -41,6 +41,35 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | T5 | psc: source maps | done (2026-10-27) — psc complete |
 | L1 | Destructuring and named parameters (D40) | done (2026-10-27) |
 | L2 | `do … while`, `switch`, `void`, `delete` (D41) | done (2026-10-27) |
+| L3 | Generators (D42) | done (2026-10-27) |
+
+## L3 — Generators (D42)
+
+Design in `docs/PLAN.md` §4.4.16 (D42, R31) and §5.6.9 (coroutines), user docs in `docs/LANGUAGE.md` → Generators.
+The suspendable-frame machinery is shared with `async`/`await` (L4).
+
+- **Syntax**: `yield` is a keyword (an ENDER and a statement ender like `return`). Grammar: `function*` declarations
+  and expressions, `'*' ClassMemberName` methods, `'*' IDENT|LiteralPropertyName MethodTail` in object literals,
+  `YieldExpression` (`yield`, `yield expr`, `yield * expr`) as an `AssignmentExpression` alternative (no conflicts).
+  The token filter marks a `*` in member/key position (`generatorStar`); a keyword after it and before `(` is a name
+  (`static *of()`). Every function node has ESTree `generator` / `async` flags (the parser oracle now compares them).
+- **Compiler**: `GENERATOR` is emitted after the parameter code; `fn.generator` is set only then, so `yield` in
+  parameters, nested functions and arrows is a `SyntaxError`. `yield* x` is `x GET_ITER NULL YIELD_DELEGATE`.
+  for-of's break target emits `ITER_CLOSE` instead of `POP`, `jump()` drops inner stack items with `ITER_CLOSE`,
+  `return` emits `CLOSE_ITERS` when `fn.stackItems > 0`, and array patterns end with `ITER_CLOSE`.
+- **VM** (`src/vm/coroutines.ts`, `vm.ts` "Generators"): `Coroutine` (state, saved operand values, `delegating`,
+  `mode`), `GeneratorReturn` (a `ScriptThrow` that `catch` handlers skip: `nextHandler`). `GENERATOR` behaves like a
+  `RETURN` of the generator object; `YIELD` saves the stack slice and returns from the (nested) loop;
+  `resumeCoroutine` re-enters the frame (shifting `base` and handler heights) and runs `run(depth)`. Unwinding closes
+  dropped iterators quietly (`dropStack`). `Frame.coroutine` is new.
+- **Runtime**: `GeneratorObject` (`src/runtime/generators.ts`) holds the driver; `ScriptIterator.close()` (no-op) and
+  `GeneratorIterator`; `getIterator` accepts generators; `realm.GeneratorPrototype` with `next`/`return`/`throw`/
+  `toString` (`src/stdlib/generator.ts`); `print` shows `[Generator]`; host proxies of generators are JS iterators.
+- **psc**: native `function*`, `*m()`, `yield` (a bare one as `yield null`), `yield*`; `yield` has assignment
+  precedence. The `undefined`-vs-`null` differences are listed in §11.4.
+
+Tests: programs `generators/{basics,delegation,cleanup,lazy,pscript-specific,…}`; `tests/unit/parser/generators.test.ts`
+(acorn), `tests/unit/transpiler/emitter.test.ts`, `tests/unit/interop/interop.test.ts` (host iteration both ways).
 
 ## L2 — `do … while`, `switch`, `void`, `delete` (D41)
 

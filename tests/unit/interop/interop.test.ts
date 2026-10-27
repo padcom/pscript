@@ -250,3 +250,50 @@ describe('Interpreter.call', () => {
     expect(() => interpreter().call('nope')).toThrow('nope is not defined')
   })
 })
+
+describe('generators across the boundary (D42)', () => {
+  it('gives the host a JS iterator over a script generator', () => {
+    const host = interpreter()
+    const gen = host.run('function* g(n) { for (let i = 0; i < n; i++) yield i * 10 }\ng(3)') as Iterable<number>
+
+    expect([...gen]).toEqual([0, 10, 20])
+    expect(String(gen)).toBe('[object Generator]')
+  })
+
+  it('forwards next(value), return() and throw() and converts values', () => {
+    const host = interpreter()
+    const gen = host.run(`function* g() {
+      try {
+        const x = yield [1]
+        yield x.a
+      } finally {
+        print('finally')
+      }
+    }
+    g()`) as Generator<unknown, unknown, unknown>
+
+    expect(gen.next().value).toEqual([1])
+    expect(gen.next({ a: 'host' })).toEqual({ value: 'host', done: false })
+    expect(gen.return(5)).toEqual({ value: 5, done: true })
+    expect(gen.next()).toEqual({ value: null, done: true })
+  })
+})
+
+describe('generators across the boundary (D42), continued', () => {
+  it('reports script exceptions from a resumed generator as PScriptRuntimeError', () => {
+    const gen = interpreter().run('function* g() { yield 1 }\ng()') as Generator
+
+    gen.next()
+    expect(() => gen.throw('boom')).toThrow(PScriptRuntimeError)
+  })
+
+  it('lets scripts iterate host generators', () => {
+    function* hostGen() {
+      yield 'a'
+      yield 'b'
+    }
+
+    expect(interpreter({ hostGen }).run('const out = []\nfor (const x of hostGen()) out.push(x)\nout.join()')).toBe('a,b')
+    expect(interpreter({ hostGen }).run('function* g() { yield* hostGen() }\nArray.from(g()).join()')).toBe('a,b')
+  })
+})

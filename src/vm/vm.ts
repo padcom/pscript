@@ -18,7 +18,8 @@ import {
   typeOf,
 } from '@/runtime/operators'
 import { formatNested } from '@/runtime/format'
-import { DONE, getIterator, type ScriptIterator } from '@/runtime/iterators'
+import { DONE, GeneratorIterator, ScriptIterator, getIterator } from '@/runtime/iterators'
+import { GeneratorObject, type IteratorStep, type ResumeMode } from '@/runtime/generators'
 import {
   defineAccessor,
   defineProperty,
@@ -53,6 +54,7 @@ import {
   type Value,
 } from '@/runtime/values'
 import { defineClass, superMember } from './classes'
+import { Coroutine, GeneratorReturn, type CoroutineHost } from './coroutines'
 import { defineInterface } from './interfaces'
 import { checkPattern, iteratorRest, objectRest } from './patterns'
 import type { Frame, Handler } from './frame'
@@ -223,11 +225,68 @@ function rotate(stack: Value[], depth: number) {
   stack[top - depth + 1] = moved
 }
 
+// A running generator cannot be resumed; one that never started completes on return() / throw().
+function isFinished(coroutine: Coroutine, mode: ResumeMode): boolean {
+  if (coroutine.state === 'running') throw typeError('Generator is already running')
+  if (coroutine.state === 'suspended-start' && mode !== 'next') coroutine.state = 'completed'
+
+  return coroutine.completed
+}
+
+// An exception left the generator: it is done. Its own return() signal ends it with the returned value.
+function coroutineFailed(coroutine: Coroutine, e: unknown): IteratorStep {
+  coroutine.state = 'completed'
+
+  if (e instanceof GeneratorReturn && e.coroutine === coroutine) return { value: e.value, done: true }
+
+  throw hostStackOverflow(e) ? rangeError('Maximum call stack size exceeded') : e
+}
+
+// A ScriptIterator result as a step; the "return value" of a non-generator iterator is undefined (as in JS).
+function iteratorStep(next: Value | typeof DONE): IteratorStep {
+  return next === DONE ? { value: undefined, done: true } : { value: next, done: false }
+}
+
+function popFinallyHandler(handlers: Handler[]): Handler | undefined {
+  let handler = handlers.pop()
+
+  while (handler && handler.finallyTarget < 0) handler = handlers.pop()
+
+  return handler
+}
+
 function nullish(value: Value): boolean {
   return value === null || value === undefined
 }
 
-export class VM implements AccessContext {
+// Closes the iterators of `for…of` loops being left (D42): generators run their finally blocks.
+function closeIterators(items: Value[]) {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i] as unknown
+
+    if (item instanceof ScriptIterator) item.close()
+  }
+}
+
+// When an exception leaves loops, a failing close() must not replace it (as in JS).
+function closeIteratorsQuietly(items: Value[]) {
+  for (let i = items.length - 1; i >= 0; i--) {
+    try {
+      closeIterators([items[i]])
+    } catch {
+      // the exception being thrown wins
+    }
+  }
+}
+
+// A finished generator: `next()` gives `{ value: null, done: true }` (D37), `return(v)` gives v, `throw(e)` throws.
+function finishedStep(mode: ResumeMode, value: Value, stack: () => ScriptStackFrame[]): IteratorStep {
+  if (mode === 'throw') throw new ScriptThrow(value, stack())
+
+  return { value: mode === 'return' ? value : null, done: true }
+}
+
+export class VM implements AccessContext, CoroutineHost {
   readonly stack: Value[] = []
   readonly frames: Frame[] = []
   readonly globals: Globals
@@ -417,6 +476,7 @@ export class VM implements AccessContext {
       isConstruct: false,
       newTarget: null,
       globalCache: [],
+      coroutine: null,
     }
   }
 
@@ -545,7 +605,7 @@ export class VM implements AccessContext {
 
     while (this.frames.length >= entryDepth) {
       const frame = this.frames[this.frames.length - 1]
-      const handler = frame.handlers?.pop()
+      const handler = this.nextHandler(frame, thrown)
 
       if (handler) {
         this.enterHandler(frame, handler, thrown)
@@ -553,14 +613,27 @@ export class VM implements AccessContext {
         return
       }
       this.frames.pop()
-      this.stack.length = frame.base
+      this.dropStack(frame.base)
     }
     throw thrown
   }
 
+  // `generator.return()` runs finally blocks only: catch handlers are skipped.
+  private nextHandler(frame: Frame, thrown: ScriptThrow): Handler | undefined {
+    const handlers = frame.handlers ?? []
+
+    return thrown instanceof GeneratorReturn ? popFinallyHandler(handlers) : handlers.pop()
+  }
+
+  // Unwinding drops operand-stack values; iterators among them belong to loops being left.
+  private dropStack(height: number) {
+    if (this.stack.length > height) closeIteratorsQuietly(this.stack.slice(height))
+    this.stack.length = height
+  }
+
   // Restores the stack and environment of the `try`, then continues in `catch` (with the value) or `finally`.
   private enterHandler(frame: Frame, handler: Handler, thrown: ScriptThrow) {
-    this.stack.length = handler.stackHeight
+    this.dropStack(handler.stackHeight)
     frame.env = handler.env
 
     if (handler.catchTarget >= 0) {
@@ -784,6 +857,120 @@ export class VM implements AccessContext {
     if (this.globals.scriptBindings.has(name)) return 'an outer binding'
 
     return this.realm.globals.has(name) ? 'a global' : null
+  }
+
+  // ---------------------------------------------------------------------------
+  // Generators (D42, §5.6.9)
+
+  // GENERATOR: the parameters are bound; the frame leaves the frame stack and waits for the first next().
+  private startGenerator(frame: Frame): GeneratorObject {
+    const coroutine = new Coroutine(this, frame)
+
+    frame.coroutine = coroutine
+    this.suspend(frame)
+    coroutine.state = 'suspended-start'
+
+    return new GeneratorObject(this.realm.GeneratorPrototype, coroutine)
+  }
+
+  // Saves the frame's operand-stack values and takes the frame off the frame stack.
+  private suspend(frame: Frame) {
+    const coroutine = frame.coroutine as Coroutine
+
+    coroutine.saved = this.stack.slice(frame.base)
+    truncate(this.stack, frame.base)
+    this.frames.pop()
+    coroutine.state = 'suspended-yield'
+  }
+
+  /**
+   * Runs a generator until it yields or completes (`next`, `return`, `throw`, `for…of`).
+   *
+   * @param coroutine the generator's coroutine
+   * @param mode how to resume
+   * @param value the value sent, thrown or returned
+   * @returns the step
+   */
+  resumeCoroutine(coroutine: Coroutine, mode: ResumeMode, value: Value): IteratorStep {
+    if (isFinished(coroutine, mode)) return finishedStep(mode, value, () => this.captureStack())
+
+    if (this.frames.length === 0) this.steps = 0 // resumed by the host: a new step budget (D14)
+    const depth = this.enterCoroutine(coroutine)
+
+    try {
+      const result = this.continueCoroutine(coroutine, mode, value, depth)
+
+      coroutine.finishIfReturned()
+
+      return { value: result, done: coroutine.completed }
+    } catch (e) {
+      return coroutineFailed(coroutine, e)
+    }
+  }
+
+  // Puts the frame back on top of the frame stack, with its operand-stack values (handlers keep relative heights).
+  private enterCoroutine(coroutine: Coroutine): number {
+    const { frame, saved } = coroutine
+    const delta = this.stack.length - frame.base
+
+    if (this.frames.length > this.options.maxCallDepth) throw rangeError('Maximum call stack size exceeded')
+    frame.base = this.stack.length
+    frame.handlers?.forEach(handler => { handler.stackHeight += delta })
+
+    for (const item of saved) this.stack.push(item)
+    coroutine.saved = []
+    this.frames.push(frame)
+
+    return this.frames.length
+  }
+
+  // next(v): `yield` gives v; throw(e): the exception is thrown at the `yield`; return(v): finally blocks run, then
+  // the generator returns v. Inside `yield*`, YIELD_DELEGATE forwards all three to the delegate.
+  private continueCoroutine(coroutine: Coroutine, mode: ResumeMode, value: Value, depth: number): Value {
+    const starting = coroutine.state === 'suspended-start'
+
+    coroutine.state = 'running'
+
+    if (coroutine.delegating || mode === 'next') this.send(coroutine, mode, starting ? [] : [value])
+    else this.unwind(this.abruptResumption(coroutine, mode, value), depth)
+
+    return this.run(depth)
+  }
+
+  // The value `yield` gives (none when the body starts); inside `yield*` the mode goes to YIELD_DELEGATE.
+  private send(coroutine: Coroutine, mode: ResumeMode, values: Value[]) {
+    coroutine.mode = mode
+    coroutine.delegating = false
+    this.stack.push(...values)
+  }
+
+  private abruptResumption(coroutine: Coroutine, mode: ResumeMode, value: Value): ScriptThrow {
+    return mode === 'throw' ? new ScriptThrow(value, this.captureStack()) : new GeneratorReturn(coroutine, value)
+  }
+
+  // One step of `yield*`: generators get next/throw/return forwarded; other iterators only next (throw closes them
+  // and fails, return closes them and returns).
+  private delegateStep(coroutine: Coroutine, sent: Value, delegate: Value): IteratorStep {
+    const { mode } = coroutine
+    const iterator = delegate as unknown as ScriptIterator
+
+    coroutine.mode = 'next'
+
+    if (iterator instanceof GeneratorIterator) return this.generatorDelegateStep(coroutine, iterator, mode, sent)
+    if (mode === 'next') return iteratorStep(iterator.next())
+
+    iterator.close()
+
+    if (mode === 'return') throw new GeneratorReturn(coroutine, sent)
+    throw typeError('The iterator does not provide a throw method')
+  }
+
+  private generatorDelegateStep(coroutine: Coroutine, iterator: GeneratorIterator, mode: ResumeMode, sent: Value): IteratorStep {
+    const step = iterator.generator.driver.resume(mode, sent)
+
+    if (mode === 'return' && step.done) throw new GeneratorReturn(coroutine, step.value)
+
+    return step
   }
 
   private notAClass(callee: Value): never {
@@ -1190,6 +1377,49 @@ export class VM implements AccessContext {
           frame.handlers.push({ catchTarget: code[ip++], finallyTarget: code[ip++], stackHeight: stack.length, env: frame.env })
           break
         case Op.END_TRY: frame.handlers?.pop(); break
+        case Op.GENERATOR: {
+          frame.ip = ip
+          const generator = this.startGenerator(frame)
+
+          if (this.frames.length < entryDepth) return generator
+          frame = this.frames[this.frames.length - 1];
+          ({ code, constants } = frame.proto)
+          ip = frame.ip
+          stack.push(generator)
+          break
+        }
+        // a coroutine's frame always runs as the entry frame of its own loop (resumeCoroutine), so suspending it
+        // ends this loop
+        case Op.YIELD:
+          a = stack.pop()
+          frame.ip = ip
+          this.suspend(frame)
+
+          return a
+        case Op.YIELD_DELEGATE: {
+          const coroutine = frame.coroutine as Coroutine
+
+          frame.ip = ip
+          const step = this.delegateStep(coroutine, stack.pop(), stack[stack.length - 1])
+
+          if (step.done) {
+            stack[stack.length - 1] = step.value
+            break
+          }
+          frame.ip = frame.opStart // resuming runs the next step
+          coroutine.delegating = true
+          this.suspend(frame)
+
+          return step.value
+        }
+        case Op.ITER_CLOSE:
+          frame.ip = ip
+          closeIterators([stack.pop()])
+          break
+        case Op.CLOSE_ITERS:
+          frame.ip = ip
+          closeIterators(stack.slice(frame.base, stack.length - 1))
+          break
         case Op.THROW: throw new ScriptThrow(stack.pop(), this.captureStack())
         case Op.ENTER_FINALLY: stack.push(new FinallyRecord(null) as unknown as Value); break
         case Op.END_FINALLY: {

@@ -51,6 +51,7 @@ import type {
   SwitchCase,
   SwitchStatement,
   WhileStatement,
+  YieldExpression,
 } from '@/parser/ast'
 import { classInfoOf, keyName, type ClassInfo } from '@/compiler/class-info'
 import { ambiguityMessage, memberCandidate, type MemberContext } from '@/compiler/implicit-names'
@@ -185,6 +186,7 @@ const EXPRESSIONS: { [K in Expression['type']]?: Printer<Extract<Expression, { t
   MemberExpression: (e, node) => e.member(node),
   ThisExpression: e => e.thisText(),
   ClassExpression: (e, node) => e.classText(node),
+  YieldExpression: (e, node) => e.yieldText(node),
 }
 
 /** Unary operators not printed as `<operator><operand>` with the `- -x` guard. */
@@ -214,6 +216,15 @@ const STATEMENTS: { [K in Statement['type']]?: Printer<Extract<Statement, { type
   EmptyStatement: () => '',
   ClassDeclaration: (e, node) => e.classText(node),
   InterfaceDeclaration: (e, node) => e.interfaceText(node),
+}
+
+function functionKeyword({ generator }: FunctionDeclaration | FunctionExpression): string {
+  return generator ? 'function*' : 'function'
+}
+
+// `*` before a generator method's name (D42).
+function generatorStar(value: Expression): string {
+  return (value as FunctionExpression).generator ? '*' : ''
 }
 
 function nameOf({ id }: ClassNode): string {
@@ -679,9 +690,10 @@ export class Emitter {
   // Functions
 
   functionText(node: FunctionDeclaration | FunctionExpression): string {
-    const name = node.id ? ` ${node.id.name}` : node.type === 'FunctionExpression' ? ' ' : ''
+    const isExpression = node.type === 'FunctionExpression'
+    const name = node.id ? ` ${node.id.name}` : ' '
 
-    return `function${name}${this.functionRest(node, { kind: 'function' }, node.type === 'FunctionExpression' ? node.id : null)}`
+    return `${functionKeyword(node)}${name}${this.functionRest(node, { kind: 'function' }, isExpression ? node.id : null)}`
   }
 
   // `(params) { body }`; a named function expression's name is visible in its body. A member whose nested functions
@@ -832,7 +844,7 @@ export class Emitter {
   private property({ key, value, kind, method, shorthand, computed }: Property): string {
     const name = this.key(key, computed)
 
-    if (kind !== 'init' || method) return `${kind === 'init' ? '' : `${kind} `}${name}${this.method(value)}`
+    if (kind !== 'init' || method) return `${kind === 'init' ? generatorStar(value) : `${kind} `}${name}${this.method(value)}`
 
     return this.dataProperty(name, value, shorthand)
   }
@@ -861,6 +873,13 @@ export class Emitter {
 
     // `- -x` and `-(-x)`: never print `--x`
     return /^[+-]/.test(text) ? `${operator}(${text})` : `${operator}${text}`
+  }
+
+  // D37: a bare `yield` yields null.
+  yieldText({ argument, delegate }: YieldExpression): string {
+    const operand = argument ? this.expression(argument, Precedence.Assignment) : 'null'
+
+    return `${delegate ? 'yield*' : 'yield'} ${operand}`
   }
 
   // D41: only plain objects lose properties; the helper throws a TypeError for the rest, as PScript does.
@@ -1091,7 +1110,7 @@ export class Emitter {
   }
 
   private methodText(member: MethodDefinition, record: ClassRecord): string {
-    const accessor = member.kind === 'method' ? '' : `${member.kind} `
+    const accessor = member.kind === 'method' ? generatorStar(member.value) : `${member.kind} `
 
     const rest = this.functionRest(member.value, { kind: 'method' })
 

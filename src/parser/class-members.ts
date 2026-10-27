@@ -4,11 +4,13 @@ import type {
   Access,
   BlockStatement,
   Expression,
+  FunctionExpression,
   Identifier,
   Literal,
   MethodDefinition,
   Pattern,
   PropertyDefinition,
+  SourceLocation,
 } from './ast'
 import { toLoc, type JisonLoc } from './ast-builders'
 
@@ -23,11 +25,43 @@ export interface Modifier {
 }
 
 /**
+ * A method or accessor as the grammar collects it.
+ */
+interface MethodMember {
+  /** method or accessor half */
+  kind: 'method' | 'get' | 'set'
+  /** member name */
+  key: Identifier | Literal
+  /** formal parameters */
+  params: Pattern[]
+  /** body */
+  body: BlockStatement
+  /** location */
+  loc: JisonLoc
+  /** `*method()` (D42) */
+  generator?: boolean
+  /** `async method()` (D43) */
+  async?: boolean
+}
+
+/**
+ * A field as the grammar collects it.
+ */
+interface RawField {
+  /** always a field */
+  kind: 'field'
+  /** field name */
+  key: Identifier | Literal
+  /** initialiser */
+  value: Expression | null
+  /** location */
+  loc: JisonLoc
+}
+
+/**
  * A class member before modifiers are applied.
  */
-export type RawMember
-  = { kind: 'method' | 'get' | 'set', key: Identifier | Literal, params: Pattern[], body: BlockStatement, loc: JisonLoc }
-    | { kind: 'field', key: Identifier | Literal, value: Expression | null, loc: JisonLoc }
+export type RawMember = MethodMember | RawField
 
 type Fail = (reason: string, loc: JisonLoc) => never
 
@@ -82,9 +116,18 @@ function namesConstructor(member: RawMember, { isStatic }: Flags): boolean {
   return !isStatic && keyName(member.key) === 'constructor'
 }
 
+// What a constructor may not be (as in JS).
+function constructorProblem({ kind, generator, async }: Exclude<RawMember, { kind: 'field' }>): string | null {
+  if (kind !== 'method') return 'Class constructor may not be an accessor'
+  if (generator) return 'Class constructor may not be a generator'
+
+  return async ? 'Class constructor may not be an async method' : null
+}
+
 function isConstructor(member: Exclude<RawMember, { kind: 'field' }>, applied: Flags): boolean {
   const named = namesConstructor(member, applied)
-  if (named && member.kind !== 'method') throw new ModifierError('Class constructor may not be an accessor', member.loc)
+  const problem = named ? constructorProblem(member) : null
+  if (problem) throw new ModifierError(problem, member.loc)
 
   return named
 }
@@ -100,6 +143,12 @@ function field(member: FieldMember, { access, isStatic, final, override }: Flags
   return { type: 'PropertyDefinition', key, computed: false, value, static: isStatic, access, override, final, loc }
 }
 
+function functionValue(member: MethodMember, loc: SourceLocation): FunctionExpression {
+  const { params, body, generator = false, async = false } = member
+
+  return { type: 'FunctionExpression', id: null, params, body, generator, async, loc }
+}
+
 function method(member: Exclude<RawMember, { kind: 'field' }>, applied: Flags, modifiers: Modifier[]): MethodDefinition {
   const constructor = isConstructor(member, applied)
   const loc = toLoc(member.loc)
@@ -113,7 +162,7 @@ function method(member: Exclude<RawMember, { kind: 'field' }>, applied: Flags, m
     computed: false,
     kind: constructor ? 'constructor' : member.kind,
     static: isStatic,
-    value: { type: 'FunctionExpression', id: null, params: member.params, body: member.body, loc },
+    value: functionValue(member, loc),
     access,
     override,
     final,

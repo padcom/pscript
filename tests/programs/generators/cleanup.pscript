@@ -1,0 +1,96 @@
+// finally blocks of a generator run when iteration ends early
+function* resource(name) {
+  print('open', name)
+  try {
+    yield 1
+    yield 2
+    yield 3
+  } finally {
+    print('close', name)
+  }
+}
+
+for (const x of resource('break')) {
+  print('got', x)
+  if (x == 2) break
+}
+
+function firstOf(name) {
+  for (const x of resource(name)) return x
+  return -1
+}
+print('returned', firstOf('return'))
+
+try {
+  for (const x of resource('throw')) {
+    print('got', x)
+    throw new Error('failed in loop')
+  }
+} catch (e) {
+  print('caught', e.message)
+}
+
+const [one] = resource('destructuring')
+print('one', one)
+
+// nested loops: break out of the inner one only
+for (const outer of [1, 2]) {
+  for (const x of resource('inner ' + outer)) {
+    if (x == 1) break
+  }
+}
+
+// return() runs finally and completes the generator
+const r = resource('return()')
+r.next()
+const result = r.return(99)
+print(result.value, result.done, r.next().done)
+
+// a generator that has not started completes without running anything
+const fresh = resource('never started')
+print(fresh.return(1).value, fresh.next().done)
+
+// throw() resumes with an exception at the yield
+function* careful() {
+  while (true) {
+    try {
+      yield 'waiting'
+    } catch (e) {
+      print('recovered from', e)
+    }
+  }
+}
+const c = careful()
+c.next()
+print(c.throw('first').value)
+print(c.throw('second').value)
+
+// an exception the generator does not catch finishes it
+function* fragile() {
+  yield 1
+  yield 2
+}
+const f = fragile()
+f.next()
+try {
+  f.throw(new Error('broken'))
+} catch (e) {
+  print('propagated', e.message)
+}
+print('fragile done', f.next().done)
+
+// catch blocks do not see return(); finally blocks may still yield
+function* stubborn() {
+  try {
+    yield 'a'
+  } catch (e) {
+    print('never printed')
+  } finally {
+    yield 'cleanup step'
+  }
+}
+const s = stubborn()
+s.next()
+print(s.return('r').value)
+const last = s.next()
+print(last.value, last.done)

@@ -99,6 +99,7 @@ Each feature in this document has one of these tags:
 | R22 | Only classes are constructable; `instanceof` works only with classes and class-constructed objects (D25–D27) | 4.5.5 |
 | R29 | Destructuring: object and array patterns (nested, defaults, rest) in parameters, declarations, `for…of`, `catch` and assignments; object patterns in parameters are strict named parameters (D40) | 4.4.14 |
 | R30 | `do … while`, `switch`, `void` and `delete` (D41) | 4.4.15 |
+| R31 | Generators: `function*`, generator methods, `yield`, `yield*`, `next`/`return`/`throw` (D42) | 4.4.16 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -122,7 +123,7 @@ Rest parameters and spread (`...`), optional chaining `?.`, computed keys `{ [k]
 
 ### 1.6 WON'T (v1)
 
-`var`, generators, **default exports and default imports** (`export default`, `import x from`), `export * from`, `export * as ns from`, `import.meta`, regular-expression literals, labels, `with`, `eval`, symbols, BigInt, **tagged templates and `String.raw`** (D34, excluded for good), Unicode identifiers (ASCII only in v1).
+`var`, ~~generators~~ (done, D42), **default exports and default imports** (`export default`, `import x from`), `export * from`, `export * as ns from`, `import.meta`, regular-expression literals, labels, `with`, `eval`, symbols, BigInt, **tagged templates and `String.raw`** (D34, excluded for good), Unicode identifiers (ASCII only in v1).
 
 Planned for v2 (§1.7): `async`/`await`, an asynchronous module loader, top-level `await`, dynamic `import()`.
 
@@ -204,6 +205,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D39 | `typeof null` | **`'null'`** (JS gives `'object'`) | yes |
 | D40 | Destructuring and named parameters | **JavaScript destructuring, with strict named parameters**: object and array patterns everywhere a binding or assignment target is allowed. An object pattern inside a *parameter* rejects an argument object that has properties the pattern does not name (unless the pattern has `...rest`): at compile time for object literals passed to a known callee, otherwise at runtime. Details in §4.4.14 | yes |
 | D41 | `do … while`, `switch`, `void`, `delete` | **As in JavaScript, with two PScript rules**: `switch` compares with `==`, which is strict (D1), so it behaves like JS's `===` matching; `delete` removes own properties of **plain objects** (and host objects) only: on class instances, arrays, functions, classes, namespaces, frozen objects and primitives it is a `TypeError` (JS would leave a hole in an array or silently fail), and `delete x` / `delete 1` are `SyntaxError`s. `void x` gives `undefined`. Details in §4.4.15 | minor (delete errors) |
+| D42 | Generators | **JavaScript generators**: `function*`, `*method()` (classes and object literals, static too), `yield`, `yield*`, generator objects with `next`, `return` and `throw`, iterable by `for…of`, array patterns and `Array.from`; leaving a `for…of` early (`break`, `return`, an exception) or destructuring closes the generator (its `finally` blocks run), as in JS. **"No value" is `null` (D37)**: a bare `yield` yields `null`, `next()` without an argument makes the paused `yield` give `null`, a finished generator gives `{ value: null, done: true }`. No async generators. Generator objects print as `[Generator]`. Details in §4.4.16 | minor (null instead of undefined) |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -345,13 +347,13 @@ A small local Vite plugin that turns `import parser from './pscript.jison'` into
 
 - `IDENT`: `[A-Za-z_$][A-Za-z0-9_$]*`. `$` is an ordinary identifier character with no special meaning (D30).
 - `#` is not a valid character: `SyntaxError: Unexpected '#'. Use the 'private' modifier for private members`.
-- Keywords (reserved): `let const function return if else for of while break continue class extends new this super true false null undefined typeof instanceof in throw try catch finally static import export public protected private interface implements do switch case default delete void` (the last six since D41).
+- Keywords (reserved): `let const function return if else for of while break continue class extends new this super true false null undefined typeof instanceof in throw try catch finally static import export public protected private interface implements do switch case default delete void yield` (`do`…`void` since D41, `yield` since D42).
 - **Contextual keywords** (ordinary identifiers everywhere else; the token filter turns them into keyword tokens only in the positions below, §4.2.5):
   - `get`, `set`: in a class member-name or object-literal key position when followed by another member name → `GET` / `SET`. A method *named* `get` (`get() {}`) stays an identifier.
   - `as`: inside an import/export specifier list, or right after `import *` → `AS`.
   - `override`, `final`: in a class member-name position when followed by another modifier, `get`/`set`, or a member name → `OVERRIDE` / `FINAL`. `final` directly before `class` (at statement start, after `export`, or in expression position) → `FINAL`. Elsewhere both are ordinary identifiers (`let final = 1` works).
   - `from`: after the closing `}` of an import/export specifier list, or after `import * as IDENT` → `FROM`.
-- Reserved for the future (always a `SyntaxError` as an identifier): `var async await yield enum package abstract`.
+- Reserved for the future (always a `SyntaxError` as an identifier): `var async await enum package abstract`.
 - Keywords are allowed as **property names** after `.` and as object-literal or class-member keys. The token filter rewrites them to `IDENT` in those positions (§4.2.4).
 
 #### 4.1.3 Literals: booleans, null, undefined
@@ -784,7 +786,7 @@ Semantics:
   - all three clauses are optional; a missing `test` means `true`;
   - `init` may be a `let`/`const` declaration (per-iteration bindings, §4.4.4) or an expression.
 - `for (let x of iterable) body`, also with `const x` or a bare `x` (an existing binding).
-  - **Iterables in v1**: arrays (iterated live, by index, while `i < length`), strings (by UTF-16 code unit in v1; COULD: by code point), and host proxies of iterable host values (JS arrays, Maps, Sets, anything with `Symbol.iterator`), iterated through the host iterator (§5.8.1).
+  - **Iterables in v1**: arrays (iterated live, by index, while `i < length`), strings (by UTF-16 code unit in v1; COULD: by code point), generator objects (D42, §4.4.16), and host proxies of iterable host values (JS arrays, Maps, Sets, anything with `Symbol.iterator`), iterated through the host iterator (§5.8.1).
   - Anything else → `TypeError: x is not iterable`.
   - The binding is fresh per iteration.
   - COULD: a user-defined protocol (an object with an `iterator()` method returning `{ next() }`).
@@ -990,6 +992,47 @@ const ignored = void f()    // undefined
 **`void x`** evaluates `x` and gives `undefined` (the "missing property" value of JS; D37's `null` rules are not involved).
 
 **`delete o.k` / `delete o[k]`** removes an own property and gives `true` (also when there is no such property). Only **plain objects** (object literals, `Object.create`, `JSON.parse` results, …) and host objects (through the host, `Reflect.deleteProperty`) can lose properties. Everything else keeps its shape, so `delete` is a **`TypeError`**: class instances (D36: their members are declared), arrays (no holes, §4.4.7; use `splice`), functions and classes (D29), interfaces, module namespaces, `globalThis`, frozen objects, primitives, `null` and `undefined` (`Cannot delete property 'x' of a class instance`). The operand must be a member expression: `delete x` (`Delete of an unqualified identifier is not allowed`, as in strict mode), `delete 1`, `delete f()` and `delete super.x` are `SyntaxError`s.
+
+#### 4.4.16 Generators (D42)
+
+```js
+function* naturals() {
+  let n = 0
+  while (true) yield n++
+}
+
+function* take(iterable, count) {
+  for (const item of iterable) {
+    if (count-- <= 0) return
+    yield item
+  }
+}
+
+for (const n of take(naturals(), 3)) print(n)   // 0 1 2
+
+class Tree {
+  *walk() {
+    yield this.value
+    for (const child of this.children) yield* child.walk()
+  }
+}
+```
+
+**Syntax**: `function* name(…) {}` (declaration and expression), `*name(…) {}` methods in classes (also `static *name`) and object literals. Keywords work as generator method names (`static *of()`). Arrows, getters, setters and constructors cannot be generators. `yield` is a keyword (D42): `yield`, `yield expr` and `yield* expr` are expressions with the lowest precedence of an operand (`yield a + b` yields the sum; `(yield a) + b` needs the parentheses); they are allowed only in the body of a generator — not in its parameters, nor in functions or arrows nested in it (`SyntaxError: 'yield' is only valid in generator functions`). A line break after `yield` ends the statement unless the next line continues it (§4.2.1). As in JS, a class field followed by a `*method()` on the next line needs a `;` (`x\n*m() {}` reads as a multiplication).
+
+**Semantics** (as in JavaScript):
+
+- Calling a generator function binds its parameters (strict arity, D38; defaults evaluated at call time) and returns a **generator object** without running the body.
+- `next(v)` runs the body until the next `yield`, giving `{ value, done: false }`, or until it returns, giving `{ value: <returned>, done: true }`; `v` becomes the value of the paused `yield` (the first `next`'s argument is ignored). `return(v)` resumes as if the paused `yield` were a `return v`: `finally` blocks run (they may yield again), `catch` blocks do not; the result is `{ value: v, done: true }`. `throw(e)` throws `e` at the paused `yield`. A generator that has not started completes at once on `return` / `throw`. Resuming a running generator (from inside itself) → `TypeError: Generator is already running`. `next`, `return` and `throw` take at most one argument.
+- `yield* iterable` yields everything the iterable produces and evaluates to its return value. For a generator, `next(v)`, `throw(e)` and `return(v)` are forwarded to it; other iterables (arrays, strings, host iterables) only advance, `throw` closes them and fails with a `TypeError`, `return` closes them and returns.
+- Generator objects are iterable (`for…of`, array patterns, `Array.from`, `yield*`) and are their own iterators: a partly consumed generator continues where it was.
+- **Closing**: leaving a `for…of` over a generator before it is done — `break`, `continue` of an outer loop, `return`, or an exception — calls `return()` on it, so its `finally` blocks run (an exception thrown by that cleanup replaces a `break`/`return`, but not an exception already propagating). An array pattern closes the generator after taking its elements.
+- **No value is `null` (D37)**: a bare `yield` yields `null`; `next()` without an argument makes the paused `yield` give `null`; falling off the end or a bare `return` completes with `null`, and a finished generator keeps answering `{ value: null, done: true }`. JavaScript uses `undefined` in all these places.
+- `typeof g == 'object'`; generator objects have no own properties and print as `[Generator]`; `String(g)` is `[object Generator]`; `delete` on them is a `TypeError` (D41). Generator functions are ordinary functions otherwise (not classes, D25).
+
+**Host interop** (§5.8.1): a script generator reaches the host as a JS iterator (`next`/`return`/`throw`, `Symbol.iterator`); host generators and other host iterables work in `for…of` and `yield*`.
+
+**Not supported**: async generators and `for await` (§4.4.17).
 
 ### 4.5 Classes, access control and interfaces (R12, R24)
 
@@ -1734,7 +1777,7 @@ export interface MemberExpression extends NodeBase {
 }
 ```
 
-D41 adds `DoWhileStatement { body, test }`, `SwitchStatement { discriminant, cases: SwitchCase[] }`, `SwitchCase { test: Expression | null, consequent: Statement[] }` and the unary operators `'void'` and `'delete'` (ESTree shapes).
+D42 adds `YieldExpression { argument: Expression | null, delegate }` and `generator` / `async` flags on every function node (ESTree; arrows have `generator: false`). D41 adds `DoWhileStatement { body, test }`, `SwitchStatement { discriminant, cases: SwitchCase[] }`, `SwitchCase { test: Expression | null, consequent: Statement[] }` and the unary operators `'void'` and `'delete'` (ESTree shapes).
 
 COULD extensions (`SpreadElement`, `ChainExpression`, `SequenceExpression`) must be additive.
 
@@ -1884,6 +1927,11 @@ export interface ModuleRecord {
 | `OBJECT_REST` | k | v → obj | object pattern rest: a plain object with the own public properties not listed in k (JSON array of keys) (D40) |
 | `DELETE_PROP` | k | obj → bool | `delete obj.k` (D41): plain and host objects only, otherwise `TypeError` |
 | `DELETE_INDEX` | — | obj key → bool | `delete obj[key]` (D41) |
+| `GENERATOR` | — | → | generator prologue (D42), after the parameters are bound: the frame becomes a suspended coroutine and the call returns a generator object |
+| `YIELD` | — | v → sent | suspends the generator with v; resuming pushes the value sent by `next()` (or throws / returns there) |
+| `YIELD_DELEGATE` | — | iter sent → iter \| result | one step of `yield*`: forwards the resumption mode to the delegate; when the delegate is not done, suspends with its value and runs again on resumption |
+| `ITER_CLOSE` | — | iter → | pops a value; closes it if it is a generator iterator that is not done (`break`, array patterns) |
+| `CLOSE_ITERS` | — | v → v | `return` inside `for…of`: closes the iterators on the frame's stack below the returned value |
 | `THROW` | — | v → | |
 | `TRY` | catchTarget finallyTarget | → | push handler (−1 = none); records stack height and env depth |
 | `END_TRY` | — | → | pop handler |
@@ -2006,6 +2054,15 @@ This is the "flattened method table" from the D28 discussion: a VMT keyed by nam
 - `LOAD_IMPORT i` reads `frame.module.importCells[i]`, i.e. `cell.env.slots[cell.slot]`, with the TDZ check. Host-module imports are *host cells*: reading one performs `toScript(exports[name])` on every access (live, D9).
 - Namespace imports compile to `LOAD_IMPORT` of a cell holding the record's namespace object, created lazily once per record.
 - Evaluating a module = running its `main` proto in a frame whose top env is the record's pre-created `env` (created at link time, so cells can point into it before evaluation, and hoisted functions are initialised then).
+
+#### 5.6.9 Coroutines (D42, §1.7)
+
+- A generator's frame is an ordinary heap `Frame` with a `coroutine`. Its prologue (`GENERATOR`) runs in the caller's loop after the arguments are bound, then takes the frame off the frame stack — saving the operand-stack values above `frame.base` in the coroutine — and returns the generator object as a `RETURN` would.
+- `resumeCoroutine(co, mode, value)` pushes the frame back (operand values restored, `frame.base` and every handler's `stackHeight` shifted by the same delta) and runs a **nested dispatch loop** whose entry frame is the coroutine's frame. So `YIELD` always suspends the entry frame: it saves the stack slice, pops the frame and returns the yielded value from the loop. A `RETURN` of the frame ends the loop as usual; the coroutine is then completed.
+- Resumption modes: `next` pushes the sent value (nothing when the body starts); `throw` unwinds from the paused `yield` with the exception; `return` unwinds with a `GeneratorReturn` signal, a `ScriptThrow` that `catch` handlers skip (`finally` handlers run, and their `END_FINALLY` rethrows it). The signal leaving the frame completes the generator with its value.
+- `yield*` keeps the delegate iterator on the stack. `YIELD_DELEGATE` steps it with the mode of the last resumption (`co.mode`, valid only while `co.delegating`); while the delegate is not done it suspends with `ip` pointing at itself.
+- Iterators on the operand stack belong to `for…of` loops. Unwinding (`enterHandler`, popping a frame) closes the ones it drops, ignoring errors from the cleanup; `break` uses `ITER_CLOSE` instead of `POP`; `return` emits `CLOSE_ITERS` when the function has stack items.
+- The step budget (D14) covers resumptions; a resumption from the host (empty frame stack) starts a new budget. Resumptions count toward `maxCallDepth`.
 
 ### 5.7 Runtime value model (WP-D, contract in P0)
 
@@ -3239,6 +3296,8 @@ Programs that rely on these behave differently when compiled with `psc` (P5):
   imported ones); at runtime a destructured parameter ignores unknown keys, and a parameter pattern's default also
   applies when `undefined` is passed;
 - runtime errors are native JS errors (`AccessError` does not exist; access violations on `#x` are `TypeError`s);
+- generators (D42): JS gives `undefined` where PScript gives `null` (`next()` without an argument, finished steps,
+  falling off the end); a bare `yield` is printed as `yield null`;
 - `delete` (D41) goes through a helper that allows plain objects only (by prototype: `Object.prototype` or `null`), so
   host objects such as a `Map` instance cannot lose properties in emitted code.
 

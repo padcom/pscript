@@ -52,6 +52,7 @@ import type {
   UpdateExpression,
   VariableDeclaration,
   VariableDeclarator,
+  YieldExpression,
 } from './ast'
 import { cookString } from './literals'
 
@@ -138,6 +139,10 @@ export interface FunctionHead {
   id: Identifier | null
   /** formal parameters */
   params: Pattern[]
+  /** `function*` (D42) */
+  generator?: boolean
+  /** `async function` (D43) */
+  async?: boolean
 }
 
 export const builders = {
@@ -173,14 +178,20 @@ export const builders = {
     return { type: 'ForStatement', init, test, update, body, loc: toLoc(loc) }
   },
 
-  functionNode(type: FunctionType, { id, params }: FunctionHead, body: BlockStatement, loc: JisonLoc): FunctionNode {
-    return { type, id, params, body, loc: toLoc(loc) } as FunctionNode
+  functionNode(type: FunctionType, head: FunctionHead, body: BlockStatement, loc: JisonLoc): FunctionNode {
+    const { id, params, generator = false, async = false } = head
+
+    return { type, id, params, body, generator, async, loc: toLoc(loc) } as FunctionNode
   },
 
-  arrow(params: Pattern[], body: BlockStatement | Expression, loc: JisonLoc): ArrowFunctionExpression {
+  arrow(params: Pattern[], body: BlockStatement | Expression, loc: JisonLoc, async = false): ArrowFunctionExpression {
     const expression = body.type !== 'BlockStatement'
 
-    return { type: 'ArrowFunctionExpression', id: null, params, body, expression, loc: toLoc(loc) }
+    return { type: 'ArrowFunctionExpression', id: null, params, body, expression, generator: false, async, loc: toLoc(loc) }
+  },
+
+  yieldExpression(argument: Expression | null, delegate: boolean, loc: JisonLoc): YieldExpression {
+    return { type: 'YieldExpression', argument, delegate, loc: toLoc(loc) }
   },
 
   assignmentPattern(left: PatternTarget, right: Expression, loc: JisonLoc): AssignmentPattern {

@@ -230,6 +230,9 @@ function checkParams(errors: SyntaxErrorFactory, params: Pattern[]): Pattern[] {
   return params
 }
 
+/** What the grammar collects for a method: parameters, body and the `*` / `async` flags. */
+type MethodParts = Pick<FunctionHead, 'params' | 'generator' | 'async'> & { body: BlockStatement }
+
 // Object-literal parts that need checks: shorthand names must be usable as variables; methods have checked parameters.
 function objectBuilders(errors: SyntaxErrorFactory) {
   return {
@@ -238,8 +241,10 @@ function objectBuilders(errors: SyntaxErrorFactory) {
 
       return { ...builders.property(id, id, false, loc), shorthand: true }
     },
-    method({ params, body }: { params: Pattern[], body: BlockStatement }, loc: JisonLoc) {
-      return builders.functionNode('FunctionExpression', { id: null, params: checkParams(errors, params) }, body, loc)
+    method({ params, body, generator, async }: MethodParts, loc: JisonLoc) {
+      const head = { id: null, params: checkParams(errors, params), generator, async }
+
+      return builders.functionNode('FunctionExpression', head, body, loc)
     },
   }
 }
@@ -291,8 +296,8 @@ function checkedBuilders(errors: SyntaxErrorFactory, patterns: PatternBuilder) {
     arrow(params: Pattern[], body: BlockStatement | Expression, loc: JisonLoc) {
       return builders.arrow(checkParams(errors, params), body, loc)
     },
-    functionNode(type: FunctionType, { id, params }: FunctionHead, body: BlockStatement, loc: JisonLoc) {
-      return builders.functionNode(type, { id, params: checkParams(errors, params) }, body, loc)
+    functionNode(type: FunctionType, head: FunctionHead, body: BlockStatement, loc: JisonLoc) {
+      return builders.functionNode(type, { ...head, params: checkParams(errors, head.params) }, body, loc)
     },
     variableDeclaration(kind: 'let' | 'const', declarations: VariableDeclarator[], loc: JisonLoc) {
       const missing = kind === 'const' ? declarations.find(d => d.init === null) : undefined

@@ -48,6 +48,7 @@ const PRECEDENCES: ByType<Precedence> = {
   ConditionalExpression: () => Precedence.Conditional,
   LogicalExpression: node => BINARY[node.operator],
   BinaryExpression: node => BINARY[node.operator],
+  YieldExpression: () => Precedence.Assignment,
   UnaryExpression: () => Precedence.Unary,
   UpdateExpression: node => node.prefix ? Precedence.Unary : Precedence.Postfix,
   MemberExpression: () => Precedence.Member,

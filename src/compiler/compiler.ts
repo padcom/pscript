@@ -57,6 +57,7 @@ import type {
   UpdateExpression,
   VariableDeclaration,
   WhileStatement,
+  YieldExpression,
 } from '@/parser/ast'
 import type { FunctionNode } from '@/parser/ast-builders'
 import { parse } from '@/parser/parse'
@@ -244,6 +245,7 @@ const EXPRESSIONS: { [K in Expression['type']]?: Handler<Extract<Expression, { t
   ArrayExpression: (c, node) => c.array(node),
   TemplateLiteral: (c, node) => c.template(node),
   ClassExpression: (c, node) => c.classExpression(node),
+  YieldExpression: (c, node) => c.yieldExpression(node),
 }
 
 /**
@@ -365,6 +367,8 @@ interface FunctionContext {
   isConstructor: boolean
   /** `super(...)` is allowed: a derived constructor, or an arrow inside one */
   superCall: boolean
+  /** compiling a generator's body (D42): `yield` is allowed (not in its parameters) */
+  generator: boolean
 }
 
 /**
@@ -420,6 +424,7 @@ class Compiler {
     classContext: null,
     isConstructor: false,
     superCall: false,
+    generator: false,
   }
 
   /** compile-time knowledge of class declarations, by binding (§4.5.9) */
@@ -873,7 +878,7 @@ class Compiler {
     this.patchAll(loop.breaks)
 
     if (iteration.hasEnv) this.out.emit(Op.POP_ENV)
-    this.out.emit(Op.POP)
+    this.out.emit(Op.ITER_CLOSE) // `break`: a generator runs its finally blocks
     this.out.patch(done)
   }
 
@@ -970,7 +975,7 @@ class Compiler {
     const loop = this.jumpTarget(list)
     if (!loop) throw this.error(`Illegal ${list === 'breaks' ? 'break' : 'continue'} statement`, node.loc)
 
-    for (let n = this.fn.stackItems; n > loop.stackItems; n--) this.out.emit(Op.POP)
+    for (let n = this.fn.stackItems; n > loop.stackItems; n--) this.out.emit(Op.ITER_CLOSE) // inner for…of iterators
 
     const depth = this.leaveRegions(loop.regionDepth)
 
@@ -1777,6 +1782,8 @@ class Compiler {
     this.fn.stackItems++
     this.leaveRegions(0)
     this.fn.stackItems--
+
+    if (this.fn.stackItems > 0) this.out.emit(Op.CLOSE_ITERS) // leaving for…of loops
     this.out.emit(Op.RETURN)
   }
 
@@ -1808,6 +1815,22 @@ class Compiler {
     this.initialize(id.name)
     this.scope = outer
     this.out.emit(Op.POP_ENV)
+  }
+
+  // `yield v` (or null, D37) suspends with v; `yield* iterable` delegates with YIELD_DELEGATE until it is done (D42).
+  yieldExpression({ argument, delegate, loc }: YieldExpression) {
+    if (!this.fn.generator) throw this.error("'yield' is only valid in generator functions", loc)
+    if (argument) this.expression(argument)
+    else this.out.emit(Op.NULL)
+
+    if (delegate) this.yieldDelegate(loc)
+    else this.emitAt(loc, Op.YIELD)
+  }
+
+  private yieldDelegate(loc: SourceLocation) {
+    this.emitAt(loc, Op.GET_ITER)
+    this.out.emit(Op.NULL) // the first step sends nothing
+    this.emitAt(loc, Op.YIELD_DELEGATE)
   }
 
   // `this` is dynamic in functions and lexical in arrows (§4.4.5).
@@ -1851,6 +1874,7 @@ class Compiler {
       classContext: null,
       isConstructor: false,
       superCall: false,
+      generator: false,
       ...inherited,
       ...options,
     }
@@ -1858,12 +1882,18 @@ class Compiler {
 
   // Function env layout: parameters (rest last), then the body's top-level declarations.
   // Names bound by parameter patterns come after the parameters (D40).
-  private functionBody({ params, body }: AnyFunction, signature: Signature): FunctionProto {
+  private functionBody({ params, body, generator }: AnyFunction, signature: Signature): FunctionProto {
     const slots = params.map(paramSlot)
     const patternNames = params.filter(param => paramTarget(param).type !== 'Identifier').flatMap(boundNames)
 
     for (const name of [...slots, ...patternNames]) this.declareName(this.scope, name, 'let')
     this.parameters(params, slots)
+
+    // a generator's parameters are bound by the call; its body runs on the first next() (D42)
+    if (generator) {
+      this.out.emit(Op.GENERATOR)
+      this.fn.generator = true
+    }
 
     if (body.type === 'BlockStatement') this.blockBody(body)
     else this.expressionBody(body)
@@ -2002,7 +2032,7 @@ class Compiler {
       this.out.emit(Op.ITER_VALUE)
       this.bindTarget(element, mode, named === null ? null : `${named}${i}.`)
     }
-    this.out.emitPop()
+    this.out.emit(Op.ITER_CLOSE) // a generator that is not done is closed (as in JS)
   }
 
   // ---------------------------------------------------------------------------

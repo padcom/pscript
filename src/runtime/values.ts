@@ -297,6 +297,8 @@ export interface Realm {
   BooleanPrototype: Object
   /** prototype of `Error` instances */
   ErrorPrototype: Object
+  /** `next`, `return` and `throw` of generator objects (D42) */
+  GeneratorPrototype: Object
   /** global bindings */
   globals: Map<string, GlobalBinding>
 }

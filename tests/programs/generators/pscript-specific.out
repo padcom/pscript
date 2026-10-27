@@ -1,0 +1,10 @@
+{"value":null,"done":false}
+received null
+{"value":null,"done":false}
+{"value":null,"done":true}
+{"value":null,"done":true}
+[Generator]
+TypeError Generator is already running
+TypeError next() expects at most 1 argument, got 2
+TypeError Cannot delete property 'next' of a generator
+TypeError Generator.prototype.next called on a non-generator

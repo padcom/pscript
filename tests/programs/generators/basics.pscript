@@ -1,0 +1,80 @@
+// function*, yield, next(), for…of and generator methods
+function* count(from, to) {
+  for (let i = from; i <= to; i++) yield i
+  return 'finished'
+}
+
+const g = count(1, 3)
+let step = g.next()
+while (!step.done) {
+  print('value', step.value)
+  step = g.next()
+}
+print('returned', step.value, step.done)
+
+for (const n of count(5, 7)) print('for…of', n)
+
+const [first, second] = count(10, 20)
+print('destructured', first, second)
+print('Array.from', Array.from(count(1, 5)).join(' '))
+
+// next(value) is what the paused yield gives
+function* accumulator() {
+  let total = 0
+  while (true) {
+    const amount = yield total
+    total += amount
+  }
+}
+const acc = accumulator()
+acc.next()
+acc.next(5)
+acc.next(10)
+print('total', acc.next(1).value)
+
+// yield has the lowest precedence of the operand: yield a + b yields the sum
+function* precedence() {
+  const x = yield 1 + 2
+  yield x * 2
+}
+const p = precedence()
+print(p.next().value, p.next(21).value)
+
+// parameters are bound (and defaults evaluated) when the generator is called
+function* withDefault(label = 'default') { yield label }
+print(withDefault().next().value, withDefault('given').next().value)
+
+// generator expressions, object-literal and class generator methods
+const evens = function* (limit) { for (let i = 0; i < limit; i += 2) yield i }
+print('evens', Array.from(evens(7)).join(','))
+
+const shelf = {
+  books: ['A', 'B'],
+  *titles() { for (const book of this.books) yield 'Book ' + book },
+}
+print(Array.from(shelf.titles()).join(', '))
+
+class Range {
+  from
+  to
+  constructor(from, to) {
+    this.from = from
+    this.to = to
+  }
+  *values() {
+    for (let i = this.from; i < this.to; i++) yield i
+  }
+  static *of(...items) {
+    for (const item of items) yield item
+  }
+}
+print(Array.from(new Range(3, 6).values()).join(' '), Array.from(Range.of('x', 'y')).join(' '))
+
+// each call makes an independent generator
+const a = count(1, 2)
+const b = count(1, 2)
+a.next()
+print('independent', a.next().value, b.next().value)
+
+// typeof
+print(typeof count, typeof count(1, 1))

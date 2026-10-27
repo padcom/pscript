@@ -207,3 +207,22 @@ describe('psc: do … while, switch, void, delete (D41)', () => {
     expect(code).toContain('void -1;\n$delete(o, \'a\');\n$delete(o, "b");')
   })
 })
+
+describe('psc: generators (D42)', () => {
+  it('prints function*, generator methods and yield', () => {
+    expect(js('function* g(a) {\n  const x = yield a + 1\n  yield\n  yield* [x]\n}')).toBe([
+      'function* g(a) {',
+      '  const x = yield a + 1;',
+      '  yield null;',
+      '  yield* [x];',
+      '}',
+    ].join('\n'))
+    expect(js('const o = { *items() { yield 1 } }')).toBe('const o = {\n  *items() {\n    yield 1;\n  },\n};')
+    expect(js('class A {\n  static *of() {}\n  *values() {}\n}')).toContain('static *of() {}\n  *values() {}')
+    expect(js('const f = function* () {}')).toBe('const f = function* () {};')
+  })
+
+  it('parenthesises yield as an operand', () => {
+    expect(js('function* g() { const s = (yield 1) + (yield 2) }')).toContain('const s = (yield 1) + (yield 2);')
+  })
+})

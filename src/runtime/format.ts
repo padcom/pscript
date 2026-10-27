@@ -2,6 +2,7 @@
 // accessors, functions, classes and interfaces.
 import { IDENT_PATTERN } from '@/parser/tokens'
 import { toStringIn } from './conversions'
+import { GeneratorObject } from './generators'
 import { publicProps } from './members'
 import { toString } from './operators'
 import {
@@ -48,6 +49,13 @@ function formatNamed(value: ScriptFunction | Interface): string {
   return value instanceof Interface ? `[interface ${value.name}]` : formatFunction(value)
 }
 
+// Functions, classes, interfaces and generators (D42) print by kind and name, never by their properties.
+function namedForm(object: ScriptObject): string | null {
+  if (object instanceof ScriptFunction || object instanceof Interface) return formatNamed(object)
+
+  return object instanceof GeneratorObject ? '[Generator]' : null
+}
+
 function formatKey(key: string): string {
   return IDENT_PATTERN.test(key) ? key : JSON.stringify(key)
 }
@@ -78,7 +86,8 @@ class Formatter {
 
   // Class instances print as their toString() (D35); functions and containers have their own forms.
   private object(object: ScriptObject, depth: number): string {
-    if (object instanceof ScriptFunction || object instanceof Interface) return formatNamed(object)
+    const named = namedForm(object)
+    if (named !== null) return named
 
     return object.klass ? this.instance(object) : this.container(object, depth)
   }

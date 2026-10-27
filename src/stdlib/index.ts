@@ -4,6 +4,7 @@ import type { Realm } from '@/runtime/values'
 import { installArray } from './array'
 import { installErrors } from './errors'
 import { installFunction } from './function'
+import { installGenerator } from './generator'
 import { installGlobals, type StdlibIO } from './global'
 import { installJson } from './json'
 import { installMath } from './math'
@@ -29,6 +30,7 @@ export function installStdlib(realm: Realm, io: Partial<StdlibIO> & Pick<StdlibI
   installMath(realm, io.random ?? Math.random)
   installJson(realm)
   installErrors(realm)
+  installGenerator(realm)
 }
 
 let globalNames: ReadonlySet<string> | null = null

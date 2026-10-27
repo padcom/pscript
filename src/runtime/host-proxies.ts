@@ -1,7 +1,8 @@
 // Script values seen from the host (§5.8.1): live proxies. Functions are proxies over arrow functions (not
 // constructable, D25), classes over classes (`new` runs script construction, `instanceof` applies the brand rule),
 // arrays over arrays (live `items`), other objects over plain objects (reads and writes go through the runtime with
-// no home class, so private and protected members stay inaccessible).
+// no home class, so private and protected members stay inaccessible), generators over JS iterators (D42).
+import { GeneratorObject, type ResumeMode } from './generators'
 import { publicProps } from './members'
 import { instanceOf } from './operators'
 import { getProperty, hasPropertyIn, setProperty } from './properties'
@@ -150,6 +151,23 @@ class Proxies {
     return { value: this.convert.toHost(array.items[Number(key)]), writable: true, enumerable: true, configurable: true }
   }
 
+  // A JS iterator: `for…of`, spread and `Array.from` work on the host side; a missing argument is null (D37).
+  generator(generator: GeneratorObject): object {
+    const step = (mode: ResumeMode, args: unknown[]) => this.enter(() => {
+      const { value, done } = generator.driver.resume(mode, args.length === 0 ? null : this.convert.toScript(args[0]))
+
+      return { value: this.convert.toHost(value), done }
+    })
+
+    return {
+      next: (...args: unknown[]) => step('next', args),
+      return: (...args: unknown[]) => step('return', args),
+      throw: (...args: unknown[]) => step('throw', args),
+      [Symbol.iterator]() { return this },
+      [Symbol.toStringTag]: 'Generator',
+    }
+  }
+
   object(object: ScriptObject): object {
     return new Proxy({}, {
       get: (_, key) => (typeof key === 'symbol' ? undefined : this.read(object, key)),
@@ -190,6 +208,12 @@ class Proxies {
   }
 }
 
+function objectProxy(proxies: Proxies, value: ScriptObject): object {
+  if (value instanceof GeneratorObject) return proxies.generator(value)
+
+  return value instanceof ScriptArray ? proxies.array(value) : proxies.object(value)
+}
+
 /**
  * Creates the host proxy of a script object.
  *
@@ -204,5 +228,5 @@ export function hostProxy(host: ProxyHost, convert: Converter, value: ScriptObje
   if (value instanceof Class) return proxies.class(value)
   if (value instanceof ScriptFunction) return proxies.function(value)
 
-  return value instanceof ScriptArray ? proxies.array(value) : proxies.object(value)
+  return objectProxy(proxies, value)
 }

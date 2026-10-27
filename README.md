@@ -32,7 +32,8 @@ JavaScript hard to reason about:
 - inside a class body, members can be used without `this.` (with a strict rule against ambiguous names);
 - modules with named imports and exports, live bindings and an in-memory or custom loader;
 - `delete` works on plain objects only (class instances and arrays keep their shape);
-- no `var`, spread, generators, `async` or `with`.
+- generators work as in JavaScript (missing values are `null` there too);
+- no `var`, spread, `async` or `with`.
 
 The full language reference, including a list of differences from JavaScript, is in
 [`docs/LANGUAGE.md`](docs/LANGUAGE.md).

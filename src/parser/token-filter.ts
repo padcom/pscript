@@ -36,6 +36,8 @@ interface Token {
   endsDo?: boolean
   /** the `:` of a `case` / `default` clause: a statement starts after it */
   endsCase?: boolean
+  /** a `*` where a class member or an object-literal key starts: a generator method's name follows (D42) */
+  generatorStar?: boolean
   /** a `}` that closes a block */
   closesBlock?: boolean
   /** a `}` that closes a block statement or a function declaration's body: no `;` needed after it */
@@ -105,6 +107,7 @@ const EMIT_HOOKS: Record<string, (filter: TokenFilter, token: Token) => void> = 
   'CASE': filter => filter.caseStart(),
   'DEFAULT': filter => filter.caseStart(),
   '?': filter => filter.caseTernary(),
+  '*': (filter, token) => filter.markGeneratorStar(token),
   ':': (filter, token) => filter.caseColon(token),
   'WHILE': (filter, token) => filter.whileStart(token),
 }
@@ -153,7 +156,7 @@ const CLOSERS = new Set([')', ']', '}', 'TEMPLATE_TAIL'])
 const TEMPLATE_STARTS = new Set(['TEMPLATE_FULL', 'TEMPLATE_HEAD'])
 
 /** ENDERS that end a statement rather than an expression, so they cannot be a template's tag. */
-const STATEMENT_ENDERS = new Set(['RETURN', 'BREAK', 'CONTINUE'])
+const STATEMENT_ENDERS = new Set(['RETURN', 'BREAK', 'CONTINUE', 'YIELD'])
 
 function endOf(loc: JisonLocation): JisonLocation {
   return { first_line: loc.last_line, last_line: loc.last_line, first_column: loc.last_column, last_column: loc.last_column }
@@ -342,7 +345,20 @@ export class TokenFilter {
   }
 
   private inNamePosition(): boolean {
-    return this.prev?.name === '.' || this.inKeyPosition() || this.memberName()
+    return this.prev?.name === '.' || this.inKeyPosition() || this.inMethodNamePosition()
+  }
+
+  private inMethodNamePosition(): boolean {
+    return this.memberName() || this.generatorMethodName()
+  }
+
+  // `*of() {}`, `static *delete() {}`: a keyword after a member-start `*` and before `(` is the method's name.
+  private generatorMethodName(): boolean {
+    return Boolean(this.prev?.generatorStar) && this.peek(0).name === '('
+  }
+
+  markGeneratorStar(token: Token) {
+    token.generatorStar = this.inMemberPosition() || (this.top() === '{object}' && this.afterKeyPreceder())
   }
 
   private inKeyPosition(): boolean {

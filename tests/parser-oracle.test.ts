@@ -8,7 +8,7 @@ import { parse } from '@/parser/parse'
 
 const root = join(import.meta.dirname, 'programs')
 // positions, PScript's class extensions (access, override, final, implements), and acorn-only flags
-const IGNORED_KEYS = new Set(['start', 'end', 'loc', 'range', 'access', 'override', 'final', 'implements', 'generator', 'async'])
+const IGNORED_KEYS = new Set(['start', 'end', 'loc', 'range', 'access', 'override', 'final', 'implements'])
 
 IGNORED_KEYS.add('directive')
 

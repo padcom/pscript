@@ -38,6 +38,7 @@ const PSCRIPT_ONLY_DIFFERENCES: Record<string, string> = {
   'functions/defaults-and-rest.pscript': 'defaults also apply to `undefined`; dynamic calls are not arity-checked',
   'functions/null-returns.pscript': 'functions falling off the end return `undefined`',
   'functions/this-in-plain-call.pscript': '`this` is `undefined` in a plain call',
+  'generators/pscript-specific.pscript': 'missing values are `undefined` (`next()`, finished steps); JS error messages',
   'implicit-members/rules.pscript': 'static-context and method-assignment errors are runtime checks',
   'interfaces/declarations.pscript': 'interfaces declared in functions are not checked at compile time; `print` formatting',
   'objects/printing.pscript': '`print` formatting (D18)',

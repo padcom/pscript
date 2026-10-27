@@ -1,6 +1,7 @@
 // Call frames of the VM (§5.6.1).
 import type { FunctionProto } from '@/compiler/function-proto'
 import type { ModuleRecord } from '@/modules/module-record'
+import type { Coroutine } from './coroutines'
 import type { ScriptBinding } from './globals'
 import type { Class, Closure, Environment, ImplicitReceiver, Object as ScriptObject, Value } from '@/runtime/values'
 
@@ -52,4 +53,6 @@ export interface Frame {
   newTarget: Class | null
   /** script bindings found by LOAD_GLOBAL / STORE_GLOBAL, by constant index (shared by the closure's calls) */
   globalCache: ScriptBinding[]
+  /** the generator (D42) this frame belongs to, once its prologue has run */
+  coroutine: Coroutine | null
 }

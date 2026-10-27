@@ -90,6 +90,11 @@ export enum Op {
   OBJECT_REST,
   DELETE_PROP,
   DELETE_INDEX,
+  GENERATOR,
+  YIELD,
+  YIELD_DELEGATE,
+  ITER_CLOSE,
+  CLOSE_ITERS,
   THROW,
   TRY,
   END_TRY,
@@ -224,6 +229,11 @@ export const OPCODES: Readonly<Record<Op, OpcodeInfo>> = {
   [Op.OBJECT_REST]: info('k', 'v → obj'), // object pattern rest without the keys in k (JSON array) (D40)
   [Op.DELETE_PROP]: info('k', 'obj → bool'), // `delete o.k`: plain and host objects only, else TypeError (D41)
   [Op.DELETE_INDEX]: info('', 'obj key → bool'), // `delete o[key]`
+  [Op.GENERATOR]: info('', '→'), // generator prologue (D42): suspends the frame and returns a generator object
+  [Op.YIELD]: info('', 'v → sent'), // suspends with v; resumes with the value sent by next()
+  [Op.YIELD_DELEGATE]: info('', 'iter sent → iter | result'), // yield*: one step of the delegate; re-runs on resume
+  [Op.ITER_CLOSE]: info('', 'iter →'), // pops; closes a generator iterator that is not done (break, patterns)
+  [Op.CLOSE_ITERS]: info('', 'v → v'), // return inside for…of: closes the frame's iterators below the value
   [Op.THROW]: info('', 'v →'),
   [Op.TRY]: info('catchTarget finallyTarget', '→'), // push handler (-1 = none)
   [Op.END_TRY]: info('', '→'), // pop handler
