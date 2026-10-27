@@ -41,6 +41,7 @@ import type {
   RestElement,
   ReturnStatement,
   SourceLocation,
+  SpreadElement,
   Statement,
   Super,
   TemplateLiteral,
@@ -55,7 +56,7 @@ import type {
 } from '@/parser/ast'
 import { classInfoOf, keyName, type ClassInfo } from '@/compiler/class-info'
 import { ambiguityMessage, memberCandidate, type MemberContext } from '@/compiler/implicit-names'
-import { arityError, namedArgumentError, type Signature } from '@/compiler/signature'
+import { argumentsError, namedArgumentError, type Signature } from '@/compiler/signature'
 import { boundNames } from '@/parser/patterns'
 import { stdlibGlobalNames } from '@/stdlib'
 import { declaringClass, inheritedHalves, privateKey, staticPrefix, uniquePrivateName, type ClassNode } from './classes'
@@ -831,21 +832,32 @@ export class Emitter {
   }
 
   array({ elements }: ArrayExpression): string {
-    return `[${elements.map(element => this.expression(element, Precedence.Assignment)).join(', ')}]`
+    return `[${elements.map(element => this.element(element)).join(', ')}]`
+  }
+
+  // An argument or array element, spread or not (D46).
+  private element(node: Expression | SpreadElement): string {
+    if (node.type === 'SpreadElement') return `...${this.expression(node.argument, Precedence.Assignment)}`
+
+    return this.expression(node, Precedence.Assignment)
   }
 
   object({ properties }: ObjectExpression): string {
     if (properties.length === 0) return '{}'
-    if (properties.every(property => property.kind === 'init' && !property.method)) {
-      return `{ ${properties.map(property => this.property(property)).join(', ')} }`
+    if (properties.every(property => property.type === 'SpreadElement' || (property.kind === 'init' && !property.method))) {
+      return `{ ${properties.map(property => this.objectPart(property)).join(', ')} }`
     }
 
     this.depth++
     const inner = INDENT.repeat(this.depth)
-    const lines = properties.map(property => `${inner}${this.property(property)},`)
+    const lines = properties.map(property => `${inner}${this.objectPart(property)},`)
     this.depth--
 
     return `{\n${lines.join('\n')}\n${INDENT.repeat(this.depth)}}`
+  }
+
+  private objectPart(property: Property | SpreadElement): string {
+    return property.type === 'SpreadElement' ? this.element(property) : this.property(property)
   }
 
   private property({ key, value, kind, method, shorthand, computed }: Property): string {
@@ -977,8 +989,8 @@ export class Emitter {
     return `${testText} ? ${consequentText} : ${alternateText}`
   }
 
-  private arguments(args: Expression[]): string {
-    return `(${args.map(arg => this.expression(arg, Precedence.Assignment)).join(', ')})`
+  private arguments(args: CallExpression['arguments']): string {
+    return `(${args.map(arg => this.element(arg)).join(', ')})`
   }
 
   call(node: CallExpression): string {
@@ -996,7 +1008,7 @@ export class Emitter {
     const signature = this.calleeSignature(node.callee)
     if (!signature) return
 
-    const problem = arityError(signature, node.arguments.length)
+    const problem = argumentsError(signature, node.arguments)
     if (problem) throw this.error(problem, node)
 
     const named = namedArgumentError(signature, node.arguments)

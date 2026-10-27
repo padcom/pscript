@@ -1,0 +1,52 @@
+// Spread arguments (D46): functions, methods, natives, constructors and super calls
+function sum(a, b, c) { return a + b + c }
+const xs = [1, 2, 3]
+print(sum(...xs))
+print(sum(0, ...[5, 6]))
+print(sum(...[1], 2, ...[3]))
+print(Math.max(...xs), Math.min(...xs, -1))
+
+function log(level, ...parts) { return `${level}: ${parts.join(' ')}` }
+print(log(...['info', 'a', 'b']))
+print(log('warn', ...'xyz'))
+
+const counter = {
+  total: 0,
+  add(...values) {
+    for (const v of values) this.total += v
+    return this.total
+  },
+}
+print(counter.add(...xs, ...xs))
+
+class Point {
+  x
+  y
+  constructor(x, y) {
+    this.x = x
+    this.y = y
+  }
+  describe() { return `(${this.x}, ${this.y})` }
+}
+
+class Labeled extends Point {
+  name
+  constructor(label, ...coords) {
+    super(...coords)
+    this.name = label
+  }
+  label() { return `${this.name}${super.describe()}` }
+}
+
+print(new Point(...[3, 4]).describe())
+print(new Labeled('P', ...[1, 2]).label())
+
+function* digits() {
+  yield 1
+  yield 2
+  yield 3
+}
+print(sum(...digits()))
+
+const args = []
+print(log('empty', ...args).length)

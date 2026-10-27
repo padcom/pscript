@@ -1,0 +1,43 @@
+// Spread in array and object literals (D46)
+const xs = [1, 2, 3]
+print([0, ...xs, 4].join(','))
+print([...'abc'].join('-'))
+print([...xs, ...xs].length)
+print([...[]].length)
+
+function* pair() {
+  yield 'a'
+  yield 'b'
+}
+print([...pair(), 'c'].join(''))
+
+const copy = [...xs]
+copy.push(4)
+print(xs.length, copy.length)
+
+const base = { a: 1, b: 2 }
+print(JSON.stringify({ ...base }))
+print(JSON.stringify({ ...base, b: 3 }))
+print(JSON.stringify({ b: 0, ...base, c: 4 }))
+print(JSON.stringify({ ...null, ...undefined, ...42, ...true }))
+print(JSON.stringify({ ...'hi' }))
+print(JSON.stringify({ ...['x', 'y'] }))
+
+const withGetter = { get now() { return 'called' } }
+print(JSON.stringify({ ...withGetter }))
+
+const nested = { inner: { v: 1 } }
+const shallow = { ...nested }
+shallow.inner.v = 2
+print(nested.inner.v)
+
+class Pair {
+  first = 1
+  second = 2
+  sum() { return this.first + this.second }
+}
+const spreadInstance = { ...new Pair() }
+print(JSON.stringify(spreadInstance), typeof spreadInstance.sum)
+
+const [head, ...tail] = [...xs, 4]
+print(head, tail.join(','))

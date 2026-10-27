@@ -103,6 +103,7 @@ Each feature in this document has one of these tags:
 | R32 | `async`/`await` and `Promise` (D43) | 4.4.17 |
 | R33 | `setTimeout` / `clearTimeout` and `fetch` (D44) | 4.6.1 |
 | R34 | `setInterval` / `clearInterval` and `queueMicrotask` (D45) | 4.6.1 |
+| R35 | Spread `...x` in calls, `new`, `super(...)`, array literals and object literals (D46) | 4.4.18 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -122,7 +123,7 @@ Each feature in this document has one of these tags:
 
 ### 1.5 COULD (Phase 3+)
 
-Rest parameters and spread (`...`), optional chaining `?.`, computed keys `{ [k]: v }`, the comma operator in `for` headers, ~~`do … while`, `switch`~~ (done, D41), `for … in`, bitwise operators, hex/binary/octal literals, ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, Map/Set, a CLI/REPL, a disassembler CLI, source maps for errors.
+~~Rest parameters and spread (`...`)~~ (done, D46), optional chaining `?.`, computed keys `{ [k]: v }`, the comma operator in `for` headers, ~~`do … while`, `switch`~~ (done, D41), `for … in`, bitwise operators, hex/binary/octal literals, ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, Map/Set, a CLI/REPL, a disassembler CLI, source maps for errors.
 
 ### 1.6 WON'T (v1)
 
@@ -212,6 +213,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D43 | `async` / `await` and Promises | **JavaScript semantics, including the order of callbacks**: `async` functions, arrows and methods, `await` (only inside async functions: no top-level `await` yet, no async generators or `for await`), and a built-in **final** class `Promise` with `then`/`catch`/`finally`, `resolve`, `reject`, `all`, `allSettled`, `race`, `any` and `withResolvers` (plus `AggregateError`). Jobs (microtasks) run when the script stack is empty: **`run()` drains them before it returns**, so script-only async code completes synchronously; jobs queued later (a host promise settled) run in a host microtask. An unhandled rejection left after `run()`'s drain is thrown like an uncaught exception. **Only `Promise` instances are adopted** (an object with a `then` method is a plain value; host thenables are converted at the boundary). "No value" is `null` (D37). Details in §4.4.17 | minor (thenables, null, final `Promise`) |
 | D44 | `setTimeout`, `clearTimeout`, `fetch` | **The JavaScript interface, backed by the host**: `setTimeout(callback, delay?, ...args)` returns a numeric id (as in browsers) that `clearTimeout` cancels; the callback runs as a **task** of the host's event loop (after `run()` returned), with a new step budget, followed by the jobs it queued (as JS drains microtasks after each task); its exception or an unhandled rejection goes to `stderr`, since there is no caller. Code strings are a `TypeError`. `fetch(resource, options?)` calls the host's `fetch` through interop (arguments `toHost`, the result `toScript`), so it returns a script promise of a host `Response`; a synchronous failure of the host's fetch rejects. The host's functions are looked up per call; `InterpreterOptions.fetch` replaces fetch (tests, sandboxing). `setInterval` came with D45. Details in §4.6.1, §5.6.10 | minor (no code strings; errors to stderr) |
 | D45 | `setInterval`, `clearInterval`, `queueMicrotask` | **The JavaScript interface, completing D44**: `setInterval(callback, delay?, ...args)` shares ids with `setTimeout` (so `clearTimeout` and `clearInterval` are interchangeable, as in browsers); it is built on the host's `setTimeout`, re-armed before each run, so the callback can clear its own interval, and an exception (to `stderr`) does not stop it. `queueMicrotask(callback)` queues a job (`AccessContext.enqueueJob`), ordered with promise reactions; an exception in the callback rejects an internal promise, so it is reported like an unhandled rejection (thrown by `run()` after the queue drained, or to `stderr` in the background) and the other jobs still run. Details in §4.6.1 | minor (no code strings) |
+| D46 | Spread `...x` | **As in JavaScript**: `f(...xs)`, `new C(...xs)`, `super(...xs)`, `[...xs]` take what an iterable produces (arrays, strings, generators, host iterables; anything else is a `TypeError`); `{ ...o }` copies the own enumerable public properties (getters run, later keys win; `null`, `undefined` and non-string primitives add nothing). Spread arguments keep **strict arity (D38) and named parameters (D40)** but move their check to runtime (`TypeError`), since the count is not known at compile time; the arguments before the first spread are still checked against named parameters at compile time. A spread in a literal that becomes an assignment pattern is its rest element, which must be a name. Details in §4.4.18 | no |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -634,20 +636,23 @@ MemberExpr      := PrimaryExpr
                  | MemberExpr '.' IDENT | MemberExpr '[' Expr ']'
                  | 'super' '.' IDENT | 'super' '[' Expr ']'
                  | 'new' MemberExpr Arguments
-Arguments       := '(' ( AssignExpr ( ',' AssignExpr )* ','? )? ')'
+Arguments       := '(' ( Argument ( ',' Argument )* ','? )? ')'
+Argument        := AssignExpr | '...' AssignExpr                (spread, D46)
 
 PrimaryExpr     := IDENT | 'this' | NUMBER | STRING | 'true' | 'false' | 'null' | 'undefined'
                  | ArrayLiteral | ObjectLiteral | FunctionExpr | ClassExpr | TemplateLiteral
                  | '(' Expr ')'
 TemplateLiteral := TEMPLATE_FULL
                  | TEMPLATE_HEAD Expr ( TEMPLATE_MIDDLE Expr )* TEMPLATE_TAIL
-ArrayLiteral    := '[' ( AssignExpr ( ',' AssignExpr )* ','? )? ']'   (holes [1,,2]: SyntaxError)
+ArrayLiteral    := '[' ( Element ( ',' Element )* ','? )? ']'   (holes [1,,2]: SyntaxError)
+Element         := AssignExpr | '...' AssignExpr                (spread, D46)
 ObjectLiteral   := OBJ_LBRACE ( Property ( ',' Property )* ','? )? '}'
 Property        := PropName ':' AssignExpr
                  | PropName '(' ParamList? ')' Block              (method shorthand, R4)
                  | GET PropName '(' ')' Block                     (getter, R18)
                  | SET PropName '(' Param ')' Block               (setter, R18)
                  | IDENT                                          (shorthand { a }: SHOULD)
+                 | '...' AssignExpr                               (spread, D46)
                  | '[' AssignExpr ']' ':' AssignExpr              (computed: COULD)
 PropName        := IDENT | STRING | NUMBER
 
@@ -1083,6 +1088,27 @@ loadAll([1, 2]).then(users => print(users.length))
 - Jobs queued while nothing runs (a host promise settled, a host call into a script function) are drained in a host microtask (`queueMicrotask`).
 - `maxSteps` (D14) covers a drain as a whole: an endless async loop ends with the step-limit `RangeError`.
 - **Unhandled rejections**: a rejected promise without handlers when a drain ends is an error. After `run()`'s drain it is thrown to the host as the uncaught exception (`PScriptRuntimeError`, like a `throw` at the top level); after a background drain it goes to `stderr` (`InterpreterOptions.stderr`).
+
+#### 4.4.18 Spread (D46)
+
+```js
+function sum(a, b, c) { return a + b + c }
+const xs = [1, 2, 3]
+sum(...xs)                          // 6
+Math.max(...xs, 0)                  // natives too
+new Point(...coords)                // constructors and super(...args)
+const all = [0, ...xs, ...'ab']     // [0, 1, 2, 3, 'a', 'b']
+const merged = { ...defaults, ...options, verbose: true }
+```
+
+**Where**: in argument lists (calls, method calls, implicit member calls, `new`, `super(...)`), array literals and object literals. The operand is any expression of assignment precedence.
+
+**Semantics** (as in JavaScript):
+
+- Arguments and array elements: the spread value is iterated like `for…of` (arrays, strings, generators, host iterables); a non-iterable is a `TypeError` (`number is not iterable`). Elements are evaluated left to right, each spread fully before the next element.
+- Object literals: `{ ...v }` copies the own enumerable public properties of `v`, as `Object.entries` sees them (plain objects, the fields of class instances, the indices of arrays and strings), calling getters; properties defined later replace earlier ones. `null`, `undefined`, numbers and booleans add nothing. The result is a plain object (methods of a class instance are not copied; the object is open).
+- **Strict arity (D38)**: a call with a spread argument has its argument count only at runtime, so the compile-time and link-time checks skip it and the runtime check reports it (`TypeError: sum(a, b, c) expects 3 arguments, got 2`). Likewise strict named parameters (D40) are checked at runtime, except for object literals passed before the first spread argument, which are still checked at compile time.
+- A spread in an object or array literal that becomes an assignment pattern (`[a, ...rest] = list`) is the pattern's rest element; it must be a name (`SyntaxError: A rest element must be a name`).
 
 ### 4.5 Classes, access control and interfaces (R12, R24)
 
@@ -1960,7 +1986,7 @@ export interface ModuleRecord {
 | `DEFINE_PROP_INDEX` | — | obj key v → obj | computed keys (COULD) |
 | `DEFINE_GETTER` / `DEFINE_SETTER` | k(name) | obj fn → obj | object-literal accessors (R18); combines with an existing accessor of the same key |
 | `CLOSURE` | k(proto) | → fn | captures current env, `this` (if arrow), home class/object |
-| `CALL` | argc | fn a1…an → r | `this = null` (D37) |
+| `CALL` | argc | fn a1…an → r | `this = null` (D37). In all calls (`CALL`, `CALL_METHOD`, `CALL_IMPLICIT`, `NEW`, `SUPER_CALL`), argc `SPREAD_ARGC` (−1) means the arguments are one array (built with `ARRAY`, `ARRAY_PUSH` and `ARRAY_SPREAD`) that the VM spreads onto the stack (D46) |
 | `CALL_METHOD` | argc | recv fn a1…an → r | `this = recv` |
 | `NEW` | argc | ctor a1…an → obj | |
 | `SUPER_CALL` | argc | a1…an → this | binds `this`, runs field initialisers |
@@ -1979,6 +2005,9 @@ export interface ModuleRecord {
 | `OBJECT_REST` | k | v → obj | object pattern rest: a plain object with the own public properties not listed in k (JSON array of keys) (D40) |
 | `DELETE_PROP` | k | obj → bool | `delete obj.k` (D41): plain and host objects only, otherwise `TypeError` |
 | `DELETE_INDEX` | — | obj key → bool | `delete obj[key]` (D41) |
+| `ARRAY_PUSH` | — | arr v → arr | an element after a spread element (D46) |
+| `ARRAY_SPREAD` | — | arr iterable → arr | appends what the iterable produces (`[...x]`, spread arguments); TypeError if not iterable (D46) |
+| `OBJECT_SPREAD` | — | obj v → obj | `{ ...v }`: copies the own enumerable public properties of v (D46) |
 | `GENERATOR` | — | → | generator prologue (D42), after the parameters are bound: the frame becomes a suspended coroutine and the call returns a generator object |
 | `YIELD` | — | v → sent | suspends the generator with v; resuming pushes the value sent by `next()` (or throws / returns there) |
 | `ASYNC` | — | → | async prologue (D43), after the parameters are bound: the frame becomes a coroutine, the body runs until its first `await`, and the call returns the function's promise |

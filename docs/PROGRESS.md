@@ -45,6 +45,22 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L4 | `async` / `await` and Promises (D43) | done (2026-10-27) |
 | L5 | `setTimeout` / `clearTimeout` and `fetch` (D44) | done (2026-10-27) |
 | L6 | `setInterval` / `clearInterval` and `queueMicrotask` (D45) | done (2026-10-27) |
+| L7 | Spread (D46) | done (2026-10-27) |
+
+## L7 — Spread (D46)
+
+Design in `docs/PLAN.md` D46 (R35), §4.4.18; user docs in `docs/LANGUAGE.md` → Operators. Rest parameters existed
+already (D38).
+
+- **Parser**: `SpreadElement` in arguments, array and object literals (`'...' AssignmentExpression`); a literal that
+  becomes a pattern turns it into its `RestElement` (a name), replacing the old "only in patterns" cover.
+- **Compiler**: arguments with a spread become one array (`ARRAY`, `ARRAY_PUSH`, `ARRAY_SPREAD`) and the call gets
+  argc `SPREAD_ARGC`; `OBJECT_SPREAD` for object literals. `signature.ts`: `argumentsError` skips the count of
+  spread calls; named-parameter checks stop at the first spread argument.
+- **VM**: `spreadArgc` unpacks the array in `CALL`, `CALL_METHOD`, `CALL_IMPLICIT`, `NEW` and `SUPER_CALL`;
+  `arraySpread` / `objectSpread` in `src/vm/patterns.ts`.
+- **psc**: emits spread as is.
+- **Tests**: `tests/programs/spread/`, compiler and emitter unit tests.
 
 ## L6 — `setInterval` / `clearInterval` and `queueMicrotask` (D45)
 

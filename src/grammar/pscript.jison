@@ -780,10 +780,17 @@ Arguments
   ;
 
 ArgumentList
-  : Expression
+  : Argument
     { $$ = [$1] }
-  | ArgumentList ',' Expression
+  | ArgumentList ',' Argument
     { $$ = $1.concat([$3]) }
+  ;
+
+/* `f(...xs)` spreads an iterable (D46). */
+Argument
+  : AssignmentExpression
+  | '...' AssignmentExpression
+    { $$ = yy.spread($2, @$) }
   ;
 
 PrimaryExpression
@@ -851,8 +858,8 @@ Property
     { $$ = yy.property($1, yy.method($2, @2), true, @$) }
   | IDENT '=' AssignmentExpression
     { $$ = yy.coverInitializedName(yy.identifier($1, @1), $3, @$) }
-  | '...' IDENT
-    { $$ = yy.coverRest(yy.identifier($2, @2), @$) }
+  | '...' AssignmentExpression
+    { $$ = yy.spread($2, @$) }
   | GET PropertyKey '(' ')' BLOCK_LBRACE StatementList '}'
     { $$ = yy.accessorProperty('get', $2, yy.method({ params: [], body: yy.block($6, @5) }, @3), @$) }
   | SET PropertyKey '(' Parameter ')' BLOCK_LBRACE StatementList '}'
@@ -877,7 +884,7 @@ LiteralPropertyName
     { $$ = yy.numberLiteral($1, @$) }
   ;
 
-/* Array literals (§4.4.7): no holes, trailing comma allowed. `...x` only in literals that become patterns (D40). */
+/* Array literals (§4.4.7): no holes, trailing comma allowed. `...x` spreads (D46), or is the rest of a pattern (D40). */
 ArrayLiteral
   : '[' ']'
     { $$ = yy.array([], @$) }
@@ -896,8 +903,8 @@ ElementList
 
 Element
   : AssignmentExpression
-  | '...' IDENT
-    { $$ = yy.coverRest(yy.identifier($2, @2), @$) }
+  | '...' AssignmentExpression
+    { $$ = yy.spread($2, @$) }
   ;
 
 /* Template literals (§4.1.8, D34): quasis and substitutions alternate. */

@@ -1,9 +1,10 @@
-// Destructuring at runtime (D40, §4.4.14): CHECK_PATTERN, OBJECT_REST and the array-pattern iteration.
+// Destructuring at runtime (D40, §4.4.14): CHECK_PATTERN, OBJECT_REST and the array-pattern iteration; spread (D46):
+// ARRAY_SPREAD and OBJECT_SPREAD.
 import { unknownNamedParameter } from '@/compiler/signature'
-import { DONE, type ScriptIterator } from '@/runtime/iterators'
+import { DONE, getIterator, type ScriptIterator } from '@/runtime/iterators'
 import { publicProps } from '@/runtime/members'
 import { defineProperty, getProperty } from '@/runtime/properties'
-import { typeError } from '@/runtime/script-error'
+import { type ScriptError, typeError } from '@/runtime/script-error'
 import { Array as ScriptArray, Object as ScriptObject, type AccessContext, type Realm, type Value } from '@/runtime/values'
 
 /** The strict named-parameter check of an object pattern: the keys it accepts and the path of nested patterns. */
@@ -97,4 +98,29 @@ export function iteratorRest(iterator: ScriptIterator, realm: Realm): ScriptArra
   for (let next = iterator.next(); next !== DONE; next = iterator.next()) items.push(next)
 
   return new ScriptArray(realm.ArrayPrototype, items)
+}
+
+/**
+ * `ARRAY_SPREAD`: appends what an iterable produces to an array (`[...x]`, spread arguments, D46).
+ *
+ * @param array the array being built
+ * @param iterable the spread value
+ * @throws {ScriptError} TypeError when the value is not iterable
+ */
+export function arraySpread(array: ScriptArray, iterable: Value) {
+  const iterator = getIterator(iterable)
+
+  for (let next = iterator.next(); next !== DONE; next = iterator.next()) array.items.push(next)
+}
+
+/**
+ * `OBJECT_SPREAD`: copies the own enumerable public properties of a value into an object literal (`{ ...x }`, D46).
+ * Getters run; `null`, `undefined` and other primitives except strings add nothing, as in JS.
+ *
+ * @param ctx access context (getters run in it)
+ * @param target the object being built
+ * @param value the spread value
+ */
+export function objectSpread(ctx: AccessContext, target: ScriptObject, value: Value) {
+  for (const [key, item] of ownValues(ctx, value)) defineProperty(target, key, item)
 }

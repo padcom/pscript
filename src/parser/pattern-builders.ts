@@ -1,7 +1,7 @@
 // Destructuring patterns (§4.4.14, D40). Binding patterns have their own grammar; assignment patterns are parsed as
-// object and array literals and converted when they turn out to be the target of `=` or of `for (… of …)`. The
-// parts of a literal that only a pattern allows (`{ a = 1 }`, `...rest`) are recorded and reported if the literal
-// stays an expression.
+// object and array literals and converted when they turn out to be the target of `=` or of `for (… of …)`; a spread
+// `...x` (D46) becomes the rest element. The part of a literal that only a pattern allows (`{ a = 1 }`) is recorded
+// and reported if the literal stays an expression.
 import type {
   ArrayExpression,
   ArrayPattern,
@@ -17,6 +17,7 @@ import type {
   Property,
   RestElement,
   SourceLocation,
+  SpreadElement,
 } from './ast'
 import { toLoc, type JisonLoc } from './ast-builders'
 
@@ -28,12 +29,7 @@ export interface PatternErrors {
   at(reason: string, loc: SourceLocation): Error
 }
 
-type CoverNode = Property | RestElement
-
-const COVER_ERRORS: Record<CoverNode['type'], string> = {
-  Property: 'Invalid shorthand property initializer',
-  RestElement: "'...' is only supported in destructuring patterns",
-}
+type CoverNode = Property
 
 function before(a: SourceLocation, b: SourceLocation): boolean {
   return a.start.line < b.start.line || (a.start.line === b.start.line && a.start.column < b.start.column)
@@ -93,7 +89,7 @@ export class PatternBuilder {
   checkCovers() {
     const earlier = (found: CoverNode | null, node: CoverNode) => found && !before(node.loc, found.loc) ? found : node
     const first = [...this.covers].reduce<CoverNode | null>(earlier, null)
-    if (first) throw this.errors.at(COVER_ERRORS[first.type], first.loc)
+    if (first) throw this.errors.at('Invalid shorthand property initializer', first.loc)
   }
 
   /**
@@ -126,16 +122,23 @@ export class PatternBuilder {
     return node
   }
 
+  // `[...rest] = …`: the rest of a pattern is a name.
+  private toRest({ argument, loc }: SpreadElement): RestElement {
+    if (argument.type !== 'Identifier') throw this.errors.at('A rest element must be a name', argument.loc)
+
+    return { type: 'RestElement', argument: this.keptTarget(argument, DESTRUCTURING) as Identifier, loc }
+  }
+
   // `[a = 1] = …`: the element was parsed as an assignment.
-  private toElement(node: Expression | RestElement): PatternElement | RestElement {
-    if (node.type === 'RestElement') return this.uncover(node)
+  private toElement(node: Expression | SpreadElement): PatternElement | RestElement {
+    if (node.type === 'SpreadElement') return this.toRest(node)
     if (node.type !== 'AssignmentExpression' || node.operator !== '=') return this.toTarget(node, DESTRUCTURING)
 
     return assignmentPattern(this.toTarget(node.left, DESTRUCTURING), node.right, node.loc)
   }
 
-  private toProperty(property: Property | RestElement): AssignmentProperty | RestElement {
-    if (property.type === 'RestElement') return this.uncover(property)
+  private toProperty(property: Property | SpreadElement): AssignmentProperty | RestElement {
+    if (property.type === 'SpreadElement') return this.toRest(property)
 
     const { key, value, shorthand, loc } = this.uncover(this.dataProperty(property))
     const target = shorthand ? value as Identifier | AssignmentPattern : this.toElement(value) as PatternElement
@@ -156,7 +159,7 @@ export class PatternBuilder {
   }
 
   private toObjectPattern(node: ObjectExpression): ObjectPattern {
-    const properties = (node.properties as (Property | RestElement)[]).map(property => this.toProperty(property))
+    const properties = node.properties.map(property => this.toProperty(property))
 
     this.lastRest(properties, node.loc)
 
@@ -164,7 +167,7 @@ export class PatternBuilder {
   }
 
   private toArrayPattern(node: ArrayExpression): ArrayPattern {
-    const elements = (node.elements as (Expression | RestElement)[]).map(element => this.toElement(element))
+    const elements = node.elements.map(element => this.toElement(element))
 
     this.lastRest(elements, node.loc)
 
@@ -201,9 +204,9 @@ export function patternHelpers(patterns: PatternBuilder) {
 
       return patterns.cover(patternProperty(id, value, true, toLoc(loc)) as unknown as Property)
     },
-    // `...rest` in an object or array literal: valid only if the literal becomes a pattern.
-    coverRest(argument: Identifier, loc: JisonLoc): Expression {
-      return patterns.cover<RestElement>({ type: 'RestElement', argument, loc: toLoc(loc) }) as unknown as Expression
+    // `...x` in an argument list, array literal or object literal (D46); the rest of a literal that becomes a pattern.
+    spread(argument: Expression, loc: JisonLoc): SpreadElement {
+      return { type: 'SpreadElement', argument, loc: toLoc(loc) }
     },
   }
 }

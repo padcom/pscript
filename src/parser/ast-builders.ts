@@ -237,7 +237,7 @@ export const builders = {
     return { type: 'TemplateLiteral', quasis, expressions, loc: toLoc(loc) }
   },
 
-  array(elements: Expression[], loc: JisonLoc): ArrayExpression {
+  array(elements: ArrayExpression['elements'], loc: JisonLoc): ArrayExpression {
     return { type: 'ArrayExpression', elements, loc: toLoc(loc) }
   },
 
@@ -252,7 +252,7 @@ export const builders = {
     return { type: 'VariableDeclaration', kind, declarations: [{ type: 'VariableDeclarator', id, init: null, loc: id.loc }], loc }
   },
 
-  object(properties: Property[], loc: JisonLoc): ObjectExpression {
+  object(properties: ObjectExpression['properties'], loc: JisonLoc): ObjectExpression {
     return { type: 'ObjectExpression', properties, loc: toLoc(loc) }
   },
 
@@ -264,7 +264,7 @@ export const builders = {
     return { type: 'Property', key, value, kind, method: false, shorthand: false, computed: false, loc: toLoc(loc) }
   },
 
-  newExpression(callee: Expression, args: Expression[], loc: JisonLoc): NewExpression {
+  newExpression(callee: Expression, args: NewExpression['arguments'], loc: JisonLoc): NewExpression {
     return { type: 'NewExpression', callee, arguments: args, loc: toLoc(loc) }
   },
 
@@ -325,7 +325,7 @@ export const builders = {
     return { type: 'UnaryExpression', operator, prefix: true, argument, loc: toLoc(loc) }
   },
 
-  call(callee: Expression, args: Expression[], loc: JisonLoc): CallExpression {
+  call(callee: Expression, args: CallExpression['arguments'], loc: JisonLoc): CallExpression {
     return { type: 'CallExpression', callee, arguments: args, optional: false, loc: toLoc(loc) }
   },
 

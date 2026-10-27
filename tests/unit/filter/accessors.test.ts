@@ -31,7 +31,7 @@ describe('accessor syntax', () => {
     const statement = parse('o = { get x() { return 1 }, set x(v) {} }').body[0] as ExpressionStatement
     const object = (statement.expression as { right: ObjectExpression }).right
 
-    expect(object.properties.map(p => [p.kind, p.method])).toEqual([['get', false], ['set', false]])
+    expect(object.properties.map(p => p.type === 'Property' && [p.kind, p.method])).toEqual([['get', false], ['set', false]])
   })
 
   it('rejects an accessor named constructor and wrong arities', () => {

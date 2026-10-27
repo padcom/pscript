@@ -77,8 +77,9 @@ describe('parser: assignment patterns (D40)', () => {
 describe('parser: pattern errors', () => {
   it.each([
     ['({ a = 1 })', '1:4 Invalid shorthand property initializer'],
-    ['f({ x, ...rest })', "1:8 '...' is only supported in destructuring patterns"],
-    ['f([...rest])', "1:4 '...' is only supported in destructuring patterns"],
+    ['[...a.b] = x', '1:5 A rest element must be a name'],
+    ['({ ...f() } = x)', '1:7 A rest element must be a name'],
+    ['[...undefined] = x', "1:5 Cannot assign to 'undefined'"],
     ['[a, b] += 1', '1:1 Invalid assignment target'],
     ['[a + 1] = x', '1:2 Invalid destructuring assignment target'],
     ['({ m() {} } = x)', '1:4 Invalid destructuring assignment target'],

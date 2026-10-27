@@ -1,6 +1,14 @@
 // Parameter signatures and strict arity (D38, §4.4.13), shared by the compiler (compile-time
 // checks) and the VM (runtime checks). Object patterns in parameters are strict named parameters (D40, §4.4.14).
-import type { Expression, ObjectExpression, Pattern, PatternElement, RestElement, SourceLocation } from '@/parser/ast'
+import type {
+  Expression,
+  ObjectExpression,
+  Pattern,
+  PatternElement,
+  RestElement,
+  SourceLocation,
+  SpreadElement,
+} from '@/parser/ast'
 import { patternKey, patternText } from '@/parser/patterns'
 
 /**
@@ -97,6 +105,30 @@ export function arityError(signature: Signature, argc: number): string | null {
 }
 
 /**
+ * The number of arguments of a call, unknown before runtime when one of them is spread (D46).
+ *
+ * @param args the arguments of the call
+ * @returns the count, or null with a spread argument
+ */
+export function argumentCount(args: (Expression | SpreadElement)[]): number | null {
+  return args.some(arg => arg.type === 'SpreadElement') ? null : args.length
+}
+
+/**
+ * Checks the arguments of a call against a signature at compile time; a spread argument (D46) leaves the count to
+ * the runtime check.
+ *
+ * @param signature the callee's signature
+ * @param args the arguments of the call
+ * @returns the error message, or `null` when the call is valid or the count is not known
+ */
+export function argumentsError(signature: Signature, args: (Expression | SpreadElement)[]): string | null {
+  const argc = argumentCount(args)
+
+  return argc === null ? null : arityError(signature, argc)
+}
+
+/**
  * The message of an unknown named parameter (D40), the same at compile time and at runtime.
  *
  * @param key the key, with the path of nested patterns (`pos.z`)
@@ -127,14 +159,20 @@ interface UnknownKey {
 
 /* eslint-disable no-use-before-define -- nested literals are checked recursively */
 type LiteralProperty = ObjectExpression['properties'][number]
+type Property = Exclude<LiteralProperty, SpreadElement>
 
 // A nested literal passed to a nested object pattern.
-function nestedProblem(nested: NamedParameters | null | undefined, { value }: LiteralProperty, path: string): UnknownKey | null {
+function nestedProblem(nested: NamedParameters | null | undefined, { value }: Property, path: string): UnknownKey | null {
   return nested && value.type === 'ObjectExpression' ? unknownKey(nested, value, path) : null
 }
 
+// Spread properties (D46) and computed keys are checked at runtime.
+function isChecked(property: LiteralProperty): property is Property {
+  return property.type !== 'SpreadElement' && !property.computed
+}
+
 // A property of an object literal: unknown, or a nested literal with an unknown key.
-function propertyProblem(named: NamedParameters, property: LiteralProperty, path: string): UnknownKey | null {
+function propertyProblem(named: NamedParameters, property: Property, path: string): UnknownKey | null {
   const key = patternKey(property.key as Parameters<typeof patternKey>[0])
   if (!named.open && !named.keys.has(key)) return { key: path + key, loc: property.loc }
 
@@ -145,7 +183,7 @@ function propertyProblem(named: NamedParameters, property: LiteralProperty, path
 // The first key of an object literal (or of a nested literal) that the pattern does not accept.
 function unknownKey(named: NamedParameters, literal: ObjectExpression, path: string): UnknownKey | null {
   for (const property of literal.properties) {
-    const found = property.computed ? null : propertyProblem(named, property, path)
+    const found = isChecked(property) ? propertyProblem(named, property, path) : null
     if (found) return found
   }
 
@@ -157,15 +195,22 @@ function argumentProblem(named: NamedParameters | null | undefined, arg: Express
   return named && arg.type === 'ObjectExpression' ? unknownKey(named, arg, '') : null
 }
 
+// The arguments before the first spread one, whose positions are known.
+function positional(args: (Expression | SpreadElement)[]): Expression[] {
+  const spread = args.findIndex(arg => arg.type === 'SpreadElement')
+
+  return (spread < 0 ? args : args.slice(0, spread)) as Expression[]
+}
+
 /**
  * Checks object literals passed to named parameters (D40) at compile time.
  *
  * @param signature the callee's signature
- * @param args the arguments of the call
+ * @param args the arguments of the call; the positions after a spread argument (D46) are not known
  * @returns the first problem, or null
  */
-export function namedArgumentError(signature: Signature, args: Expression[]): ArgumentProblem | null {
-  for (const [i, arg] of args.entries()) {
+export function namedArgumentError(signature: Signature, args: (Expression | SpreadElement)[]): ArgumentProblem | null {
+  for (const [i, arg] of positional(args).entries()) {
     const found = argumentProblem(signature.named?.[i], arg)
     if (found) return { reason: unknownNamedParameter(found.key, signature.text), loc: found.loc }
   }

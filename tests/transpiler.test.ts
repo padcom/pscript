@@ -43,6 +43,7 @@ const PSCRIPT_ONLY_DIFFERENCES: Record<string, string> = {
   'implicit-members/rules.pscript': 'static-context and method-assignment errors are runtime checks',
   'interfaces/declarations.pscript': 'interfaces declared in functions are not checked at compile time; `print` formatting',
   'objects/printing.pscript': '`print` formatting (D18)',
+  'spread/pscript-specific.pscript': 'spread arguments are not arity- or named-parameter-checked at runtime; JS messages',
   'operators/pscript-specific.pscript': 'operators converting objects (D5); `print` formatting',
   'stdlib/pscript-specific.pscript': 'stdlib differences (callback arity, `print` formatting)',
 }

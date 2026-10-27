@@ -46,6 +46,7 @@ import type {
   RestElement,
   ReturnStatement,
   SourceLocation,
+  SpreadElement,
   Statement,
   SwitchCase,
   SwitchStatement,
@@ -79,10 +80,10 @@ import type {
   FunctionProto,
   ImplicitName,
 } from './function-proto'
-import { GlobalFlags, Op } from './opcodes'
+import { GlobalFlags, Op, SPREAD_ARGC } from './opcodes'
 import { ProtoBuilder } from './proto-builder'
 import { Scope, type Binding, type BindingKind, type Resolution } from './scope'
-import { arityError, namedArgumentError, signatureOf, type Signature } from './signature'
+import { argumentCount, argumentsError, namedArgumentError, signatureOf, type Signature } from './signature'
 import { boundNames } from '@/parser/patterns'
 
 /**
@@ -1249,8 +1250,7 @@ class Compiler {
   // `super(...)` in a derived constructor (or an arrow inside one): SUPER_CALL argc → this.
   private superCall(node: CallExpression) {
     if (!this.fn.superCall) throw this.error("'super' keyword unexpected here", node.callee.loc)
-    for (const argument of node.arguments) this.expression(argument)
-    this.emitAt(node.loc, Op.SUPER_CALL, node.arguments.length)
+    this.emitAt(node.loc, Op.SUPER_CALL, this.arguments(node.arguments))
   }
 
   private requireSuperProperty(loc: SourceLocation) {
@@ -1513,18 +1513,30 @@ class Compiler {
 
     const isMethod = this.callee(callee)
 
-    for (const argument of node.arguments) this.expression(argument)
-    this.emitAt(node.loc, isMethod ? Op.CALL_METHOD : Op.CALL, node.arguments.length)
+    this.emitAt(node.loc, isMethod ? Op.CALL_METHOD : Op.CALL, this.arguments(node.arguments))
+  }
+
+  // Pushes the arguments and returns the argc operand: with a spread argument (D46), one array and SPREAD_ARGC.
+  private arguments(args: CallExpression['arguments']): number {
+    if (argumentCount(args) === null) {
+      this.elements(args)
+
+      return SPREAD_ARGC
+    }
+    for (const argument of args) this.expression(argument as Expression)
+
+    return args.length
   }
 
   // `m(x)` in a class body where `m` may be a member: <x> CALL_IMPLICIT i 1 fallback (§4.5.8).
   private implicitCall({ callee, arguments: args, loc }: CallExpression): boolean {
     if (callee.type !== 'Identifier' || this.implicitName(callee.name, callee.loc) === null) return false
 
-    for (const argument of args) this.expression(argument)
+    const argc = this.arguments(args)
+
     this.out.mark(loc)
 
-    return this.implicit(Op.CALL_IMPLICIT, callee.name, callee.loc, args.length)
+    return this.implicit(Op.CALL_IMPLICIT, callee.name, callee.loc, argc)
   }
 
   // Pushes the function (and, for `o.m()`, the receiver below it); returns whether it is a method call.
@@ -1595,14 +1607,43 @@ class Compiler {
   }
 
   array(node: ArrayExpression) {
-    for (const element of node.elements) this.expression(element)
-    this.out.emit(Op.ARRAY, node.elements.length)
+    this.elements(node.elements)
+  }
+
+  // `[a, ...b, c]` → <a> ARRAY 1 <b> ARRAY_SPREAD <c> ARRAY_PUSH: the elements before the first spread go to ARRAY.
+  private elements(elements: ArrayExpression['elements']) {
+    const spread = elements.findIndex(element => element.type === 'SpreadElement')
+    const leading = spread < 0 ? elements.length : spread
+
+    for (const element of elements.slice(0, leading)) this.expression(element as Expression)
+    this.out.emit(Op.ARRAY, leading)
+
+    for (const element of elements.slice(leading)) this.laterElement(element)
+  }
+
+  private laterElement(element: Expression | SpreadElement) {
+    if (element.type === 'SpreadElement') {
+      this.expression(element.argument)
+      this.emitAt(element.loc, Op.ARRAY_SPREAD)
+    } else {
+      this.expression(element)
+      this.out.emit(Op.ARRAY_PUSH)
+    }
   }
 
   object(node: ObjectExpression) {
     this.out.emit(Op.OBJECT)
 
-    for (const property of node.properties) this.property(property)
+    for (const property of node.properties) {
+      if (property.type === 'SpreadElement') this.objectSpread(property)
+      else this.property(property)
+    }
+  }
+
+  // `{ ...x }` → <x> OBJECT_SPREAD (D46).
+  private objectSpread({ argument, loc }: SpreadElement) {
+    this.expression(argument)
+    this.emitAt(loc, Op.OBJECT_SPREAD)
   }
 
   // `key: value` / `m() {}` → DEFINE_PROP; `get k() {}` / `set k(v) {}` → DEFINE_GETTER / DEFINE_SETTER (own accessors, R18).
@@ -1752,14 +1793,14 @@ class Compiler {
 
   // Compile-time arity check when the callee is a known function (D38, §4.4.13).
   // … and of the object literals passed to its named parameters (D40).
-  private checkArity(callee: Expression, args: Expression[], loc: SourceLocation) {
+  private checkArity(callee: Expression, args: CallExpression['arguments'], loc: SourceLocation) {
     const signature = callee.type === 'Identifier' ? this.knownSignature(callee.name) : undefined
 
     if (signature) this.checkCall(signature, args, loc)
   }
 
-  private checkCall(signature: Signature, args: Expression[], loc: SourceLocation) {
-    const problem = arityError(signature, args.length)
+  private checkCall(signature: Signature, args: CallExpression['arguments'], loc: SourceLocation) {
+    const problem = argumentsError(signature, args)
     if (problem) throw this.error(problem, loc)
 
     const named = namedArgumentError(signature, args)
@@ -1775,9 +1816,10 @@ class Compiler {
   newExpression(node: NewExpression) {
     this.expression(node.callee)
 
-    for (const argument of node.arguments) this.expression(argument)
+    const argc = this.arguments(node.arguments)
+
     this.out.mark(node.loc)
-    this.out.emit(Op.NEW, node.arguments.length)
+    this.out.emit(Op.NEW, argc)
   }
 
   // ---------------------------------------------------------------------------

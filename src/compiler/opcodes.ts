@@ -90,6 +90,9 @@ export enum Op {
   OBJECT_REST,
   DELETE_PROP,
   DELETE_INDEX,
+  ARRAY_PUSH,
+  ARRAY_SPREAD,
+  OBJECT_SPREAD,
   GENERATOR,
   YIELD,
   ASYNC,
@@ -121,6 +124,12 @@ export interface OpcodeInfo {
   /** stack effect, `before → after` */
   stack: string
 }
+
+/**
+ * The `argc` of CALL, CALL_METHOD, CALL_IMPLICIT, NEW and SUPER_CALL when an argument is spread (D46): the arguments
+ * are one array on the stack.
+ */
+export const SPREAD_ARGC = -1
 
 /** Flags of `DECLARE_GLOBAL`. */
 export enum GlobalFlags {
@@ -212,7 +221,7 @@ export const OPCODES: Readonly<Record<Op, OpcodeInfo>> = {
   [Op.DEFINE_GETTER]: info('k', 'obj fn → obj'), // object-literal getter (R18)
   [Op.DEFINE_SETTER]: info('k', 'obj fn → obj'), // object-literal setter (R18)
   [Op.CLOSURE]: info('k', '→ fn'), // captures env, this (arrows), home class/object
-  [Op.CALL]: info('argc', 'fn a1…an → r'), // this = null (D37)
+  [Op.CALL]: info('argc', 'fn a1…an → r'), // this = null (D37); argc SPREAD_ARGC: one array of arguments (D46)
   [Op.CALL_METHOD]: info('argc', 'recv fn a1…an → r'), // this = recv
   [Op.NEW]: info('argc', 'ctor a1…an → obj'),
   [Op.SUPER_CALL]: info('argc', 'a1…an → this'), // binds this, runs field initialisers
@@ -231,6 +240,9 @@ export const OPCODES: Readonly<Record<Op, OpcodeInfo>> = {
   [Op.OBJECT_REST]: info('k', 'v → obj'), // object pattern rest without the keys in k (JSON array) (D40)
   [Op.DELETE_PROP]: info('k', 'obj → bool'), // `delete o.k`: plain and host objects only, else TypeError (D41)
   [Op.DELETE_INDEX]: info('', 'obj key → bool'), // `delete o[key]`
+  [Op.ARRAY_PUSH]: info('', 'arr v → arr'), // an element after a spread (D46)
+  [Op.ARRAY_SPREAD]: info('', 'arr iterable → arr'), // `[...x]`, and spread arguments; TypeError if not iterable
+  [Op.OBJECT_SPREAD]: info('', 'obj v → obj'), // `{ ...x }`: own enumerable public properties; null/undefined: none
   [Op.GENERATOR]: info('', '→'), // generator prologue (D42): suspends the frame and returns a generator object
   [Op.YIELD]: info('', 'v → sent'), // suspends with v; resumes with the value sent by next()
   [Op.ASYNC]: info('', '→'), // async prologue (D43): runs the body until its first await; the call returns a promise

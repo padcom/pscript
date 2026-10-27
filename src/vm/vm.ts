@@ -2,7 +2,7 @@
 import type { ClassTemplate, CompiledScript, FunctionProto, InterfaceTemplate } from '@/compiler/function-proto'
 import { readCell } from '@/modules/cells'
 import type { CompiledModule, ModuleRecord } from '@/modules/module-record'
-import { GlobalFlags, Op } from '@/compiler/opcodes'
+import { GlobalFlags, Op, SPREAD_ARGC } from '@/compiler/opcodes'
 import { PScriptError, PScriptRuntimeError, formatExcerpt, type ScriptStackFrame } from '@/errors'
 import { addIn, toStringIn } from '@/runtime/conversions'
 import {
@@ -58,7 +58,7 @@ import { Coroutine, GeneratorReturn, type CoroutineHost } from './coroutines'
 import { Promises, type PromiseHost } from './promises'
 import type { PromiseObject } from '@/runtime/promises'
 import { defineInterface } from './interfaces'
-import { checkPattern, iteratorRest, objectRest } from './patterns'
+import { arraySpread, checkPattern, iteratorRest, objectRest, objectSpread } from './patterns'
 import type { Frame, Handler } from './frame'
 import { Globals, type ScriptBinding } from './globals'
 
@@ -212,6 +212,25 @@ function truncate(stack: Value[], height: number) {
 }
 
 // Pops the top `count` items, bottom first.
+// The argc operand of a call: with a spread argument (D46), the arguments are one array, replaced by its items.
+function spreadArgc(stack: Value[], argc: number): number {
+  if (argc !== SPREAD_ARGC) return argc
+
+  const { items } = stack.pop() as ScriptArray
+
+  for (const item of items) stack.push(item)
+
+  return items.length
+}
+
+// ARRAY_PUSH: arr v → arr.
+function arrayPush(stack: Value[]) {
+  const value = stack.pop() as Value
+  const array = stack[stack.length - 1] as ScriptArray
+
+  array.items.push(value)
+}
+
 function popItems(stack: Value[], count: number): Value[] {
   const items = stack.slice(stack.length - count)
 
@@ -1422,6 +1441,15 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
           break
         }
         case Op.OBJECT_REST: stack.push(objectRest(this, stack.pop(), constants[code[ip++]] as string)); break
+        case Op.ARRAY_PUSH: arrayPush(stack); break
+        case Op.ARRAY_SPREAD:
+          b = stack.pop()
+          arraySpread(stack[stack.length - 1] as ScriptArray, b)
+          break
+        case Op.OBJECT_SPREAD:
+          b = stack.pop()
+          objectSpread(this, stack[stack.length - 1] as ScriptObject, b)
+          break
         case Op.DELETE_PROP:
           stack[stack.length - 1] = deleteProperty(stack[stack.length - 1], constants[code[ip++]] as string)
           break
@@ -1457,7 +1485,7 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
         }
         case Op.CALL_IMPLICIT: {
           const index = code[ip++]
-          const argc = code[ip++]
+          const argc = spreadArgc(stack, code[ip++])
           const operands = { index, a: code[ip++], b: code[ip++] }
           const args = popItems(stack, argc)
 
@@ -1475,7 +1503,7 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
         case Op.CALL_METHOD: // CALL with the receiver below the function
         case Op.CALL: {
           const isMethod = code[ip - 1] === Op.CALL_METHOD
-          const argc = code[ip++]
+          const argc = spreadArgc(stack, code[ip++])
           const calleeAt = stack.length - argc - 1
           const callee = stack[calleeAt]
           const thisValue = isMethod ? stack[calleeAt - 1] : null // plain call: this = null (D37)
@@ -1530,7 +1558,7 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
           break
         }
         case Op.SUPER_CALL: {
-          const argc = code[ip++]
+          const argc = spreadArgc(stack, code[ip++])
 
           frame.ip = ip
           stack.push(this.superCall(frame, popItems(stack, argc)))
@@ -1540,7 +1568,7 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
         case Op.GET_SUPER_INDEX: stack.push(this.superProperty(frame, propertyKey(stack.pop()))); break
 
         case Op.NEW: {
-          const argc = code[ip++]
+          const argc = spreadArgc(stack, code[ip++])
           const calleeAt = stack.length - argc - 1
           const callee = stack[calleeAt]
 

@@ -272,6 +272,16 @@ export interface AssignmentPattern extends NodeBase {
 }
 
 /**
+ * `...x` in an argument list, array literal or object literal (D46).
+ */
+export interface SpreadElement extends NodeBase {
+  /** node type */
+  type: 'SpreadElement'
+  /** the spread value */
+  argument: Expression
+}
+
+/**
  * Rest parameter `...rest`, or the rest of an object or array pattern.
  */
 export interface RestElement extends NodeBase {
@@ -673,8 +683,8 @@ export interface TemplateElement extends NodeBase {
 export interface ArrayExpression extends NodeBase {
   /** node type */
   type: 'ArrayExpression'
-  /** elements (no holes) */
-  elements: Expression[]
+  /** elements (no holes); `...x` spreads an iterable (D46) */
+  elements: (Expression | SpreadElement)[]
 }
 
 /**
@@ -683,8 +693,8 @@ export interface ArrayExpression extends NodeBase {
 export interface ObjectExpression extends NodeBase {
   /** node type */
   type: 'ObjectExpression'
-  /** properties in source order */
-  properties: Property[]
+  /** properties in source order; `...x` copies the own properties of x (D46) */
+  properties: (Property | SpreadElement)[]
 }
 
 /**
@@ -825,8 +835,8 @@ export interface CallExpression extends NodeBase {
   type: 'CallExpression'
   /** called expression */
   callee: Expression | Super
-  /** arguments */
-  arguments: Expression[]
+  /** arguments; `...x` spreads an iterable (D46) */
+  arguments: (Expression | SpreadElement)[]
   /** optional calls are not supported */
   optional: false
 }
@@ -839,8 +849,8 @@ export interface NewExpression extends NodeBase {
   type: 'NewExpression'
   /** the class */
   callee: Expression
-  /** arguments */
-  arguments: Expression[]
+  /** arguments; `...x` spreads an iterable (D46) */
+  arguments: (Expression | SpreadElement)[]
 }
 
 /**
@@ -863,4 +873,4 @@ export type Node
   = Program | ModuleDeclaration | ImportSpecifier | ImportNamespaceSpecifier | ExportSpecifier
     | Statement | Expression | Pattern | Super | VariableDeclarator
     | ClassBody | MethodDefinition | PropertyDefinition | InterfaceMember
-    | CatchClause | SwitchCase | TemplateElement | Property | AssignmentProperty
+    | CatchClause | SwitchCase | TemplateElement | Property | AssignmentProperty | SpreadElement

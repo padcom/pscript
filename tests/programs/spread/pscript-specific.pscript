@@ -1,0 +1,25 @@
+// @pscript-only: spread and strict arity (D38), named parameters (D40), implicit calls (D33), print
+function pair(a, b) { return [a, b] }
+try { pair(...[1]) } catch (e) { print(e.name, e.message) }
+try { pair(...[1, 2, 3]) } catch (e) { print(e.name, e.message) }
+print(pair(...[1, 2]))
+
+function area({ width, height = 1 }) { return width * height }
+print(area(...[{ width: 3 }]))
+try { area(...[{ width: 3, depth: 2 }]) } catch (e) { print(e.name, e.message) }
+const extra = { depth: 2 }
+try { area({ width: 3, ...extra }) } catch (e) { print(e.name, e.message) }
+
+class Stats {
+  values = []
+  add(...xs) {
+    for (const x of xs) values.push(x)
+    return this
+  }
+  addAll(list) { return add(...list) }
+}
+print(new Stats().addAll([1, 2, 3]).values)
+
+print([0, ...[1, 2]], { ...{ a: 1 }, b: 2 })
+try { print([...{ a: 1 }]) } catch (e) { print(e.name, e.message) }
+try { print(Math.max(...5)) } catch (e) { print(e.name, e.message) }

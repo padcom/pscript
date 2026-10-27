@@ -63,3 +63,30 @@ describe('compiler inputs', () => {
     expect(() => compile(program)).toThrow('WithStatement is not supported yet')
   })
 })
+
+describe('compiler: spread (D46)', () => {
+  const ops = (source: string) => disassemble(compile(source)).split('\n').map(line => line.slice(6).trim())
+
+  it('builds spread arguments as one array and calls with SPREAD_ARGC', () => {
+    expect(ops('f(a, ...b, c)')).toEqual(expect.arrayContaining([
+      'ARRAY           1',
+      'ARRAY_SPREAD',
+      'ARRAY_PUSH',
+      'CALL            -1',
+    ]))
+  })
+
+  it('keeps plain calls and arrays without spread unchanged', () => {
+    expect(ops('f(a, b); [a, b]')).toEqual(expect.arrayContaining(['CALL            2', 'ARRAY           2']))
+    expect(ops('f(a, b); [a, b]')).not.toContain('ARRAY_PUSH')
+  })
+
+  it('copies spread properties with OBJECT_SPREAD', () => {
+    expect(ops('({ a: 1, ...o })')).toEqual(expect.arrayContaining(['OBJECT', 'OBJECT_SPREAD']))
+  })
+
+  it('leaves the arity of a spread call to the runtime', () => {
+    expect(() => compile('function f(a) {}\nf(...[1, 2])')).not.toThrow()
+    expect(() => compile('function f(a) {}\nf(1, 2)')).toThrow('expects 1 argument, got 2')
+  })
+})

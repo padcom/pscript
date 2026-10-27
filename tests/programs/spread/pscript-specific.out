@@ -1,0 +1,10 @@
+TypeError pair(a, b) expects 2 arguments, got 1
+TypeError pair(a, b) expects 2 arguments, got 3
+[1, 2]
+3
+TypeError Unknown named parameter 'depth' of area({width, height?})
+TypeError Unknown named parameter 'depth' of area({width, height?})
+[1, 2, 3]
+[0, 1, 2] {a: 1, b: 2}
+TypeError object is not iterable
+TypeError number is not iterable
