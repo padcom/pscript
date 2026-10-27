@@ -14,6 +14,7 @@ import { installNumber } from './number'
 import { installObject } from './object'
 import { installPromise } from './promise'
 import { installString } from './string'
+import { installSymbol } from './symbol'
 
 export type { HostIO, StdlibIO }
 
@@ -49,6 +50,7 @@ export function installStdlib(realm: Realm, io: Partial<StdlibIO & HostIO> & Pic
   installGenerator(realm)
   installPromise(realm)
   installCollections(realm)
+  installSymbol(realm)
   installHost(realm, hostIO(io))
 }
 

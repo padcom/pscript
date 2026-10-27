@@ -486,6 +486,8 @@ ClassMember
 ClassMemberName
   : IDENT
     { $$ = yy.identifier($1, @$) }
+  | '[' AssignmentExpression ']'
+    { $$ = yy.symbolMemberName($2, @$) }
   | STRING
     { $$ = yy.stringLiteral($1, @$) }
   | NUMBER

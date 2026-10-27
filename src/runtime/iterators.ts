@@ -2,10 +2,19 @@
 // generators (D42), maps and sets (D49) and host iterables.
 import { CollectionObject } from './collections'
 import { GeneratorObject, type IteratorStep } from './generators'
-import { kindOf } from './operators'
+import { ITERATOR_KEY } from '@/parser/symbol-keys'
+import { isObject, kindOf, truthy } from './operators'
+import { getProperty, hasPropertyIn } from './properties'
 import { type ScriptError, typeError } from './script-error'
 import { publicProps } from './members'
-import { HostObject, Array as ScriptArray, Object as ScriptObject, type Value } from './values'
+import {
+  HostObject,
+  Array as ScriptArray,
+  Function as ScriptFunction,
+  Object as ScriptObject,
+  type AccessContext,
+  type Value,
+} from './values'
 
 /** Returned by `ScriptIterator.next()` when the iteration is over. */
 export const DONE: unique symbol = Symbol('DONE')
@@ -120,24 +129,88 @@ export class KeyIterator extends ScriptIterator {
   }
 }
 
-function objectIterator(value: Value): ScriptIterator {
+/**
+ * Iterates the iterator object an `[Symbol.iterator]()` method returned (D57): `next()` gives `{ value, done }`
+ * objects; leaving early calls `return()` when there is one.
+ */
+export class ProtocolIterator extends ScriptIterator {
+  private finished = false
+  private readonly nextMethod: Value
+
+  constructor(private readonly ctx: AccessContext, private readonly iterator: ScriptObject) {
+    super(() => 0, () => undefined)
+    this.nextMethod = getProperty(ctx, iterator, 'next')
+  }
+
+  override next(): Value | typeof DONE {
+    if (!(this.nextMethod instanceof ScriptFunction)) throw typeError('The iterator has no next() method')
+
+    const step = this.ctx.callFunction(this.nextMethod, this.iterator, [])
+    if (!isObject(step)) throw typeError(`Iterator result ${kindOf(step)} is not an object`)
+    if (!truthy(getProperty(this.ctx, step, 'done'))) return getProperty(this.ctx, step, 'value')
+
+    this.finished = true
+
+    return DONE
+  }
+
+  override close() {
+    if (this.finished || !hasPropertyIn(this.ctx, 'return', this.iterator)) return
+    this.finished = true
+
+    const method = getProperty(this.ctx, this.iterator, 'return')
+
+    if (method instanceof ScriptFunction) this.ctx.callFunction(method, this.iterator, [])
+  }
+}
+
+// Whether a value has a `[Symbol.iterator]` member (D57).
+function isIterableObject(ctx: AccessContext | undefined, value: Value): ctx is AccessContext {
+  return ctx !== undefined && value instanceof ScriptObject && hasPropertyIn(ctx, ITERATOR_KEY, value)
+}
+
+function iteratorOf(ctx: AccessContext, iterator: Value): ScriptIterator {
+  if (iterator instanceof GeneratorObject) return new GeneratorIterator(iterator)
+  if (!isObject(iterator)) throw typeError('Result of the Symbol.iterator method is not an object')
+
+  return new ProtocolIterator(ctx, iterator)
+}
+
+// `[Symbol.iterator]()` (D57); a generator it returns is iterated directly.
+function protocolIterator(ctx: AccessContext, value: ScriptObject): ScriptIterator {
+  const method = getProperty(ctx, value, ITERATOR_KEY)
+  if (!(method instanceof ScriptFunction)) throw typeError(`${kindOf(value)} is not iterable`)
+
+  return iteratorOf(ctx, ctx.callFunction(method, value, []))
+}
+
+// Built-in iterables, then user-defined ones.
+function builtinIterator(value: Value): ScriptIterator | null {
   if (value instanceof GeneratorObject) return new GeneratorIterator(value)
   if (value instanceof CollectionObject) return new JsIterator(value.iterate())
-  if (value instanceof HostObject) return new JsIterator(value.host.iterate(value.target))
 
-  throw typeError(`${kindOf(value)} is not iterable`)
+  return value instanceof HostObject ? new JsIterator(value.host.iterate(value.target)) : null
+}
+
+function objectIterator(value: Value, ctx: AccessContext | undefined): ScriptIterator {
+  const builtin = builtinIterator(value)
+  if (builtin) return builtin
+  if (!isIterableObject(ctx, value)) throw typeError(`${kindOf(value)} is not iterable`)
+
+  return protocolIterator(ctx, value as ScriptObject)
 }
 
 /**
  * `GET_ITER`: an iterator over an iterable value.
  *
  * @param value the iterated value
+ * @param ctx the context to call `[Symbol.iterator]()` in (D57); without it, user-defined iterables are not iterable
  * @returns the iterator
  * @throws {ScriptError} TypeError when the value is not iterable
  */
-export function getIterator(value: Value): ScriptIterator {
+export function getIterator(value: Value, ctx?: AccessContext): ScriptIterator {
   if (value instanceof ScriptArray) return new ScriptIterator(() => value.items.length, i => value.items[i])
   if (typeof value === 'string') return new ScriptIterator(() => value.length, i => value[i])
 
-  return objectIterator(value)
+  return objectIterator(value, ctx)
 }

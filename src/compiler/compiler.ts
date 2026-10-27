@@ -85,6 +85,7 @@ import type {
   ImplicitName,
 } from './function-proto'
 import { GlobalFlags, Op, SPREAD_ARGC } from './opcodes'
+import { displayKey } from '@/parser/symbol-keys'
 import { ProtoBuilder } from './proto-builder'
 import { Scope, type Binding, type BindingKind, type Resolution } from './scope'
 import { argumentCount, argumentsError, namedArgumentError, signatureOf, type Signature } from './signature'
@@ -1322,7 +1323,7 @@ class Compiler {
   private methodTemplate(node: MethodDefinition, classContext: ClassContext): ClassMethodTemplate {
     const key = keyName(node.key)
     const kind = node.kind as ClassMethodTemplate['kind']
-    const proto = this.functionProto(node.value, key, PROTO_KINDS[kind], { classContext })
+    const proto = this.functionProto(node.value, displayKey(key), PROTO_KINDS[kind], { classContext })
 
     return {
       key,

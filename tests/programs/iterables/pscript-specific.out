@@ -1,0 +1,6 @@
+{a: 1} Symbol(Symbol.iterator) [Symbol(Symbol.asyncIterator)]
+["a"] {"a":1}
+key a
+TypeError
+TypeError object is not iterable
+TypeError Result of the Symbol.iterator method is not an object

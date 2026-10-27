@@ -4,6 +4,7 @@
 import { builtinTemplate } from '@/stdlib/errors'
 import { hostProxy, type ProxyHost } from './host-proxies'
 import type { PromiseOps } from './promises'
+import { SYMBOL_ASYNC_ITERATOR, SYMBOL_ITERATOR, SymbolValue } from './symbols'
 import { typeError } from './script-error'
 import {
   Class,
@@ -53,11 +54,20 @@ function isHostClass(fn: (...args: unknown[]) => unknown): boolean {
 
 const PASS_THROUGH = new Set(['undefined', 'boolean', 'number', 'string'])
 
-// bigint and symbol values cannot cross the boundary (§5.8.1).
-function checkPassable(value: unknown): object {
-  if (typeof value === 'object' || typeof value === 'function') return value as object
+/** The well-known symbols scripts have (D57); other symbols and bigints cannot cross the boundary (§5.8.1). */
+const SYMBOLS = new Map<symbol, SymbolValue>([[Symbol.iterator, SYMBOL_ITERATOR], [Symbol.asyncIterator, SYMBOL_ASYNC_ITERATOR]])
+
+// bigint and symbol values cannot cross the boundary (§5.8.1), except the well-known symbols scripts have (D57).
+function passable(value: unknown): object {
+  if (typeof value === 'object' || typeof value === 'function' || SYMBOLS.has(value as symbol)) return value as object
 
   throw new TypeError(`A ${typeof value} cannot be passed to a script`)
+}
+
+function hostSymbol(value: ScriptObject): symbol | undefined {
+  if (!(value instanceof SymbolValue)) return undefined
+
+  return value === SYMBOL_ITERATOR ? Symbol.iterator : Symbol.asyncIterator
 }
 
 function isThenable(value: object): value is PromiseLike<unknown> {
@@ -70,7 +80,7 @@ function isThenable(value: object): value is PromiseLike<unknown> {
 function hostOriginal(value: ScriptObject): unknown {
   if (value instanceof HostObject || value instanceof HostFunction) return value.target
 
-  return value instanceof Class ? value.host : undefined
+  return value instanceof Class ? value.host : hostSymbol(value) // D57
 }
 
 /**
@@ -87,7 +97,9 @@ export class Interop implements HostAccess {
   /** script object → its host proxy */
   private proxies = new WeakMap<ScriptObject, object>()
   /** host proxy → the script object behind it */
-  private originals = new WeakMap<object, ScriptObject>()
+  private originals = new WeakMap<object, ScriptObject>(
+    [...SYMBOLS].map(([symbol, value]) => [symbol as unknown as object, value]),
+  )
 
   constructor(private host: InteropHost) {}
 
@@ -109,7 +121,9 @@ export class Interop implements HostAccess {
   toScript(value: unknown): Value {
     if (value === null || PASS_THROUGH.has(typeof value)) return value as Value
 
-    return this.originals.get(checkPassable(value)) ?? this.wrapper(value as object)
+    const object = passable(value) // the well-known symbols are in `originals` (D57)
+
+    return this.originals.get(object) ?? this.wrapper(object)
   }
 
   private wrapper(value: object): Value {

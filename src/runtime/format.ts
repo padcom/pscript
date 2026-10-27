@@ -4,6 +4,7 @@ import { IDENT_PATTERN } from '@/parser/tokens'
 import { CollectionObject, MapObject, SetObject } from './collections'
 import { toStringIn } from './conversions'
 import { AsyncGeneratorObject, GeneratorObject } from './generators'
+import { SymbolValue } from './symbols'
 import { PromiseObject } from './promises'
 import { publicProps } from './members'
 import { toString } from './operators'
@@ -51,8 +52,9 @@ function formatNamed(value: ScriptFunction | Interface): string {
   return value instanceof Interface ? `[interface ${value.name}]` : formatFunction(value)
 }
 
-// Generators (D42) and async generators (D53) print by kind only.
+// Generators (D42) and async generators (D53) print by kind only; symbols (D57) by description.
 function generatorForm(object: ScriptObject): string | null {
+  if (object instanceof SymbolValue) return object.text()
   if (object instanceof AsyncGeneratorObject) return '[AsyncGenerator]'
 
   return object instanceof GeneratorObject ? '[Generator]' : null

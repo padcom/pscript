@@ -1,6 +1,7 @@
 // What the compiler knows about classes (§4.5.9): member names per class, so that `this.x` and
 // `C.x` can be rejected at compile time when the whole class chain is visible.
-import type { ClassDeclaration, ClassExpression, Identifier, Literal, MethodDefinition, PropertyDefinition } from '@/parser/ast'
+import type { ClassDeclaration, ClassExpression, MemberKey, MethodDefinition, PropertyDefinition } from '@/parser/ast'
+import { memberKeyName } from '@/parser/symbol-keys'
 
 /**
  * Compile-time view of a class.
@@ -32,8 +33,8 @@ const STATIC_BUILTINS = new Set(['name', 'length', 'toString', 'bind', 'call', '
  * @param key identifier or literal key
  * @returns the name
  */
-export function keyName(key: Identifier | Literal): string {
-  return key.type === 'Identifier' ? key.name : String(key.value)
+export function keyName(key: MemberKey): string {
+  return memberKeyName(key)
 }
 
 function isConstructor(member: MethodDefinition | PropertyDefinition): boolean {

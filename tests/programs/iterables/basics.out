@@ -1,0 +1,14 @@
+1,2,3,4
+5
+6
+3,2,1 3,2,1 n
+10 11 symbol Symbol(Symbol.iterator) Symbol(Symbol.asyncIterator)
+1 false 1,2
+3 {"n":3}
+closed true
+first 0
+1,2
+true true
+async over sync 1,2,3
+stream x
+stream y

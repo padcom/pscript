@@ -6,6 +6,7 @@ import { GlobalObject } from './global-object'
 import { find, functionProperty, onlyGetter, own, resolve } from './lookup'
 import { getClassMember, getInstanceMember, hasClassMember, setClassMember, setInstanceMember } from './members'
 import { hasProperty, isObject, kindOf, toString } from './operators'
+import { SymbolValue } from './symbols'
 import { rangeError, typeError, type ScriptError } from './script-error'
 import {
   Accessor,
@@ -28,7 +29,9 @@ import {
  * @returns the property name
  */
 export function propertyKey(key: Value): string {
-  return typeof key === 'string' ? key : toString(key)
+  if (typeof key === 'string') return key
+
+  return key instanceof SymbolValue ? key.key : toString(key) // symbols name properties by their keys (D57)
 }
 
 const INTEGER_KEY = /^-?(?:0|[1-9]\d*)$/

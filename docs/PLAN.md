@@ -114,6 +114,7 @@ Each feature in this document has one of these tags:
 | R43 | Async `yield*` forwarding and awaited `for await` cleanup (D54) | 4.4.20 |
 | R44 | The comma operator (D55) | 4.4.3 |
 | R45 | `for (k in object)` (D56) | 4.4.8 |
+| R46 | User-defined iterables: `Symbol.iterator` / `Symbol.asyncIterator` (D57) | 4.4.21 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -133,11 +134,11 @@ Each feature in this document has one of these tags:
 
 ### 1.5 COULD (Phase 3+)
 
-~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), ~~the comma operator in `for` headers~~ (done, D55: everywhere), ~~`do … while`, `switch`~~ (done, D41), ~~`for … in`~~ (done, D56), ~~bitwise operators, hex/binary/octal literals~~ (done, D50), ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, ~~Map/Set~~ (done, D49), a CLI/REPL, a disassembler CLI, source maps for errors.
+~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), ~~the comma operator in `for` headers~~ (done, D55: everywhere), ~~`do … while`, `switch`~~ (done, D41), ~~`for … in`~~ (done, D56), ~~bitwise operators, hex/binary/octal literals~~ (done, D50), ~~destructuring~~ (done, D40), ~~user-defined iterables~~ (done, D57), abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, ~~Map/Set~~ (done, D49), a CLI/REPL, a disassembler CLI, source maps for errors.
 
 ### 1.6 WON'T (v1)
 
-`var`, ~~generators~~ (done, D42), **default exports and default imports** (`export default`, `import x from`), `export * from`, `export * as ns from`, `import.meta`, regular-expression literals, labels, `with`, `eval`, symbols, BigInt, **tagged templates and `String.raw`** (D34, excluded for good), Unicode identifiers (ASCII only in v1).
+`var`, ~~generators~~ (done, D42), **default exports and default imports** (`export default`, `import x from`), `export * from`, `export * as ns from`, `import.meta`, regular-expression literals, labels, `with`, `eval`, symbols (except `Symbol.iterator` / `Symbol.asyncIterator`, D57), BigInt, **tagged templates and `String.raw`** (D34, excluded for good), Unicode identifiers (ASCII only in v1).
 
 Planned for v2 (§1.7): ~~`async`/`await`~~ (done, D43), ~~an asynchronous module loader, top-level `await`~~ (done, D51), ~~dynamic `import()`~~ (done, D52), ~~async generators and `for await`~~ (done, D53). The v2 roadmap is complete.
 
@@ -234,6 +235,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D54 | Async `yield*` and `for await` cleanup | **Exactly as in JavaScript**: `yield*` in an async generator forwards `next(v)`, `throw(e)` and `return(v)` to the delegate (an async generator, a host async iterator, a sync generator, or any iterable for `next`), and evaluates to the delegate's return value; a forwarded `return` that completes ends the generator. Leaving a `for await` by `return`, by an exception or by `generator.return()` calls the iterator's `return()` and awaits it (on an exception, a failure of `return()` is ignored and the original exception goes on), innermost loop first. Details in §4.4.20 | no |
 | D55 | The comma operator | **As in JavaScript**, everywhere an expression is allowed (not only in `for` headers): `a, b` evaluates `a`, then `b`, and gives `b`. Arguments, array elements and declarators keep using `,` as a separator, so a sequence there needs parentheses. ESTree `SequenceExpression` (flat; a parenthesized sequence stays one element). Details in §4.4.3 | no |
 | D56 | `for … in` | **As in JavaScript for PScript's objects** (which have no prototype chains of their own, no symbols and no non-enumerable data properties): the own enumerable public keys — plain objects (including own accessors), the fields of class instances (not methods or class accessors), namespace exports, host objects' own keys —, the indices of arrays and strings as strings, nothing for `null`, `undefined` and other primitives. Keys are snapshotted when the loop starts; a key deleted before it is reached is skipped. Order: insertion order (integer-like keys are not moved first, §4.4.6). As in JS, `in` directly in a `for` initialiser needs parentheses (`for (let a = ('x' in o); …)`), which PScript accepted before. Details in §4.4.8 | minor (key order) |
+| D57 | User-defined iterables | **JavaScript's protocol with two well-known symbols**: `Symbol.iterator` and `Symbol.asyncIterator` exist (`typeof` is `'symbol'`; there is no `Symbol()` and no other symbol). Objects and classes define `[Symbol.iterator]() {}` (also `*[Symbol.iterator]`, `async *[Symbol.asyncIterator]`); in classes these are the only bracketed member names, so classes stay sealed (D29) and the name is known at compile time; only methods can have them. `for…of`, spread, array destructuring, `yield*`, `Array.from`, `new Map/Set`, `Promise.all` … call `[Symbol.iterator]()` and drive the returned `{ next(), return() }` object (`return()` when left early); `for await` tries `[Symbol.asyncIterator]()` first. Built-ins have them too (arrays, strings, maps, sets, generators). Symbol-named properties are stored under internal keys that no enumeration lists (`Object.keys`, `JSON.stringify`, `for…in`, `print`); `Symbol.iterator in o` works. The host sees real `Symbol.iterator` values and iterable proxies. Details in §4.4.21 | minor (only two symbols) |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -832,7 +834,7 @@ Semantics:
   - **Iterables in v1**: arrays (iterated live, by index, while `i < length`), strings (by UTF-16 code unit in v1; COULD: by code point), generator objects (D42, §4.4.16), and host proxies of iterable host values (JS arrays, Maps, Sets, anything with `Symbol.iterator`), iterated through the host iterator (§5.8.1).
   - Anything else → `TypeError: x is not iterable`.
   - The binding is fresh per iteration.
-  - COULD: a user-defined protocol (an object with an `iterator()` method returning `{ next() }`).
+  - User-defined iterables (D57, §4.4.21): an object with a `[Symbol.iterator]()` method, as in JS.
 - `for (k in object) body`, also with `const`, patterns or an existing target (D56): the own enumerable public keys of `object` as strings (plain objects, class-instance fields, namespace exports, host objects; indices of arrays and strings), in insertion order; `null` / `undefined` give no iterations. A key deleted before it is reached is skipped. An `in` operator in a `for` initialiser must be parenthesized (the token filter turns an `in` at the top level of a `for (` header, before its first `;`, into the for-in keyword).
 - `do body while (test)` (D41): the body runs before the first test. ASI as in JS: the statement ends after the `)` even on the same line (`do x++; while (c) y()`).
 - `break` and `continue` apply to the innermost loop (`break` also leaves a `switch`, §4.4.15). Labels are WON'T.
@@ -1187,6 +1189,37 @@ Each step awaits the promise of the `{ value, done }` object. Leaving the loop e
 **Deviations**: "no value" is `null` (D37), as for generators (`{ value: null, done: true }`); `yield*` in an async generator iterates an async (or sync) iterable and yields its values, but does not forward the values sent by `next(v)`, nor `throw` / `return`, and evaluates to `null`; async generator objects are not iterable by a plain `for…of`.
 
 `typeof g == 'object'`; async generator objects print as `[AsyncGenerator]`, `String(g)` is `[object AsyncGenerator]`. The host sees them as JS async iterators (`for await` works on the host side).
+
+#### 4.4.21 User-defined iterables (D57)
+
+```js
+class Range {
+  from
+  to
+  constructor(from, to) {
+    this.from = from
+    this.to = to
+  }
+  *[Symbol.iterator]() {
+    for (let i = this.from; i <= this.to; i++) yield i
+  }
+}
+print([...new Range(1, 3)])          // [1, 2, 3]
+
+const countdown = {
+  [Symbol.iterator]() {
+    let n = 3
+    return { next: () => (n > 0 ? { value: n--, done: false } : { value: undefined, done: true }) }
+  },
+}
+```
+
+- **Symbols**: `Symbol.iterator` and `Symbol.asyncIterator` are the only symbols. `typeof` gives `'symbol'`, `String(s)` / `print` show `Symbol(Symbol.iterator)`, `Symbol` is a frozen namespace (not callable).
+- **Members**: object literals use computed keys (`[Symbol.iterator]() {}`, D48). Classes accept `[Symbol.iterator]` and `[Symbol.asyncIterator]` as method names (plain, `*`, `async`, `async *`, static too); any other bracketed name, and fields or accessors named by a symbol, are `SyntaxError`s. The method's `name` is `[Symbol.iterator]`.
+- **Protocol** (as in JS): iterating a value that is not built-in iterable calls its `[Symbol.iterator]()` (found with the normal member lookup, so class methods work) and drives the returned object: `next()` must return objects; `done` / `value` are read; leaving early (`break`, `return`, an exception, a full array pattern) calls `return()` when the object has one. A generator returned by the method is iterated directly. This applies everywhere iteration happens: `for…of`, spread, array patterns, `yield*`, `Array.from`, `new Map` / `new Set`, the `Promise` combinators. `for await` calls `[Symbol.asyncIterator]()` first (its `next` / `throw` / `return` give promises), then falls back to `[Symbol.iterator]()`.
+- **Built-ins** have the methods: arrays and strings (an iterator object over their values), maps (`entries`), sets (`values`), generators and async generators (themselves).
+- **Keys**: a symbol names a property through an internal key that scripts cannot spell; enumerations (`Object.keys`, `JSON.stringify`, `for…in`, `print`, named-parameter checks) skip it, as JS skips symbol keys. `o[Symbol.iterator]`, `Symbol.iterator in o` work.
+- **Host**: `Symbol.iterator` / `Symbol.asyncIterator` cross the boundary as the host's own symbols; a script object with `[Symbol.iterator]` is iterable on the host side.
 
 ### 4.5 Classes, access control and interfaces (R12, R24)
 

@@ -1,0 +1,5 @@
+// @pscript-only: classes have no computed member names except the well-known symbols (D57)
+const key = 'x'
+class A {
+  [key]() {}
+}

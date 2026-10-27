@@ -61,7 +61,7 @@ import { ambiguityMessage, memberCandidate, type MemberContext } from '@/compile
 import { argumentsError, namedArgumentError, type Signature } from '@/compiler/signature'
 import { boundNames } from '@/parser/patterns'
 import { stdlibGlobalNames } from '@/stdlib'
-import { declaringClass, inheritedHalves, privateKey, staticPrefix, uniquePrivateName, type ClassNode } from './classes'
+import { declaringClass, inheritedHalves, keyText, privateKey, staticPrefix, uniquePrivateName, type ClassNode } from './classes'
 import { Helpers } from './helpers'
 import { exportList, importClause, isModuleDeclaration, sourceText } from './modules'
 import { Precedence, binaryPrecedence, precedenceOf, startsAmbiguously } from './precedence'
@@ -1185,7 +1185,7 @@ export class Emitter {
   // `private` members are JS private names (P7); `protected`, `override` and `final` are compile-time only.
   private memberKey(member: MethodDefinition | PropertyDefinition, record: ClassRecord): string {
     const { key, access } = member
-    if (access !== 'private') return key.type === 'Identifier' ? key.name : key.raw
+    if (access !== 'private') return key.type === 'Identifier' ? key.name : keyText(key)
 
     const name = keyName(key)
     if (!/^[A-Za-z_$][\w$]*$/.test(name)) throw this.unsupported(member, 'Private members with non-identifier names')

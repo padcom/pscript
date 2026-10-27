@@ -2,8 +2,10 @@
 // constructable, D25), classes over classes (`new` runs script construction, `instanceof` applies the brand rule),
 // arrays over arrays (live `items`), other objects over plain objects (reads and writes go through the runtime with
 // no home class, so private and protected members stay inaccessible), generators over JS iterators (D42).
+import { ITERATOR_KEY } from '@/parser/symbol-keys'
 import { CollectionObject } from './collections'
 import { AsyncGeneratorObject, GeneratorObject, type ResumeMode } from './generators'
+import { DONE, getIterator } from './iterators'
 import { PromiseObject, type PromiseOps } from './promises'
 import { ScriptThrow } from './script-error'
 import { publicProps } from './members'
@@ -65,6 +67,10 @@ function deleteOwn(object: ScriptObject, key: string): boolean {
   object.props.delete(key)
 
   return true
+}
+
+function scriptStep(next: Value | typeof DONE): IteratorResult<Value> {
+  return next === DONE ? { value: undefined, done: true } : { value: next, done: false }
 }
 
 function* converted(iterator: Iterator<Value>, toHost: (value: Value) => unknown): Generator<unknown> {
@@ -215,10 +221,23 @@ class Proxies {
   }
 
   // Maps and sets (D49) are iterable on the host side, like the host's own.
+  // Maps, sets and objects with a `[Symbol.iterator]` method (D57) are iterable on the host side, like the host's own.
   private symbol(object: ScriptObject, key: symbol): unknown {
-    if (key !== Symbol.iterator || !(object instanceof CollectionObject)) return undefined
+    if (key !== Symbol.iterator || !this.isIterable(object)) return undefined
 
-    return () => converted(object.iterate(), value => this.convert.toHost(value))
+    return () => converted(this.iterator(object), value => this.convert.toHost(value))
+  }
+
+  private isIterable(object: ScriptObject): boolean {
+    return object instanceof CollectionObject || this.enter(() => hasPropertyIn(this.host.hostContext, ITERATOR_KEY, object))
+  }
+
+  private iterator(object: ScriptObject): Iterator<Value> {
+    if (object instanceof CollectionObject) return object.iterate()
+
+    const iterator = this.enter(() => getIterator(object, this.host.hostContext))
+
+    return { next: () => this.enter(() => scriptStep(iterator.next())) }
   }
 
   // Undeclared members of class instances read as undefined from the host (JS conventions, D36).

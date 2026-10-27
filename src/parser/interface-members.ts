@@ -1,6 +1,15 @@
 // Interface declarations (§4.5.7): requirements only — no modifiers, bodies, initialisers, defaults or duplicate names
 // (a `get`/`set` pair is one requirement). Builds InterfaceDeclaration / InterfaceMember nodes.
-import type { Expression, Identifier, InterfaceDeclaration, InterfaceMember, Literal, Pattern, SourceLocation } from './ast'
+import type {
+  Expression,
+  Identifier,
+  InterfaceDeclaration,
+  InterfaceMember,
+  Literal,
+  MemberKey,
+  Pattern,
+  SourceLocation,
+} from './ast'
 import { toLoc, type JisonLoc } from './ast-builders'
 import type { Modifier } from './class-members'
 
@@ -11,7 +20,7 @@ export interface RawInterfaceMember {
   /** member kind */
   kind: InterfaceMember['kind']
   /** member name */
-  key: Identifier | Literal
+  key: MemberKey
   /** parameters */
   params: Pattern[]
   /** a body was written */
@@ -58,7 +67,11 @@ export function interfaceMember(modifiers: Modifier[], member: RawInterfaceMembe
   const { kind, key, params, loc } = member
   const hasRest = params.at(-1)?.type === 'RestElement'
 
-  return { type: 'InterfaceMember', key, kind, params: plainParams(params, loc, fail), hasRest, loc: toLoc(loc) }
+  if (key.type === 'MemberExpression') fail('Interface members cannot be named by a symbol', loc)
+
+  const name = key as Identifier | Literal
+
+  return { type: 'InterfaceMember', key: name, kind, params: plainParams(params, loc, fail), hasRest, loc: toLoc(loc) }
 }
 
 // A getter and a setter of the same name form one requirement; any other repeated name is an error.

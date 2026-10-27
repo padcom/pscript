@@ -93,8 +93,8 @@ function arrayLikeValues(ctx: AccessContext, source: ScriptObject): Value[] {
   return globalThis.Array.from({ length }, (_, i) => getProperty(ctx, source, String(i)))
 }
 
-function iterate(source: Value): Value[] {
-  const iterator = getIterator(source)
+function iterate(ctx: AccessContext, source: Value): Value[] {
+  const iterator = getIterator(source, ctx)
   const values: Value[] = []
 
   for (let value = iterator.next(); value !== DONE; value = iterator.next()) values.push(value)
@@ -104,7 +104,7 @@ function iterate(source: Value): Value[] {
 
 // `Array.from(iterable | { length }, mapFn?)`; missing elements of an array-like are undefined, as in JS.
 function arrayFrom(ctx: AccessContext, source: Value, mapFn: Value): Value[] {
-  const values = isArrayLike(source) ? arrayLikeValues(ctx, source) : iterate(source)
+  const values = isArrayLike(source) ? arrayLikeValues(ctx, source) : iterate(ctx, source)
   if (mapFn === undefined) return values
 
   const fn = requireCallback(mapFn, 'Array.from')

@@ -3,6 +3,7 @@ import type { ClassTemplate, CompiledScript, FunctionProto, InterfaceTemplate } 
 import { readCell } from '@/modules/cells'
 import type { CompiledModule, ModuleRecord } from '@/modules/module-record'
 import { GlobalFlags, Op, SPREAD_ARGC } from '@/compiler/opcodes'
+import { ASYNC_ITERATOR_KEY, displayKey } from '@/parser/symbol-keys'
 import { PScriptError, PScriptRuntimeError, formatExcerpt, type ScriptStackFrame } from '@/errors'
 import { addIn, toStringIn } from '@/runtime/conversions'
 import {
@@ -52,6 +53,7 @@ import {
   Object as ScriptObject,
   UNINITIALIZED,
   type AccessContext,
+  type HostAsyncIterator,
   type ImplicitReceiver,
   type Realm,
   type Slot,
@@ -251,9 +253,13 @@ const INDEX_ACCESSORS: Record<number, 'get' | 'set'> = { [Op.DEFINE_GETTER_INDEX
 
 // A function defined under a computed key takes its name (D48).
 function named<T extends ScriptFunction>(fn: T, name: string): T {
-  fn.name = name
+  fn.name = displayKey(name)
 
   return fn
+}
+
+function declaresNone(fn: Value): boolean {
+  return fn instanceof Closure && fn.fnProto.paramCount === 0 && !fn.fnProto.hasRest
 }
 
 // The module `import()` resolves relative specifiers against: the code's own module, none in scripts (D52).
@@ -1139,11 +1145,45 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
   // GET_ASYNC_ITER (D53): async generators and host async iterables step with their next(); other iterables are
   // iterated synchronously, each value awaited.
   private asyncIterator(value: Value): AsyncIterator {
+    return this.ownAsyncIterator(value) ?? this.protocolAsyncIterator(value) ?? this.fromSync(getIterator(value, this))
+  }
+
+  // Async generators and host async iterables.
+  private ownAsyncIterator(value: Value): AsyncIterator | null {
     if (value instanceof AsyncGeneratorObject) return asyncGeneratorIterator(value.driver)
 
     const host = value instanceof HostObject ? value.host.asyncIterator(value.target) : null
 
-    return host ? new AsyncIterator(host) : this.fromSync(getIterator(value))
+    return host ? new AsyncIterator(host) : null
+  }
+
+  // `[Symbol.asyncIterator]()` (D57): the methods of the object it returns give promises of step objects.
+  private protocolAsyncIterator(value: Value): AsyncIterator | null {
+    if (!(value instanceof ScriptObject) || !hasPropertyIn(this, ASYNC_ITERATOR_KEY, value)) return null
+
+    return this.asyncIteratorOf(this.callFunction(getProperty(this, value, ASYNC_ITERATOR_KEY), value, []))
+  }
+
+  private asyncIteratorOf(iterator: Value): AsyncIterator {
+    if (iterator instanceof AsyncGeneratorObject) return asyncGeneratorIterator(iterator.driver)
+    if (!isObject(iterator)) throw typeError('Result of the Symbol.asyncIterator method is not an object')
+
+    return new AsyncIterator(this.iteratorMethods(iterator))
+  }
+
+  private iteratorMethods(iterator: ScriptObject): HostAsyncIterator {
+    const method = (name: string) => {
+      if (!hasPropertyIn(this, name, iterator)) return undefined
+
+      const fn = getProperty(this, iterator, name)
+
+      // a method that declares no parameter gets no argument (strict arity, D38)
+      return (sent: Value) => this.callFunction(fn, iterator, declaresNone(fn) ? [] : [sent])
+    }
+
+    const next = method('next') ?? (() => { throw typeError('The iterator has no next() method') })
+
+    return { next, throw: method('throw'), return: method('return') }
   }
 
   private fromSync(iterator: ScriptIterator): AsyncIterator {
@@ -1603,7 +1643,7 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
           stack.push(new ScriptArray(this.realm.ArrayPrototype, popItems(stack, argc)))
           break
         }
-        case Op.GET_ITER: stack.push(getIterator(stack.pop()) as unknown as Value); break
+        case Op.GET_ITER: stack.push(getIterator(stack.pop(), this) as unknown as Value); break
         case Op.GET_KEYS: stack.push(new KeyIterator(stack.pop()) as unknown as Value); break
         case Op.ITER_NEXT: {
           const next = (stack[stack.length - 1] as unknown as ScriptIterator).next()
@@ -1641,7 +1681,7 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
         case Op.ARRAY_PUSH: arrayPush(stack); break
         case Op.ARRAY_SPREAD:
           b = stack.pop()
-          arraySpread(stack[stack.length - 1] as ScriptArray, b)
+          arraySpread(this, stack[stack.length - 1] as ScriptArray, b)
           break
         case Op.OBJECT_SPREAD:
           b = stack.pop()

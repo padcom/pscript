@@ -1,9 +1,20 @@
 // Conversions that may run script code (§4.4.3): `ToString(object)` looks up `toString` with the
 // normal member resolution and calls it; the result must be a primitive.
+import { SymbolValue } from './symbols'
 import { isObject, kindOf } from './operators'
 import { getProperty } from './properties'
 import { type ScriptError, typeError } from './script-error'
 import { Function as ScriptFunction, type AccessContext, type Value } from './values'
+
+function objectToStringIn(ctx: AccessContext, value: Value): string {
+  const method = getProperty(ctx, value, 'toString')
+  if (!(method instanceof ScriptFunction)) throw typeError('Cannot convert object to string')
+
+  const result = ctx.callFunction(method, value, [])
+  if (isObject(result)) throw typeError(`toString() returned ${kindOf(result)}, not a primitive`)
+
+  return String(result)
+}
 
 /**
  * `ToString`, calling a script- or built-in `toString()` for objects.
@@ -16,13 +27,7 @@ import { Function as ScriptFunction, type AccessContext, type Value } from './va
 export function toStringIn(ctx: AccessContext, value: Value): string {
   if (!isObject(value)) return String(value)
 
-  const method = getProperty(ctx, value, 'toString')
-  if (!(method instanceof ScriptFunction)) throw typeError('Cannot convert object to string')
-
-  const result = ctx.callFunction(method, value, [])
-  if (isObject(result)) throw typeError(`toString() returned ${kindOf(result)}, not a primitive`)
-
-  return String(result)
+  return value instanceof SymbolValue ? value.text() : objectToStringIn(ctx, value) // symbols: D57
 }
 
 function addPrimitives(a: Value, b: Value): Value {

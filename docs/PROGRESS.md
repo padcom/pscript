@@ -56,6 +56,22 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L15 | Async `yield*` forwarding, awaited `for await` cleanup (D54) | done (2026-10-27) |
 | L16 | The comma operator (D55) | done (2026-10-27) |
 | L17 | `for … in` (D56) | done (2026-10-27) |
+| L18 | User-defined iterables, `Symbol.iterator` (D57) | done (2026-10-27) |
+
+## L18 — User-defined iterables (D57)
+
+Design in `docs/PLAN.md` D57 (R46), §4.4.21.
+
+- **Keys**: `src/parser/symbol-keys.ts` (`\0Symbol.iterator` internal keys, `memberKeyName`, `displayKey`);
+  `publicProps` and the named-parameter check skip them; `propertyKey` / `in` map symbols to them.
+- **Parser**: `ClassMemberName` accepts `'[' AssignmentExpression ']'`, checked to be `Symbol.iterator` /
+  `Symbol.asyncIterator` (`MethodDefinition.computed`, `MemberKey`); methods only, not in interfaces.
+- **Runtime**: `SymbolValue` (`src/runtime/symbols.ts`), `typeof` `'symbol'`; `getIterator(value, ctx)` calls
+  `[Symbol.iterator]()` (`ProtocolIterator`); the VM's `for await` tries `[Symbol.asyncIterator]()`.
+- **Stdlib**: `src/stdlib/symbol.ts`: the `Symbol` namespace, `[Symbol.iterator]` of arrays, strings, maps, sets,
+  generators, `[Symbol.asyncIterator]` of async generators; native iterator objects moved there from collections.
+- **Interop**: the two symbols map to the host's; script iterables are iterable host-side.
+- **Tests**: `tests/programs/iterables/` (against Node).
 
 ## L17 — `for … in` (D56)
 

@@ -1,6 +1,7 @@
 // Members of class instances and classes (§4.5.3): private first (home class and enclosing classes),
 // then the member index with protected checks, then hidden privates (AccessError), then D36's "no member".
 import { find, functionProperty, noMember, onlyGetter, own, resolve, type Found } from './lookup'
+import { isSymbolKey } from '@/parser/symbol-keys'
 import { accessError, typeError } from './script-error'
 import {
   Class,
@@ -507,5 +508,5 @@ export function publicProps(object: ScriptObject): [string, Value | Accessor][] 
   if (object instanceof ModuleNamespace) return object.names.map(name => [name, object.read(name)])
   if (object instanceof HostObject) return hostProps(object)
 
-  return [...object.props].filter(([key]) => isPublicField(object, key))
+  return [...object.props].filter(([key]) => !isSymbolKey(key) && isPublicField(object, key)) // no symbol keys (D57)
 }

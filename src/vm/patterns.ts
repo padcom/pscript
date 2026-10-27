@@ -4,6 +4,7 @@ import { unknownNamedParameter } from '@/compiler/signature'
 import { DONE, getIterator, type ScriptIterator } from '@/runtime/iterators'
 import { publicProps } from '@/runtime/members'
 import { defineProperty, getProperty } from '@/runtime/properties'
+import { isSymbolKey } from '@/parser/symbol-keys'
 import { type ScriptError, typeError } from '@/runtime/script-error'
 import { Array as ScriptArray, Object as ScriptObject, type AccessContext, type Realm, type Value } from '@/runtime/values'
 
@@ -35,7 +36,7 @@ function isPlainObject(value: Value): value is ScriptObject {
 }
 
 function checkKeys(value: ScriptObject, { keys, path }: NamedKeys, signature: string) {
-  const unknown = [...value.props.keys()].find(key => !keys.has(key))
+  const unknown = [...value.props.keys()].find(key => !keys.has(key) && !isSymbolKey(key))
 
   if (unknown !== undefined) throw typeError(unknownNamedParameter(path + unknown, signature))
 }
@@ -103,12 +104,13 @@ export function iteratorRest(iterator: ScriptIterator, realm: Realm): ScriptArra
 /**
  * `ARRAY_SPREAD`: appends what an iterable produces to an array (`[...x]`, spread arguments, D46).
  *
+ * @param ctx access context (`[Symbol.iterator]()` runs in it, D57)
  * @param array the array being built
  * @param iterable the spread value
  * @throws {ScriptError} TypeError when the value is not iterable
  */
-export function arraySpread(array: ScriptArray, iterable: Value) {
-  const iterator = getIterator(iterable)
+export function arraySpread(ctx: AccessContext, array: ScriptArray, iterable: Value) {
+  const iterator = getIterator(iterable, ctx)
 
   for (let next = iterator.next(); next !== DONE; next = iterator.next()) array.items.push(next)
 }

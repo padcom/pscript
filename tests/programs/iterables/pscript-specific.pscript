@@ -1,0 +1,9 @@
+// @pscript-only: symbols print by description, symbol-named methods stay hidden from enumerations (D57)
+const bag = { a: 1, [Symbol.iterator]() { return [1][Symbol.iterator]() } }
+print(bag, Symbol.iterator, [Symbol.asyncIterator])
+print(Object.keys(bag), JSON.stringify(bag))
+for (const k in bag) print('key', k)
+try { Symbol('x') } catch (e) { print(e.name) }
+try { [...{ a: 1 }] } catch (e) { print(e.name, e.message) }
+const odd = { [Symbol.iterator]() { return 5 } }
+try { [...odd] } catch (e) { print(e.name, e.message) }

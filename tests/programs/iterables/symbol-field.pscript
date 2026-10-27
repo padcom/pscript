@@ -1,0 +1,4 @@
+// @pscript-only: only methods can be named by a symbol (D57)
+class A {
+  [Symbol.iterator] = null
+}

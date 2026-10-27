@@ -109,9 +109,9 @@ function prototypeMethods(): Record<string, [number, NativeImpl]> {
  */
 type Collected = { values: Value[] } | { error: unknown }
 
-function collect(iterable: Value): Collected {
+function collect(ctx: AccessContext, iterable: Value): Collected {
   try {
-    const iterator = getIterator(iterable)
+    const iterator = getIterator(iterable, ctx)
     const values: Value[] = []
 
     for (let value = iterator.next(); value !== DONE; value = iterator.next()) values.push(value)
@@ -138,7 +138,7 @@ interface Combinator {
 function combine(ctx: AccessContext, iterable: Value, make: (result: PromiseObject, count: number) => Combinator): PromiseObject {
   const ops = opsOf(ctx)
   const result = ops.create()
-  const collected = collect(iterable)
+  const collected = collect(ctx, iterable)
 
   if ('error' in collected) {
     ops.reject(result, ops.thrown(collected.error).value)

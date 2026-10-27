@@ -1,5 +1,6 @@
 // Operator semantics (§4.4.2, §4.4.3). Primitives coerce as in JS; objects, arrays and
 // functions in arithmetic or comparison are a TypeError (D5).
+import { SymbolValue } from './symbols'
 import { type ScriptError, typeError } from './script-error'
 import {
   Array as ScriptArray,
@@ -21,6 +22,12 @@ export function isObject(value: Value): value is ScriptObject {
   return value instanceof ScriptObject
 }
 
+function objectType(value: ScriptObject): string {
+  if (value instanceof ScriptFunction) return 'function'
+
+  return value instanceof SymbolValue ? 'symbol' : 'object' // D57
+}
+
 /**
  * `typeof` (D39: `typeof null` is `'null'`).
  *
@@ -29,9 +36,8 @@ export function isObject(value: Value): value is ScriptObject {
  */
 export function typeOf(value: Value): string {
   if (value === null) return 'null'
-  if (value instanceof ScriptFunction) return 'function'
 
-  return isObject(value) ? 'object' : typeof value
+  return isObject(value) ? objectType(value) : typeof value
 }
 
 /**
@@ -153,6 +159,8 @@ function objectToString(object: ScriptObject): string {
  * @throws {ScriptError} TypeError when the object cannot be converted
  */
 export function toString(value: Value): string {
+  if (value instanceof SymbolValue) return value.text() // D57
+
   return isObject(value) ? objectToString(value) : String(value)
 }
 
@@ -315,7 +323,7 @@ function isOwnKey(object: ScriptObject, name: string): boolean {
 export function hasProperty(key: Value, object: Value): boolean {
   if (!isObject(object)) throw typeError(`Cannot use 'in' operator to search for a key in ${kindOf(object)}`)
 
-  const name = toString(key)
+  const name = key instanceof SymbolValue ? key.key : toString(key) // symbols name their keys (D57)
 
   return isOwnKey(object, name) || hasInChain(object, name)
 }

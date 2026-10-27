@@ -4,6 +4,7 @@ import type {
   ClassDeclaration,
   ClassExpression,
   Identifier,
+  Literal,
   MemberExpression,
   MethodDefinition,
   PropertyDefinition,
@@ -103,10 +104,20 @@ function inheritsOtherHalf(info: ClassInfo, member: Accessor, classNodes: Map<Cl
   return false
 }
 
+/**
+ * The source text of a member name that is not an identifier: a literal, or `[Symbol.iterator]` (D57).
+ *
+ * @param key the key
+ * @returns the text
+ */
+export function keyText(key: Literal | MemberExpression): string {
+  return key.type === 'Literal' ? key.raw : `[${(key.object as Identifier).name}.${(key.property as Identifier).name}]`
+}
+
 // `set x(value) { super.x = value; }` or `get x() { return super.x; }`.
 function forwardingHalf(member: Accessor): string {
   const { key } = member
-  const [name, target] = key.type === 'Identifier' ? [key.name, `super.${key.name}`] : [key.raw, `super[${key.raw}]`]
+  const [name, target] = key.type === 'Identifier' ? [key.name, `super.${key.name}`] : [keyText(key), `super[${keyText(key)}]`]
   const prefix = staticPrefix(member)
 
   if (member.kind === 'set') return `${prefix}get ${name}() { return ${target}; }`

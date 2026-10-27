@@ -1,4 +1,5 @@
 // Helpers for defining native functions.
+import { displayKey } from '@/parser/symbol-keys'
 import { defineProperty } from '@/runtime/properties'
 import { toNumber } from '@/runtime/operators'
 import { NativeFunction, type NativeImpl, type Object as ScriptObject, type Realm, type Value } from '@/runtime/values'
@@ -12,7 +13,7 @@ import { NativeFunction, type NativeImpl, type Object as ScriptObject, type Real
  */
 export function defineMethods(realm: Realm, target: ScriptObject, methods: Record<string, [number, NativeImpl]>) {
   for (const [name, [length, impl]] of Object.entries(methods)) {
-    defineProperty(target, name, new NativeFunction(realm.FunctionPrototype, name, length, impl))
+    defineProperty(target, name, new NativeFunction(realm.FunctionPrototype, displayKey(name), length, impl))
   }
 }
 

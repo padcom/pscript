@@ -1,0 +1,1 @@
+Class members can only be named [Symbol.iterator] or [Symbol.asyncIterator] in brackets

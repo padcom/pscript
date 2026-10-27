@@ -124,6 +124,9 @@ export type Expression
     | CallExpression | NewExpression | MemberExpression | ThisExpression | TemplateLiteral | YieldExpression
     | AwaitExpression | ChainExpression | ImportExpression | SequenceExpression
 
+/** The name of a class member: `[Symbol.iterator]` / `[Symbol.asyncIterator]` methods have a member expression (D57). */
+export type MemberKey = Identifier | Literal | MemberExpression
+
 /** What binds names: a name, or an object or array pattern of names (D40). */
 export type BindingPattern = Identifier | ObjectPattern | ArrayPattern
 
@@ -407,9 +410,9 @@ export interface MethodDefinition extends NodeBase {
   /** node type */
   type: 'MethodDefinition'
   /** member name */
-  key: Identifier | Literal
-  /** computed keys are not supported */
-  computed: false
+  key: MemberKey
+  /** `[Symbol.iterator]() {}` (D57): the key is the member expression */
+  computed: boolean
   /** member kind */
   kind: 'constructor' | 'method' | 'get' | 'set'
   /** `static` member */

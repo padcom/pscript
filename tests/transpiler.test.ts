@@ -47,6 +47,7 @@ const PSCRIPT_ONLY_DIFFERENCES: Record<string, string> = {
   'generators/pscript-specific.pscript': 'missing values are `undefined` (`next()`, finished steps); JS error messages',
   'implicit-members/rules.pscript': 'static-context and method-assignment errors are runtime checks',
   'interfaces/declarations.pscript': 'interfaces declared in functions are not checked at compile time; `print` formatting',
+  'iterables/pscript-specific.pscript': 'JS has every symbol (`Symbol("x")`); `print` formatting',
   'objects/printing.pscript': '`print` formatting (D18)',
   'optional-chaining/pscript-specific.pscript': 'closed instances are not enforced at runtime; `print` formatting',
   'spread/pscript-specific.pscript': 'spread arguments are not arity- or named-parameter-checked at runtime; JS messages',

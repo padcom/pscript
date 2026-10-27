@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D56).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D57).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -201,6 +201,9 @@ class Tree {
 - Where JavaScript has `undefined`, generators have `null`: a bare `yield` yields `null`, `next()` without an
   argument makes `yield` give `null`, and a finished generator answers `{ value: null, done: true }`.
 - A class field followed by a `*method()` on the next line needs a `;` (as in JavaScript).
+- User-defined iterables work as in JavaScript: give an object or a class a `[Symbol.iterator]()` method (often
+  `*[Symbol.iterator]() { … }`), or `[Symbol.asyncIterator]()` for `for await`. These two are the only symbols, and
+  the only bracketed member names classes accept.
 - Async generators (`async function*`, `async *method()`) work as in JavaScript: `next()` / `return()` / `throw()`
   return promises of `{ value, done }`, `yield` and `return` await their value, and `for await (const x of …)`
   iterates them (as well as host async iterables, and any iterable with each value awaited). `yield*` delegates with
@@ -419,7 +422,8 @@ Values cross the boundary by reference and identity is kept in both directions.
 | Generators give `undefined` for missing values | Generators give `null` (`yield`, `next()`, finished steps) |
 | Any object with a `then` method is a thenable | Only promises are adopted; `Promise` is final |
 | Top-level `await` only in modules | In modules and scripts |
-| Symbols, BigInt, getters on the global object | Not available |
+| Symbols | Only `Symbol.iterator` and `Symbol.asyncIterator` |
+| BigInt, getters on the global object | Not available |
 | Default exports, `export *` | Named exports only |
 | Integer-like keys are listed first | Insertion order for all keys |
 | `map.get(missing)` is `undefined`; `Map`/`Set` can be extended | `null`; `Map` and `Set` are final |

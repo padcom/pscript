@@ -20,9 +20,10 @@ import type {
   UnaryExpression,
   VariableDeclarator,
 } from './ast'
-import { builders, sourceLoc, type ForHeader, type FunctionHead, type FunctionType, type JisonLoc } from './ast-builders'
+import { builders, sourceLoc, toLoc, type ForHeader, type FunctionHead, type FunctionType, type JisonLoc } from './ast-builders'
 import { EscapeError, checkNumber } from './literals'
 import { classMember, type Modifier, type RawMember } from './class-members'
+import { WELL_KNOWN_SYMBOLS } from './symbol-keys'
 import { PatternBuilder, patternHelpers } from './pattern-builders'
 import { boundNames, patternText } from './patterns'
 import { checkModuleDeclarations, moduleBuilders } from './module-declarations'
@@ -279,11 +280,32 @@ function classBuilders(errors: SyntaxErrorFactory) {
   }
 }
 
+function isWellKnownName({ computed, property }: MemberExpression): boolean {
+  return !computed && WELL_KNOWN_SYMBOLS.has((property as Identifier).name)
+}
+
+// `Symbol.iterator` / `Symbol.asyncIterator` (D57).
+function isWellKnownSymbol(key: Expression): key is MemberExpression {
+  if (key.type !== 'MemberExpression' || key.object.type !== 'Identifier') return false
+
+  return key.object.name === 'Symbol' && isWellKnownName(key)
+}
+
+// `[Symbol.iterator]` as a class member name (D57): the only computed names classes have.
+function symbolMemberName(errors: SyntaxErrorFactory, key: Expression, loc: JisonLoc): MemberExpression {
+  if (!isWellKnownSymbol(key)) {
+    throw errors.at('Class members can only be named [Symbol.iterator] or [Symbol.asyncIterator] in brackets', key.loc)
+  }
+
+  return { ...key, loc: toLoc(loc) }
+}
+
 const LITERAL_TARGETS = new Set(['ObjectExpression', 'ArrayExpression'])
 
 // Static checks that the grammar leaves to its actions. Object and array literals assigned to are patterns (D40).
 function checkedBuilders(errors: SyntaxErrorFactory, patterns: PatternBuilder) {
   return {
+    symbolMemberName: (key: Expression, loc: JisonLoc) => symbolMemberName(errors, key, loc),
     assignment(operator: AssignmentOperator, left: Expression, right: Expression, loc: JisonLoc) {
       const isPattern = operator === '=' && LITERAL_TARGETS.has(left.type)
       const target = isPattern ? patterns.toTarget(left, 'assignment') : checkTarget(errors, left, 'assignment')

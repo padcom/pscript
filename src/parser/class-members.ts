@@ -7,12 +7,14 @@ import type {
   FunctionExpression,
   Identifier,
   Literal,
+  MemberKey,
   MethodDefinition,
   Pattern,
   PropertyDefinition,
   SourceLocation,
 } from './ast'
 import { toLoc, type JisonLoc } from './ast-builders'
+import { memberKeyName } from './symbol-keys'
 
 /**
  * A modifier keyword as parsed.
@@ -31,7 +33,7 @@ interface MethodMember {
   /** method or accessor half */
   kind: 'method' | 'get' | 'set'
   /** member name */
-  key: Identifier | Literal
+  key: MemberKey
   /** formal parameters */
   params: Pattern[]
   /** body */
@@ -51,7 +53,7 @@ interface RawField {
   /** always a field */
   kind: 'field'
   /** field name */
-  key: Identifier | Literal
+  key: MemberKey
   /** initialiser */
   value: Expression | null
   /** location */
@@ -101,8 +103,9 @@ function flags(modifiers: Modifier[], fail: Fail): Flags {
   return { access, isStatic: names.has('static'), final: names.has('final'), override: names.has('override') }
 }
 
-function keyName(key: Identifier | Literal): string {
-  return key.type === 'Identifier' ? key.name : String(key.value)
+// `[Symbol.iterator]` names methods only (D57).
+function checkSymbolName({ key, kind, loc }: RawMember, fail: Fail) {
+  if (key.type === 'MemberExpression' && kind !== 'method') fail('Only methods can be named by a symbol', loc)
 }
 
 // Private members are not inherited, so `override` / `final` make no sense on them (§4.5.6).
@@ -113,7 +116,7 @@ function checkPrivate({ access, final, override }: Flags, loc: JisonLoc, fail: F
 }
 
 function namesConstructor(member: RawMember, { isStatic }: Flags): boolean {
-  return !isStatic && keyName(member.key) === 'constructor'
+  return !isStatic && memberKeyName(member.key) === 'constructor'
 }
 
 // What a constructor may not be (as in JS).
@@ -135,9 +138,10 @@ function isConstructor(member: Exclude<RawMember, { kind: 'field' }>, applied: F
 type FieldMember = Extract<RawMember, { kind: 'field' }>
 
 function field(member: FieldMember, { access, isStatic, final, override }: Flags, fail: Fail): PropertyDefinition {
-  if (keyName(member.key) === 'constructor') fail("Classes may not have a field named 'constructor'", member.loc)
+  if (memberKeyName(member.key) === 'constructor') fail("Classes may not have a field named 'constructor'", member.loc)
 
-  const { key, value } = member
+  const { value } = member
+  const key = member.key as Identifier | Literal // checkSymbolName
   const loc = toLoc(member.loc)
 
   return { type: 'PropertyDefinition', key, computed: false, value, static: isStatic, access, override, final, loc }
@@ -159,7 +163,7 @@ function method(member: Exclude<RawMember, { kind: 'field' }>, applied: Flags, m
   return {
     type: 'MethodDefinition',
     key: member.key,
-    computed: false,
+    computed: member.key.type === 'MemberExpression',
     kind: constructor ? 'constructor' : member.kind,
     static: isStatic,
     value: functionValue(member, loc),
@@ -182,6 +186,7 @@ export function classMember(modifiers: Modifier[], member: RawMember, fail: Fail
   const applied = flags(modifiers, fail)
 
   checkPrivate(applied, member.loc, fail)
+  checkSymbolName(member, fail)
 
   try {
     return member.kind === 'field' ? field(member, applied, fail) : method(member, applied, modifiers)
