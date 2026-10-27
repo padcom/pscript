@@ -116,6 +116,7 @@ Each feature in this document has one of these tags:
 | R45 | `for (k in object)` (D56) | 4.4.8 |
 | R46 | User-defined iterables: `Symbol.iterator` / `Symbol.asyncIterator` (D57) | 4.4.21 |
 | R47 | Abstract classes and members (D58) | 4.5.10 |
+| R48 | Structural `x implements I` operator (D59) | 4.5.7 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -135,7 +136,7 @@ Each feature in this document has one of these tags:
 
 ### 1.5 COULD (Phase 3+)
 
-~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), ~~the comma operator in `for` headers~~ (done, D55: everywhere), ~~`do … while`, `switch`~~ (done, D41), ~~`for … in`~~ (done, D56), ~~bitwise operators, hex/binary/octal literals~~ (done, D50), ~~destructuring~~ (done, D40), ~~user-defined iterables~~ (done, D57), ~~abstract classes~~ (done, D58), a structural `x implements I` operator (D32), `private constructor`, ~~Map/Set~~ (done, D49), a CLI/REPL, a disassembler CLI, source maps for errors.
+~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), ~~the comma operator in `for` headers~~ (done, D55: everywhere), ~~`do … while`, `switch`~~ (done, D41), ~~`for … in`~~ (done, D56), ~~bitwise operators, hex/binary/octal literals~~ (done, D50), ~~destructuring~~ (done, D40), ~~user-defined iterables~~ (done, D57), ~~abstract classes~~ (done, D58), ~~a structural `x implements I` operator~~ (done, D59), `private constructor`, ~~Map/Set~~ (done, D49), a CLI/REPL, a disassembler CLI, source maps for errors.
 
 ### 1.6 WON'T (v1)
 
@@ -238,6 +239,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D56 | `for … in` | **As in JavaScript for PScript's objects** (which have no prototype chains of their own, no symbols and no non-enumerable data properties): the own enumerable public keys — plain objects (including own accessors), the fields of class instances (not methods or class accessors), namespace exports, host objects' own keys —, the indices of arrays and strings as strings, nothing for `null`, `undefined` and other primitives. Keys are snapshotted when the loop starts; a key deleted before it is reached is skipped. Order: insertion order (integer-like keys are not moved first, §4.4.6). As in JS, `in` directly in a `for` initialiser needs parentheses (`for (let a = ('x' in o); …)`), which PScript accepted before. Details in §4.4.8 | minor (key order) |
 | D57 | User-defined iterables | **JavaScript's protocol with two well-known symbols**: `Symbol.iterator` and `Symbol.asyncIterator` exist (`typeof` is `'symbol'`; there is no `Symbol()` and no other symbol). Objects and classes define `[Symbol.iterator]() {}` (also `*[Symbol.iterator]`, `async *[Symbol.asyncIterator]`); in classes these are the only bracketed member names, so classes stay sealed (D29) and the name is known at compile time; only methods can have them. `for…of`, spread, array destructuring, `yield*`, `Array.from`, `new Map/Set`, `Promise.all` … call `[Symbol.iterator]()` and drive the returned `{ next(), return() }` object (`return()` when left early); `for await` tries `[Symbol.asyncIterator]()` first. Built-ins have them too (arrays, strings, maps, sets, generators). Symbol-named properties are stored under internal keys that no enumeration lists (`Object.keys`, `JSON.stringify`, `for…in`, `print`); `Symbol.iterator in o` works. The host sees real `Symbol.iterator` values and iterable proxies. Details in §4.4.21 | minor (only two symbols) |
 | D58 | Abstract classes | **TypeScript/Java style**: `abstract class` (declarations and expressions) cannot be instantiated (`new` of the class itself is a `TypeError`; a `SyntaxError` when the class is declared in scope); subclasses can. `abstract m(a, b);`, `abstract get x();`, `abstract set x(v);` declare members without a body, only in abstract classes, never `static`, `private` or `final`; a method without a body that is not abstract is a `SyntaxError`. A concrete subclass must implement every inherited abstract member (checked when it is defined, like interfaces: `TypeError: Class 'B' must implement abstract method 'A.m'`), keeping its signature (D38); implementing needs no `override`. `super.m()` of an abstract member is a `TypeError`. Details in §4.5.10 | no (new) |
+| D59 | Structural `x implements I` | **A second, structural check next to the nominal `instanceof` (D32)**: `x implements I` (relational precedence, like `instanceof`) is `true` when `x` is an object that currently has every member `I` (and its parents) requires — a public method with exactly the required parameters (D38) for a method requirement, a readable property (data or getter) for `get`, a writable one (setter, or data on a non-frozen object) for `set`, both for a property — whatever its class declares. Works for object literals, class instances (public members only) and host objects; instances of classes that nominally implement `I` are accepted at once; primitives give `false`. A right-hand side that is not an interface is a `TypeError`. Details in §4.5.7 | no (new) |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -740,7 +742,7 @@ As in JS. Falsy values: `false`, `0`, `-0`, `NaN`, `''`, `null`, `undefined`. Ev
 | 6b | `^` | left |
 | 6c | `&` | left |
 | 7 | `== !=` | left |
-| 8 | `< <= > >= instanceof in` | left |
+| 8 | `< <= > >= instanceof in implements` | left |
 | 8a | `<< >> >>>` | left |
 | 9 | `+ -` | left |
 | 10 | `* / %` | left |
@@ -1504,7 +1506,20 @@ print(c instanceof Shape, c instanceof Comparable)   // true true
 - Host classes cannot implement interfaces. Script classes extending host classes can, and host-inherited public members count.
 - A class that declares `implements` must implement everything, also an abstract one (it declares the members `abstract`, §4.5.10).
 
-**Checking at runtime (D32).** `instanceof` is extended to interfaces (nominal, §4.5.5). Every class stores the transitive set of interfaces it implements, so the check is O(1). COULD (structural check): a separate operator `x implements I` that returns `true` for *any* value that currently has all the members of `I` (object literals and host objects included), without needing an `implements` clause. It is listed as COULD because it introduces a second, weaker notion of "implements"; `implements` is already a reserved word, so adding it later does not break programs.
+**Checking at runtime (D32).** `instanceof` is extended to interfaces (nominal, §4.5.5). Every class stores the transitive set of interfaces it implements, so the check is O(1). COULD (structural check): a separate operator `x implements I` that returns `true` for *any* value that currently has all the members of `I` (object literals and host objects included), without needing an `implements` clause. It was listed as COULD because it introduces a second, weaker notion of "implements"; D59 added it:
+
+```js
+interface Shape { area(); name; }
+const square = { name: 'square', area() { return 4 } }
+square implements Shape          // true (structural)
+square instanceof Shape          // false (nominal: no class declares it)
+({ area() {} }) implements Shape // false: no name property
+```
+
+- Method requirements need a function value with exactly the required parameters (for script functions; host and built-in functions count whatever their arity), found with the public member lookup (so private members never count).
+- `get x()` needs a readable `x` (a data property or a getter), `set x(v)` a writable one (a setter, or a data property of an object that is not frozen); a property requirement needs both. Class instances use their public member index (fields are readable and writable).
+- Host objects: methods must be functions, properties must exist.
+- psc emits `$interface.implements(x, I)`; interface values carry their requirements (`$interface('I', [parents], { m: ['method', 2], x: ['property'] })`) and the check uses property descriptors and `length`.
 
 **Differential testing.** Access modifiers, `override` and `final` are not JS, so the differential harness strips them before running a program in Node. Stripping keeps behaviour identical except for access violations and private-name clashes, which are tested in `@pscript-only` programs. Programs that declare or use interfaces are `@pscript-only`.
 
@@ -2169,6 +2184,7 @@ export interface ModuleRecord {
 | `BIT_NOT` | — | a → r | `~` (D50) |
 | `EQ` `NE` `LT` `LE` `GT` `GE` | — | a b → bool | EQ/NE strict, no coercion (D1) |
 | `INSTANCEOF` `IN` | — | a b → bool | `INSTANCEOF` accepts classes and interfaces (D32); `IN` applies the access rules (§4.5.2) |
+| `IMPLEMENTS` | — | a iface → bool | structural `a implements I` (D59) |
 | `NEG` `POS` `NOT` `TYPEOF` | — | a → r | `POS` = ToNumber |
 | `TO_STRING` | — | v → s | `ToString` (§4.4.3); may call a script `toString()` |
 | `CONCAT` | n | s1…sn → s | concatenates `n` strings (template literals: cooked parts as `CONST`, substitutions via `TO_STRING`) |

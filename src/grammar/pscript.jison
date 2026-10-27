@@ -756,6 +756,8 @@ RelationalExpression
     { $$ = yy.binary($2, $1, $3, @$) }
   | RelationalExpression INSTANCEOF ShiftExpression
     { $$ = yy.binary('instanceof', $1, $3, @$) }
+  | RelationalExpression IMPLEMENTS ShiftExpression
+    { $$ = yy.binary('implements', $1, $3, @$) }
   | RelationalExpression IN ShiftExpression
     { $$ = yy.binary('in', $1, $3, @$) }
   ;

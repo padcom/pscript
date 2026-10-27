@@ -811,7 +811,7 @@ export interface UpdateExpression extends NodeBase {
 }
 
 export type BinaryOperator
-  = '+' | '-' | '*' | '/' | '%' | '**' | '==' | '!=' | '<' | '<=' | '>' | '>=' | 'instanceof' | 'in'
+  = '+' | '-' | '*' | '/' | '%' | '**' | '==' | '!=' | '<' | '<=' | '>' | '>=' | 'instanceof' | 'in' | 'implements'
     | '&' | '|' | '^' | '<<' | '>>' | '>>>'
 
 /**

@@ -58,6 +58,15 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L17 | `for … in` (D56) | done (2026-10-27) |
 | L18 | User-defined iterables, `Symbol.iterator` (D57) | done (2026-10-27) |
 | L19 | Abstract classes (D58) | done (2026-10-27) |
+| L20 | Structural `x implements I` (D59) | done (2026-10-27) |
+
+## L20 — Structural `x implements I` (D59)
+
+- **Grammar**: `RelationalExpression IMPLEMENTS ShiftExpression` (binary operator `implements`). **VM**:
+  `IMPLEMENTS` → `conforms()` in `src/vm/interfaces.ts` (class instances by their member index, plain objects by
+  property lookup, host objects through the host).
+- **psc**: interface values carry their requirements; `$interface.implements(x, I)`.
+- **Tests**: `tests/programs/interfaces/structural*.pscript`.
 
 ## L19 — Abstract classes (D58)
 

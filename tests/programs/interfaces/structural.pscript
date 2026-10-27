@@ -1,0 +1,24 @@
+// @pscript-only: the structural `x implements I` operator (D59)
+interface Shape {
+  area();
+  name;
+}
+interface Labeled { get label(); }
+interface Movable extends Shape { move(dx, dy); }
+const square = { name: 'square', area() { return 4 } }
+const blob = { area() { return 1 } }
+const frozen = Object.freeze({ name: 'f', area() { return 0 } })
+print(square implements Shape, blob implements Shape, frozen implements Shape, 5 implements Shape, null implements Shape)
+class Circle { name = 'circle'; area() { return 3 } }
+class Declared implements Shape { name = 'd'; area() { return 0 } }
+print(new Circle() implements Shape, new Circle() instanceof Shape, new Declared() implements Shape)
+print({ area(x) { return x }, name: 1 } implements Shape)
+print({ get label() { return 'x' } } implements Labeled, { set label(v) {} } implements Labeled)
+print(square implements Movable, { name: 1, area() {}, move(a, b) {} } implements Movable)
+class Hidden { private name = 'h'; area() { return 1 } }
+print(new Hidden() implements Shape)
+try { square implements Circle } catch (e) { print(e.name) }
+const host = { area() { return 2 }, name: 'computed' }
+const check = value => value implements Shape ? 'conforms' : 'does not conform'
+print(check(host), check([]), check(() => 1))
+print(1 + 1 == 2 && square implements Shape)

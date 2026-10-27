@@ -262,6 +262,7 @@ const BINARY_OPS: Record<BinaryExpression['operator'], Op> = {
   '>': Op.GT,
   '>=': Op.GE,
   'instanceof': Op.INSTANCEOF,
+  'implements': Op.IMPLEMENTS,
   'in': Op.IN,
 }
 

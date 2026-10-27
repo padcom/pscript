@@ -63,7 +63,7 @@ import { defineClass, superMember } from './classes'
 import { Coroutine, GeneratorReturn, type CoroutineHost } from './coroutines'
 import { Promises, type PromiseHost } from './promises'
 import type { PromiseObject } from '@/runtime/promises'
-import { defineInterface } from './interfaces'
+import { conforms, defineInterface } from './interfaces'
 import { arraySpread, checkPattern, iteratorRest, objectRest, objectSpread } from './patterns'
 import type { Frame, Handler } from './frame'
 import { Globals, type ScriptBinding } from './globals'
@@ -1550,6 +1550,10 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
         case Op.INSTANCEOF:
           b = stack.pop()
           stack.push(instanceOf(stack.pop(), b))
+          break
+        case Op.IMPLEMENTS:
+          b = stack.pop()
+          stack.push(conforms(this, stack.pop(), b))
           break
         case Op.IN:
           b = stack.pop()

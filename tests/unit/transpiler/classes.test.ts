@@ -140,8 +140,8 @@ describe('psc: interfaces (P8)', () => {
   it('makes interfaces values and records what classes implement', () => {
     const code = js(source)
 
-    expect(code).toContain("const Named = $interface('Named', []);")
-    expect(code).toContain("const Shape = $interface('Shape', [Named]);")
+    expect(code).toContain("const Named = $interface('Named', [], { \"name\": ['get'] });")
+    expect(code).toContain("const Shape = $interface('Shape', [Named], { \"area\": ['method', 0] });")
     expect(code).toContain('  static { $interface.implement(this, [Shape]); }')
   })
 

@@ -26,6 +26,7 @@ import type {
   ImportDeclaration,
   ImportExpression,
   InterfaceDeclaration,
+  InterfaceMember,
   Literal,
   LogicalExpression,
   MemberExpression,
@@ -201,6 +202,28 @@ function abstractGuard({ abstract, id }: ClassNode): string | null {
   if (!abstract || !id) return null
 
   return `if (new.target === ${id.name}) throw new TypeError("Cannot create an instance of abstract class '${id.name}'");`
+}
+
+function objectText(entries: string[]): string {
+  return entries.length === 0 ? '{}' : `{ ${entries.join(', ')} }`
+}
+
+// The members an interface requires, for the structural `implements` (D59): `{ m: ['method', 2], x: ['property'] }`;
+// a getter and a setter of the same name are one property.
+function requirementsText(members: InterfaceMember[]): string {
+  const kinds = new Map<string, string>()
+  const params = new Map<string, number>()
+
+  for (const member of members) {
+    const name = keyName(member.key)
+
+    kinds.set(name, kinds.has(name) && member.kind !== 'method' ? 'property' : member.kind)
+    params.set(name, member.params.length - Number(member.hasRest)) // as JS's `length` counts them
+  }
+
+  const requirement = ([name, kind]: [string, string]) => (kind === 'method' ? `['method', ${params.get(name)}]` : `['${kind}']`)
+
+  return objectText([...kinds].map(entry => `${JSON.stringify(entry[0])}: ${requirement(entry)}`))
 }
 
 /** The words of `for…of`, `for await…of` (D53) and `for…in` (D56). */
@@ -970,9 +993,18 @@ export class Emitter {
   }
 
   private binaryText({ operator, left, right }: BinaryExpression): string {
+    if (operator === 'implements') return this.implementsText(left, right)
+
     const [leftMin, rightMin] = operandPrecedences(operator)
 
     return `${this.expression(left, leftMin)} ${OPERATORS[operator] ?? operator} ${this.expression(right, rightMin)}`
+  }
+
+  // `x implements I` (D59) is a helper call.
+  private implementsText(left: Expression, right: Expression): string {
+    const operands = [left, right].map(operand => this.expression(operand, Precedence.Assignment)).join(', ')
+
+    return `${this.helpers.use('interface')}.implements(${operands})`
   }
 
   // `'x' in o` with a private `x` is the brand check `#x in o` (§4.5.2: `in` sees accessible members only).
@@ -1215,10 +1247,10 @@ export class Emitter {
     return record.privates.get(name)!
   }
 
-  interfaceText({ id, extends: parents }: InterfaceDeclaration): string {
+  interfaceText({ id, extends: parents, body }: InterfaceDeclaration): string {
     const parentList = parents.map(parent => this.expression(parent, Precedence.Assignment)).join(', ')
 
-    return `const ${id.name} = ${this.helpers.use('interface')}('${id.name}', [${parentList}]);`
+    return `const ${id.name} = ${this.helpers.use('interface')}('${id.name}', [${parentList}], ${requirementsText(body)});`
   }
 
   // ---------------------------------------------------------------------------

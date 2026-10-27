@@ -3,14 +3,18 @@
 import type { FunctionProto, InterfaceMemberTemplate, InterfaceTemplate } from '@/compiler/function-proto'
 import type { Access } from '@/parser/ast'
 import { kindOf } from '@/runtime/operators'
-import { typeError } from '@/runtime/script-error'
+import { getProperty, hasPropertyIn } from '@/runtime/properties'
+import { type ScriptError, typeError } from '@/runtime/script-error'
 import {
+  Accessor,
   Closure,
+  HostObject,
   Function as ScriptFunction,
   Interface,
+  Object as ScriptObject,
+  type AccessContext,
   type Class,
   type MemberEntry,
-  type Object as ScriptObject,
   type Realm,
   type Value,
 } from '@/runtime/values'
@@ -184,4 +188,76 @@ export function implementInterfaces(cls: Class, interfaces: Interface[]): string
 
     return missing.length > 0 ? [`Class '${cls.name || 'anonymous'}' does not implement ${iface.name}: ${list}`] : []
   })
+}
+
+// Structural checks (D59): what any object offers, through public members (the caller's access does not widen them).
+
+// A data property or an accessor half on a plain or host object, found along the prototype chain.
+function lookupProperty(object: ScriptObject, key: string): Value | Accessor | undefined {
+  for (let current: ScriptObject | null = object; current; current = current.proto) {
+    if (current.props.has(key)) return current.props.get(key)
+  }
+
+  return undefined
+}
+
+function readable(object: ScriptObject, key: string): boolean {
+  const found = lookupProperty(object, key)
+
+  return found instanceof Accessor ? found.get !== null : found !== undefined
+}
+
+function writable(object: ScriptObject, key: string): boolean {
+  const found = lookupProperty(object, key)
+  if (found instanceof Accessor) return found.set !== null
+
+  return found !== undefined && !object.frozen
+}
+
+function objectMethod(object: ScriptObject, requirement: Requirement): boolean {
+  const found = lookupProperty(object, requirement.key)
+  if (!(found instanceof ScriptFunction)) return false
+
+  return !(found instanceof Closure) || sameArity(found.fnProto, requirement)
+}
+
+const OBJECT_PROVIDES: Record<Requirement['kind'], (object: ScriptObject, requirement: Requirement) => boolean> = {
+  method: objectMethod,
+  get: (object, { key }) => readable(object, key),
+  set: (object, { key }) => writable(object, key),
+  property: (object, { key }) => readable(object, key) && writable(object, key),
+}
+
+// Host objects: methods are functions; properties exist.
+function hostProvides(ctx: AccessContext, object: HostObject, requirement: Requirement): boolean {
+  if (requirement.kind !== 'method') return hasPropertyIn(ctx, requirement.key, object)
+
+  return hasPropertyIn(ctx, requirement.key, object) && getProperty(ctx, object, requirement.key) instanceof ScriptFunction
+}
+
+function provides(ctx: AccessContext, object: ScriptObject, requirement: Requirement): boolean {
+  if (object instanceof HostObject) return hostProvides(ctx, object, requirement)
+
+  const { kind } = requirement
+
+  return object.klass ? PROVIDES[kind](object.klass, requirement) : OBJECT_PROVIDES[kind](object, requirement)
+}
+
+/**
+ * `value implements I` (D59): whether the value currently has every member the interface requires — public methods
+ * with the required arity, readable / writable properties — whatever its class declares. A class instance whose
+ * class implements `I` nominally is accepted at once; primitives never conform.
+ *
+ * @param ctx access context (host objects are asked through it)
+ * @param value the value
+ * @param iface the interface
+ * @returns whether the value conforms
+ * @throws {ScriptError} TypeError when the right-hand side is not an interface
+ */
+export function conforms(ctx: AccessContext, value: Value, iface: Value): boolean {
+  const checked = checkInterface(iface, "Right-hand side of 'implements'")
+  if (!(value instanceof ScriptObject)) return false
+  if (value.klass?.interfaces.has(checked)) return true
+
+  return [...checked.members.values()].every(requirement => provides(ctx, value, requirement))
 }

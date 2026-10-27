@@ -56,6 +56,7 @@ export enum Op {
   GT,
   GE,
   INSTANCEOF,
+  IMPLEMENTS,
   IN,
   NEG,
   POS,
@@ -227,6 +228,7 @@ export const OPCODES: Readonly<Record<Op, OpcodeInfo>> = {
   [Op.GT]: info('', 'a b → bool'),
   [Op.GE]: info('', 'a b → bool'),
   [Op.INSTANCEOF]: info('', 'a b → bool'), // classes and interfaces (D32)
+  [Op.IMPLEMENTS]: info('', 'a iface → bool'), // structural `a implements I` (D59)
   [Op.IN]: info('', 'a b → bool'), // applies the access rules
   [Op.NEG]: info('', 'a → r'),
   [Op.POS]: info('', 'a → r'), // ToNumber

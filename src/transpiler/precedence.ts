@@ -41,6 +41,7 @@ const BINARY: Record<string, Precedence> = {
   '>': Precedence.Relational,
   '>=': Precedence.Relational,
   'instanceof': Precedence.Relational,
+  'implements': Precedence.Member, // printed as a helper call (D59)
   'in': Precedence.Relational,
   '+': Precedence.Additive,
   '-': Precedence.Additive,

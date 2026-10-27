@@ -41,7 +41,7 @@ describe('psc: imports and exports', () => {
       'export const y = 1;',
       'export function f() {}',
       'export class C {}',
-      "export const I = $interface('I', []);",
+      "export const I = $interface('I', [], {});",
     ].join('\n'))
   })
 

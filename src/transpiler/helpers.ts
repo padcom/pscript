@@ -5,9 +5,10 @@ const INTERFACE = `const $interface = (() => {
   const implemented = new WeakMap();
   const extendsInterface = (iface, target) =>
     iface === target || iface.parents.some(parent => extendsInterface(parent, target));
-  const define = (name, parents) => Object.freeze({
+  const define = (name, parents, members = {}) => Object.freeze({
     name,
     parents,
+    members,
     toString: () => \`[interface \${name}]\`,
     [Symbol.hasInstance](value) {
       let proto = Object(value) === value ? Object.getPrototypeOf(value) : null;
@@ -18,6 +19,28 @@ const INTERFACE = `const $interface = (() => {
     },
   });
   define.implement = (cls, interfaces) => implemented.set(cls, interfaces);
+  const find = (object, key) => {
+    for (let current = object; current; current = Object.getPrototypeOf(current)) {
+      const descriptor = Object.getOwnPropertyDescriptor(current, key);
+      if (descriptor) return descriptor;
+    }
+  };
+  const readable = d => 'value' in d || d.get !== undefined;
+  const writable = (d, object) => d.set !== undefined || (d.writable === true && !Object.isFrozen(object));
+  const provides = (object, key, [kind, params]) => {
+    const d = find(object, key);
+    if (!d) return false;
+    if (kind === 'method') return typeof d.value === 'function' && d.value.length === params;
+    return (kind === 'set' || readable(d)) && (kind === 'get' || writable(d, object));
+  };
+  const requirements = iface => [iface.members, ...iface.parents.flatMap(requirements)];
+  // D59: \`value implements iface\`, structurally
+  define.implements = (value, iface) => {
+    if (!iface || !Array.isArray(iface.parents)) throw new TypeError("Right-hand side of 'implements' is not an interface");
+    if (Object(value) !== value) return false;
+    return value instanceof iface || requirements(iface).every(members =>
+      Object.entries(members).every(([key, requirement]) => provides(value, key, requirement)));
+  };
   return define;
 })();`
 
