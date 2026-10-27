@@ -41,10 +41,15 @@ function checkIndex(index: number, length: number) {
   if (index < 0 || index >= length) throw rangeError(`Index ${index} out of range for length ${length}`)
 }
 
+// `find` + `resolve` without allocating the found entry (hot path).
 function lookup(ctx: AccessContext, object: ScriptObject | null, key: string, receiver: Value): Value {
-  const found = find(object, key)
+  for (let current = object; current; current = current.proto) {
+    const stored = current.props.get(key)
 
-  return found ? resolve(ctx, found[0], receiver) : undefined
+    if (stored !== undefined || current.props.has(key)) return resolve(ctx, stored, receiver)
+  }
+
+  return undefined
 }
 
 const PRIMITIVE_PROTOTYPES: Record<string, (realm: Realm) => ScriptObject> = {
@@ -95,21 +100,19 @@ function getNamespace(_: AccessContext, namespace: ModuleNamespace, key: string)
   return namespace.names.includes(key) ? namespace.read(key) : undefined
 }
 
-type ExoticGetter = (ctx: AccessContext, object: any, key: string) => Value
-
-// Objects whose reads do not use ordinary properties: namespaces, `globalThis`, classes.
-const EXOTIC_GETTERS: [abstract new (...args: any[]) => ScriptObject, ExoticGetter][] = [
-  [ModuleNamespace, getNamespace],
-  [HostObject, (_, object: HostObject, key) => object.host.get(object.target, key)],
-  [GlobalObject, getGlobal],
-  [Class, getClassMember],
-]
-
-function getExotic(ctx: AccessContext, object: ScriptObject, key: string): Value {
-  const getter = EXOTIC_GETTERS.find(([type]) => object instanceof type)?.[1]
-  if (getter) return getter(ctx, object, key)
+// Objects whose reads do not use ordinary properties: namespaces, host objects, `globalThis`, classes.
+function getScriptObject(ctx: AccessContext, object: ScriptObject, key: string): Value {
+  if (object instanceof GlobalObject) return getGlobal(ctx, object, key)
+  if (object instanceof Class) return getClassMember(ctx, object, key)
 
   return object.klass ? getInstanceMember(ctx, object, key) : getPlain(ctx, object, key)
+}
+
+function getExotic(ctx: AccessContext, object: ScriptObject, key: string): Value {
+  if (object instanceof ModuleNamespace) return getNamespace(ctx, object, key)
+  if (object instanceof HostObject) return object.host.get(object.target, key)
+
+  return getScriptObject(ctx, object, key)
 }
 
 function getPrimitive(ctx: AccessContext, value: Value, key: string): Value {
@@ -117,6 +120,20 @@ function getPrimitive(ctx: AccessContext, value: Value, key: string): Value {
   if (typeof value === 'string') return getString(ctx, value, key)
 
   return lookup(ctx, PRIMITIVE_PROTOTYPES[typeof value](ctx.realm), key, value)
+}
+
+/**
+ * `receiver[key]` for an integer `key` on an array (GET_INDEX fast path); same result as `getProperty` with
+ * the key's string form.
+ *
+ * @param array the array
+ * @param index an integer
+ * @returns the element
+ */
+export function getArrayIndex(array: ScriptArray, index: number): Value {
+  checkIndex(index, array.items.length)
+
+  return array.items[index]
 }
 
 /**
@@ -134,13 +151,25 @@ export function getProperty(ctx: AccessContext, receiver: Value, key: string): V
 }
 
 // Writing past the end of an array fills the gap with null (D37); other keys are not allowed (§4.4.7).
-function setArray(array: ScriptArray, key: string, value: Value) {
-  const index = indexOf(key)
-  if (index === null) throw typeError(`Arrays only accept integer keys (got '${key}')`)
+/**
+ * `array[index] = value` for an integer index (also the SET_INDEX fast path).
+ *
+ * @param array the array
+ * @param index an integer
+ * @param value the new element
+ */
+export function setArrayIndex(array: ScriptArray, index: number, value: Value) {
   if (index < 0) throw rangeError(`Index ${index} out of range for length ${array.items.length}`)
 
   while (array.items.length < index) array.items.push(null)
   array.items[index] = value
+}
+
+function setArray(array: ScriptArray, key: string, value: Value) {
+  const index = indexOf(key)
+  if (index === null) throw typeError(`Arrays only accept integer keys (got '${key}')`)
+
+  setArrayIndex(array, index, value)
 }
 
 const READ_ONLY_FUNCTION_KEYS = new Set(['name', 'length'])

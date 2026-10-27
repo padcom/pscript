@@ -1,6 +1,7 @@
 // Call frames of the VM (§5.6.1).
 import type { FunctionProto } from '@/compiler/function-proto'
 import type { ModuleRecord } from '@/modules/module-record'
+import type { ScriptBinding } from './globals'
 import type { Class, Closure, Environment, ImplicitReceiver, Object as ScriptObject, Value } from '@/runtime/values'
 
 /**
@@ -43,10 +44,12 @@ export interface Frame {
   implicitFrame: ImplicitReceiver | null
   /** module the code belongs to (imports, error locations; §5.6.8) */
   module: ModuleRecord | null
-  /** active exception handlers */
-  handlers: Handler[]
+  /** active exception handlers (allocated by the first TRY) */
+  handlers: Handler[] | null
   /** called through `new` */
   isConstruct: boolean
   /** class `new` was applied to */
   newTarget: Class | null
+  /** script bindings found by LOAD_GLOBAL / STORE_GLOBAL, by constant index (shared by the closure's calls) */
+  globalCache: ScriptBinding[]
 }

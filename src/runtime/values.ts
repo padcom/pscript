@@ -112,6 +112,8 @@ export class Closure extends Function {
   homeClass: Class | null = null
   /** for `super` lookups */
   homeObject: Object | null = null
+  /** the VM's cache of script bindings used by the closure's code (opaque here) */
+  globalCache: any[] | null = null
 
   constructor(
     proto: Object | null,

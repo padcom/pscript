@@ -54,6 +54,8 @@ export function kindOf(value: Value): string {
  * @returns JS truthiness; every object is truthy
  */
 export function truthy(value: Value): boolean {
+  if (typeof value === 'boolean') return value
+
   return isObject(value) || Boolean(value)
 }
 
@@ -66,6 +68,7 @@ export function truthy(value: Value): boolean {
  * @throws {ScriptError} TypeError for an object operand (D5)
  */
 export function toNumber(value: Value, op: string): number {
+  if (typeof value === 'number') return value
   if (isObject(value)) throw typeError(`Cannot apply '${op}' to ${kindOf(value)}`)
 
   return globalThis.Number(value)

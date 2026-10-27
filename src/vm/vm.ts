@@ -19,7 +19,16 @@ import {
 } from '@/runtime/operators'
 import { formatNested } from '@/runtime/format'
 import { DONE, getIterator, type ScriptIterator } from '@/runtime/iterators'
-import { defineAccessor, defineProperty, getProperty, hasPropertyIn, propertyKey, setProperty } from '@/runtime/properties'
+import {
+  defineAccessor,
+  defineProperty,
+  getArrayIndex,
+  getProperty,
+  hasPropertyIn,
+  propertyKey,
+  setArrayIndex,
+  setProperty,
+} from '@/runtime/properties'
 import { getPrivateMember, setPrivateMember } from '@/runtime/members'
 import { Interop } from '@/runtime/interop'
 import { ScriptError, ScriptThrow, rangeError, referenceError, typeError } from '@/runtime/script-error'
@@ -45,7 +54,7 @@ import {
 import { defineClass, superMember } from './classes'
 import { defineInterface } from './interfaces'
 import type { Frame, Handler } from './frame'
-import { Globals } from './globals'
+import { Globals, type ScriptBinding } from './globals'
 
 /**
  * Limits enforced by the VM (D14).
@@ -82,6 +91,20 @@ function initialized(slot: Slot, frame: Frame): Value {
   if (slot === UNINITIALIZED) throw referenceError(`Cannot access '${bindingName(frame)}' before initialization`)
 
   return slot
+}
+
+// A packed array of `size` slots in the TDZ (faster to index than `new Array(size).fill(...)`).
+function uninitializedSlots(size: number): Slot[] {
+  const slots: Slot[] = []
+
+  for (let i = 0; i < size; i++) slots.push(UNINITIALIZED)
+
+  return slots
+}
+
+// The arity check's fast path (D38): the full check with its message runs only for a mismatch.
+function acceptsArgc({ length, paramCount, hasRest }: FunctionProto, argc: number): boolean {
+  return argc >= length && (hasRest || argc <= paramCount)
 }
 
 function functionName({ kind, name }: FunctionProto): string {
@@ -160,6 +183,43 @@ const HOST_ERROR_NAMES = new Set(['TypeError', 'RangeError', 'ReferenceError', '
 
 /** A built-in class with its native constructor. */
 type NativeClass = ClassValue & Required<Pick<ClassValue, 'native'>>
+
+// A number key whose string form is an integer index (`xs[1]`, not `xs[1.5]` or `xs[1e21]`).
+function isIndex(key: Value): key is number {
+  return typeof key === 'number' && globalThis.Number.isSafeInteger(key)
+}
+
+function isScriptRoot({ native, host, superClass }: ClassValue): boolean {
+  return !native && !host && !superClass
+}
+
+// `new C(...)` of a script class without a superclass, with a constructor (NEW's fast path).
+function isBaseScriptClass(value: Value): value is ClassValue & { ctor: Closure } {
+  return value instanceof ClassValue && value.ctor !== null && isScriptRoot(value)
+}
+
+// Drops operand stack items down to `height`; popping is cheaper than setting `length` for the few items of a call.
+function truncate(stack: Value[], height: number) {
+  while (stack.length > height) stack.pop()
+}
+
+// Pops the top `count` items, bottom first.
+function popItems(stack: Value[], count: number): Value[] {
+  const items = stack.slice(stack.length - count)
+
+  truncate(stack, stack.length - count)
+
+  return items
+}
+
+// Moves the top item `depth` items down: a b c → c a b (3), a b c d → d a b c (4).
+function rotate(stack: Value[], depth: number) {
+  const top = stack.length - 1
+  const moved = stack[top]
+
+  for (let i = top; i > top - depth + 1; i--) stack[i] = stack[i - 1]
+  stack[top - depth + 1] = moved
+}
 
 function nullish(value: Value): boolean {
   return value === null || value === undefined
@@ -267,14 +327,34 @@ export class VM implements AccessContext {
 
   // Pushes the frame of a script function call (§5.6.3) after the arity (D38) and depth (D14) checks.
   private enterClosure(closure: Closure, args: Value[], thisValue: Value): Frame {
-    const { fnProto: proto } = closure
+    this.checkCall(closure.fnProto, args.length)
 
-    this.checkArity(proto, args.length)
+    return this.pushClosureFrame(closure, this.bindArguments(closure.fnProto, args, 0, args.length), thisValue)
+  }
+
+  // CALL / CALL_METHOD of a closure: the arguments are bound straight from the operand stack (no array of them).
+  private enterClosureFromStack(closure: Closure, argc: number, thisValue: Value, height: number): Frame {
+    const { stack } = this
+
+    this.checkCall(closure.fnProto, argc)
+
+    const slots = this.bindArguments(closure.fnProto, stack, stack.length - argc, argc)
+
+    truncate(stack, height)
+
+    return this.pushClosureFrame(closure, slots, thisValue)
+  }
+
+  private checkCall(proto: FunctionProto, argc: number) {
+    this.checkArity(proto, argc)
 
     // frames[0] is the script, so frames.length is the depth of the call being made
     if (this.frames.length > this.options.maxCallDepth) throw rangeError('Maximum call stack size exceeded')
+  }
 
-    const env = new Environment(this.bindArguments(proto, args), closure.env)
+  private pushClosureFrame(closure: Closure, slots: Slot[], thisValue: Value): Frame {
+    const { fnProto: proto } = closure
+    const env = new Environment(slots, closure.env)
     const frame = this.newFrame(proto, env, proto.kind === 'arrow' ? closure.thisValue ?? null : thisValue)
 
     frame.closure = closure
@@ -282,12 +362,17 @@ export class VM implements AccessContext {
     frame.homeObject = closure.homeObject
     frame.implicitFrame = closure.implicitFrame
     frame.module = closure.module
+    frame.globalCache = closure.globalCache ??= []
     this.frames.push(frame)
 
     return frame
   }
 
   private checkArity(proto: FunctionProto, argc: number) {
+    if (!acceptsArgc(proto, argc)) this.arityMismatch(proto, argc)
+  }
+
+  private arityMismatch(proto: FunctionProto, argc: number) {
     const problem = arityError({
       text: proto.signature ?? `${proto.name}()`,
       required: proto.length,
@@ -297,13 +382,18 @@ export class VM implements AccessContext {
     if (problem) throw typeError(problem)
   }
 
-  // Parameters take the first slots; omitted ones stay UNINITIALIZED for JUMP_IF_ARG (defaults).
-  private bindArguments({ scopeSize, paramCount, hasRest }: FunctionProto, args: Value[]): Slot[] {
-    const slots = new globalThis.Array<Slot>(scopeSize).fill(UNINITIALIZED)
+  // Parameters take the first slots; omitted ones stay UNINITIALIZED for JUMP_IF_ARG (defaults). The `argc`
+  // arguments are `source[start]`, `source[start + 1]`, ...
+  private bindArguments({ scopeSize, paramCount, hasRest }: FunctionProto, source: Value[], start: number, argc: number): Slot[] {
+    const slots: Slot[] = []
+    const bound = Math.min(argc, paramCount)
+    let i = 0
 
-    for (let i = 0; i < Math.min(args.length, paramCount); i++) slots[i] = args[i]
+    for (; i < bound; i++) slots.push(source[start + i])
 
-    if (hasRest) slots[paramCount] = new ScriptArray(this.realm.ArrayPrototype, args.slice(paramCount))
+    for (; i < scopeSize; i++) slots.push(UNINITIALIZED)
+
+    if (hasRest) slots[paramCount] = new ScriptArray(this.realm.ArrayPrototype, source.slice(start + paramCount, start + argc))
 
     return slots
   }
@@ -321,9 +411,10 @@ export class VM implements AccessContext {
       homeObject: null,
       implicitFrame: null,
       module: null,
-      handlers: [],
+      handlers: null,
       isConstruct: false,
       newTarget: null,
+      globalCache: [],
     }
   }
 
@@ -370,7 +461,7 @@ export class VM implements AccessContext {
    */
   execute(script: CompiledScript): Value {
     const { main } = script
-    const env = new Environment(new globalThis.Array<Slot>(main.scopeSize).fill(UNINITIALIZED), null)
+    const env = new Environment(uninitializedSlots(main.scopeSize), null)
 
     this.script = script
     this.steps = 0
@@ -452,7 +543,7 @@ export class VM implements AccessContext {
 
     while (this.frames.length >= entryDepth) {
       const frame = this.frames[this.frames.length - 1]
-      const handler = frame.handlers.pop()
+      const handler = frame.handlers?.pop()
 
       if (handler) {
         this.enterHandler(frame, handler, thrown)
@@ -509,6 +600,36 @@ export class VM implements AccessContext {
     defineProperty(object, key, value)
   }
 
+  // Script bindings are never removed and shadow realm globals, so a frame remembers the ones it has found by
+  // constant index; realm globals are looked up every time.
+  private scriptBinding(frame: Frame, index: number): ScriptBinding | undefined {
+    const cache = frame.globalCache
+    let binding: ScriptBinding | undefined = cache[index]
+
+    if (binding === undefined) {
+      binding = this.globals.scriptBindings.get(frame.proto.constants[index] as string)
+
+      if (binding) cache[index] = binding
+    }
+
+    return binding
+  }
+
+  private loadGlobal(frame: Frame, index: number): Value {
+    const binding = this.scriptBinding(frame, index)
+
+    if (binding && binding.value !== UNINITIALIZED) return binding.value
+
+    return this.globals.load(frame.proto.constants[index] as string)
+  }
+
+  private storeGlobal(frame: Frame, index: number, value: Value) {
+    const binding = this.scriptBinding(frame, index)
+
+    if (binding && binding.value !== UNINITIALIZED && !binding.isConst) binding.value = value
+    else this.globals.store(frame.proto.constants[index] as string, value)
+  }
+
   private notCallable(fn: Value): never {
     if (fn instanceof ClassValue) throw typeError(`Class constructor ${fn.name} cannot be invoked without 'new'`)
 
@@ -541,13 +662,18 @@ export class VM implements AccessContext {
 
   // A base class creates the instance (brand = newTarget), runs its field initialisers, then its constructor.
   private constructBase(cls: ClassValue, args: Value[], newTarget: ClassValue): ScriptObject {
-    const instance = new ScriptObject(newTarget.prototype)
-
-    instance.klass = newTarget
-    this.initializeFields(cls, instance)
+    const instance = this.initializeFields(cls, this.newInstance(newTarget))
 
     if (cls.ctor) return this.runConstructor(cls.ctor, instance, args, newTarget)
     if (args.length > 0) throw typeError(`${cls.name || 'anonymous'}() expects 0 arguments, got ${args.length}`) // D38
+
+    return instance
+  }
+
+  private newInstance(newTarget: ClassValue): ScriptObject {
+    const instance = new ScriptObject(newTarget.prototype)
+
+    instance.klass = newTarget
 
     return instance
   }
@@ -684,6 +810,7 @@ export class VM implements AccessContext {
     let { ip } = frame
     const { maxSteps } = this.options
     const limited = maxSteps !== Infinity
+    let a: Value
     let b: Value
 
     for (;;) {
@@ -714,21 +841,27 @@ export class VM implements AccessContext {
         case Op.INIT:
           lookupEnv(frame.env, code[ip++]).slots[code[ip++]] = stack.pop()
           break
-        case Op.LOAD_GLOBAL: stack.push(globals.load(constants[code[ip++]] as string)); break
-        case Op.STORE_GLOBAL: globals.store(constants[code[ip++]] as string, stack[stack.length - 1]); break
+        case Op.LOAD_GLOBAL: stack.push(this.loadGlobal(frame, code[ip++])); break
+        case Op.STORE_GLOBAL: this.storeGlobal(frame, code[ip++], stack[stack.length - 1]); break
         case Op.DECLARE_GLOBAL:
           globals.declare(constants[code[ip++]] as string, (code[ip++] & GlobalFlags.Const) !== 0)
           break
         case Op.INIT_GLOBAL: globals.initialize(constants[code[ip++]] as string, stack.pop()); break
         case Op.TYPEOF_GLOBAL: stack.push(globals.typeOf(constants[code[ip++]] as string)); break
         case Op.PUSH_ENV:
-          frame.env = new Environment(new globalThis.Array<Slot>(code[ip++]).fill(UNINITIALIZED), frame.env)
+          frame.env = new Environment(uninitializedSlots(code[ip++]), frame.env)
           break
         case Op.POP_ENV: frame.env = frame.env.parent as Environment; break
-        case Op.COPY_ENV: frame.env = new Environment([...frame.env.slots], frame.env.parent); break
+        case Op.COPY_ENV: frame.env = new Environment(frame.env.slots.slice(), frame.env.parent); break
         case Op.JUMP: ip = code[ip]; break
-        case Op.JUMP_IF_FALSE: ip = truthy(stack.pop()) ? ip + 1 : code[ip]; break
-        case Op.JUMP_IF_TRUE: ip = truthy(stack.pop()) ? code[ip] : ip + 1; break
+        case Op.JUMP_IF_FALSE:
+          a = stack.pop()
+          ip = a === true || (a !== false && truthy(a)) ? ip + 1 : code[ip]
+          break
+        case Op.JUMP_IF_TRUE:
+          a = stack.pop()
+          ip = a === true || (a !== false && truthy(a)) ? code[ip] : ip + 1
+          break
         case Op.AND_JUMP:
           if (truthy(stack[stack.length - 1])) { stack.pop(); ip++ } else ip = code[ip]
           break
@@ -740,23 +873,28 @@ export class VM implements AccessContext {
           break
         case Op.ADD:
           b = stack.pop()
-          stack.push(addIn(this, stack.pop(), b))
+          a = stack[stack.length - 1]
+          stack[stack.length - 1] = typeof a === 'number' && typeof b === 'number' ? a + b : addIn(this, a, b)
           break
         case Op.SUB:
           b = stack.pop()
-          stack.push(arithmetic('-', stack.pop(), b))
+          a = stack[stack.length - 1]
+          stack[stack.length - 1] = typeof a === 'number' && typeof b === 'number' ? a - b : arithmetic('-', a, b)
           break
         case Op.MUL:
           b = stack.pop()
-          stack.push(arithmetic('*', stack.pop(), b))
+          a = stack[stack.length - 1]
+          stack[stack.length - 1] = typeof a === 'number' && typeof b === 'number' ? a * b : arithmetic('*', a, b)
           break
         case Op.DIV:
           b = stack.pop()
-          stack.push(arithmetic('/', stack.pop(), b))
+          a = stack[stack.length - 1]
+          stack[stack.length - 1] = typeof a === 'number' && typeof b === 'number' ? a / b : arithmetic('/', a, b)
           break
         case Op.MOD:
           b = stack.pop()
-          stack.push(arithmetic('%', stack.pop(), b))
+          a = stack[stack.length - 1]
+          stack[stack.length - 1] = typeof a === 'number' && typeof b === 'number' ? a % b : arithmetic('%', a, b)
           break
         case Op.POW:
           b = stack.pop()
@@ -764,27 +902,31 @@ export class VM implements AccessContext {
           break
         case Op.EQ:
           b = stack.pop()
-          stack.push(strictEquals(stack.pop(), b))
+          stack[stack.length - 1] = strictEquals(stack[stack.length - 1], b)
           break
         case Op.NE:
           b = stack.pop()
-          stack.push(!strictEquals(stack.pop(), b))
+          stack[stack.length - 1] = !strictEquals(stack[stack.length - 1], b)
           break
         case Op.LT:
           b = stack.pop()
-          stack.push(compare('<', stack.pop(), b))
+          a = stack[stack.length - 1]
+          stack[stack.length - 1] = typeof a === 'number' && typeof b === 'number' ? a < b : compare('<', a, b)
           break
         case Op.LE:
           b = stack.pop()
-          stack.push(compare('<=', stack.pop(), b))
+          a = stack[stack.length - 1]
+          stack[stack.length - 1] = typeof a === 'number' && typeof b === 'number' ? a <= b : compare('<=', a, b)
           break
         case Op.GT:
           b = stack.pop()
-          stack.push(compare('>', stack.pop(), b))
+          a = stack[stack.length - 1]
+          stack[stack.length - 1] = typeof a === 'number' && typeof b === 'number' ? a > b : compare('>', a, b)
           break
         case Op.GE:
           b = stack.pop()
-          stack.push(compare('>=', stack.pop(), b))
+          a = stack[stack.length - 1]
+          stack[stack.length - 1] = typeof a === 'number' && typeof b === 'number' ? a >= b : compare('>=', a, b)
           break
         case Op.INSTANCEOF:
           b = stack.pop()
@@ -794,12 +936,16 @@ export class VM implements AccessContext {
           b = stack.pop()
           stack.push(hasPropertyIn(this, stack.pop(), b))
           break
-        case Op.INC: stack.push((stack.pop() as number) + 1); break
-        case Op.DEC: stack.push((stack.pop() as number) - 1); break
-        case Op.NEG: stack.push(-toNumber(stack.pop(), '-')); break
-        case Op.POS: stack.push(toNumber(stack.pop(), '+')); break
-        case Op.NOT: stack.push(!truthy(stack.pop())); break
-        case Op.TYPEOF: stack.push(typeOf(stack.pop())); break
+        // INC / DEC follow POS, so the top is a number
+        case Op.INC: stack[stack.length - 1] = (stack[stack.length - 1] as number) + 1; break
+        case Op.DEC: stack[stack.length - 1] = (stack[stack.length - 1] as number) - 1; break
+        case Op.NEG: stack[stack.length - 1] = -toNumber(stack[stack.length - 1], '-'); break
+        case Op.POS:
+          a = stack[stack.length - 1]
+          if (typeof a !== 'number') stack[stack.length - 1] = toNumber(a, '+')
+          break
+        case Op.NOT: stack[stack.length - 1] = !truthy(stack[stack.length - 1]); break
+        case Op.TYPEOF: stack[stack.length - 1] = typeOf(stack[stack.length - 1]); break
 
         case Op.DUP2: stack.push(stack[stack.length - 2], stack[stack.length - 1]); break
         case Op.SWAP:
@@ -807,11 +953,10 @@ export class VM implements AccessContext {
           stack[stack.length - 1] = stack[stack.length - 2]
           stack[stack.length - 2] = b
           break
-        // the index is computed before the pop: a b c → c a b, a b c d → d a b c
-        case Op.ROT3: stack.splice(stack.length - 3, 0, stack.pop()); break
-        case Op.ROT4: stack.splice(stack.length - 4, 0, stack.pop()); break
+        case Op.ROT3: rotate(stack, 3); break
+        case Op.ROT4: rotate(stack, 4); break
         case Op.GET_PROP:
-          stack.push(getProperty(this, stack.pop(), constants[code[ip++]] as string))
+          stack[stack.length - 1] = getProperty(this, stack[stack.length - 1], constants[code[ip++]] as string)
           break
 
         case Op.GET_PROP_PRIV: {
@@ -841,14 +986,19 @@ export class VM implements AccessContext {
         }
         case Op.GET_INDEX:
           b = stack.pop()
-          stack.push(getProperty(this, stack.pop(), propertyKey(b)))
+          a = stack[stack.length - 1]
+          stack[stack.length - 1] = a instanceof ScriptArray && isIndex(b)
+            ? getArrayIndex(a, b)
+            : getProperty(this, a, propertyKey(b))
           break
 
         case Op.SET_INDEX: {
           const value = stack.pop()
-          const key = propertyKey(stack.pop())
 
-          setProperty(this, stack.pop(), key, value)
+          b = stack.pop()
+          a = stack.pop()
+          if (a instanceof ScriptArray && isIndex(b)) setArrayIndex(a, b, value)
+          else setProperty(this, a, propertyKey(b), value)
           stack.push(value)
           break
         }
@@ -857,13 +1007,13 @@ export class VM implements AccessContext {
         case Op.CONCAT: {
           const argc = code[ip++]
 
-          stack.push(stack.splice(stack.length - argc, argc).join(''))
+          stack.push(popItems(stack, argc).join(''))
           break
         }
         case Op.ARRAY: {
           const argc = code[ip++]
 
-          stack.push(new ScriptArray(this.realm.ArrayPrototype, stack.splice(stack.length - argc, argc)))
+          stack.push(new ScriptArray(this.realm.ArrayPrototype, popItems(stack, argc)))
           break
         }
         case Op.GET_ITER: stack.push(getIterator(stack.pop()) as unknown as Value); break
@@ -909,7 +1059,7 @@ export class VM implements AccessContext {
           const index = code[ip++]
           const argc = code[ip++]
           const operands = { index, a: code[ip++], b: code[ip++] }
-          const args = stack.splice(stack.length - argc, argc)
+          const args = popItems(stack, argc)
 
           frame.ip = ip
           const [callee, thisValue] = this.implicitCallee(frame, operands)
@@ -926,17 +1076,22 @@ export class VM implements AccessContext {
         case Op.CALL: {
           const isMethod = code[ip - 1] === Op.CALL_METHOD
           const argc = code[ip++]
-          const args = stack.splice(stack.length - argc, argc)
-          const callee = stack.pop()
-          const thisValue = isMethod ? stack.pop() : null // plain call: this = null (D37)
+          const calleeAt = stack.length - argc - 1
+          const callee = stack[calleeAt]
+          const thisValue = isMethod ? stack[calleeAt - 1] : null // plain call: this = null (D37)
 
           if (callee instanceof Closure) {
             frame.ip = ip
-            frame = this.enterClosure(callee, args, thisValue)
+            frame = this.enterClosureFromStack(callee, argc, thisValue, isMethod ? calleeAt - 1 : calleeAt)
             code = frame.proto.code
             constants = frame.proto.constants
             ip = 0
-          } else stack.push(this.callFunction(callee, thisValue, args))
+          } else {
+            const args = popItems(stack, argc)
+
+            truncate(stack, isMethod ? calleeAt - 1 : calleeAt)
+            stack.push(this.callFunction(callee, thisValue, args))
+          }
           break
         }
 
@@ -944,7 +1099,7 @@ export class VM implements AccessContext {
           const value = stack.pop()
 
           this.frames.pop()
-          stack.length = frame.base
+          truncate(stack, frame.base)
 
           if (this.frames.length < entryDepth) return value
           frame = this.frames[this.frames.length - 1];
@@ -959,7 +1114,7 @@ export class VM implements AccessContext {
           break
         case Op.CLASS: {
           const template = constants[code[ip++]] as ClassTemplate
-          const interfaces = stack.splice(stack.length - template.interfaceCount, template.interfaceCount)
+          const interfaces = popItems(stack, template.interfaceCount)
           const superClass = template.hasSuper ? stack.pop() : undefined
           const site = { env: frame.env, homeClass: frame.homeClass, constants, module: frame.module }
 
@@ -971,14 +1126,14 @@ export class VM implements AccessContext {
           const template = constants[code[ip++]] as InterfaceTemplate
           const count = code[ip++]
 
-          stack.push(defineInterface(this.realm, template, stack.splice(stack.length - count, count)))
+          stack.push(defineInterface(this.realm, template, popItems(stack, count)))
           break
         }
         case Op.SUPER_CALL: {
           const argc = code[ip++]
 
           frame.ip = ip
-          stack.push(this.superCall(frame, stack.splice(stack.length - argc, argc)))
+          stack.push(this.superCall(frame, popItems(stack, argc)))
           break
         }
         case Op.GET_SUPER: stack.push(this.superProperty(frame, constants[code[ip++]] as string)); break
@@ -986,15 +1141,32 @@ export class VM implements AccessContext {
 
         case Op.NEW: {
           const argc = code[ip++]
-          const args = stack.splice(stack.length - argc, argc)
+          const calleeAt = stack.length - argc - 1
+          const callee = stack[calleeAt]
 
-          stack.push(this.construct(stack.pop(), args))
+          if (isBaseScriptClass(callee)) {
+            // as constructBase, with the constructor running in this loop (it ends with THIS RETURN)
+            frame.ip = ip
+            const instance = this.initializeFields(callee, this.newInstance(callee))
+
+            frame = this.enterClosureFromStack(callee.ctor, argc, instance, calleeAt)
+            frame.isConstruct = true
+            frame.newTarget = callee
+            code = frame.proto.code
+            constants = frame.proto.constants
+            ip = 0
+          } else {
+            const args = popItems(stack, argc)
+
+            stack.push(this.construct(stack.pop(), args))
+          }
           break
         }
         case Op.TRY:
+          frame.handlers ??= []
           frame.handlers.push({ catchTarget: code[ip++], finallyTarget: code[ip++], stackHeight: stack.length, env: frame.env })
           break
-        case Op.END_TRY: frame.handlers.pop(); break
+        case Op.END_TRY: frame.handlers?.pop(); break
         case Op.THROW: throw new ScriptThrow(stack.pop(), this.captureStack())
         case Op.ENTER_FINALLY: stack.push(new FinallyRecord(null) as unknown as Value); break
         case Op.END_FINALLY: {

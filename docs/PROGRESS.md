@@ -32,6 +32,47 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M23 | Host interop | done (2026-10-27) |
 | M24 | Limits and polish | done (2026-10-27) |
 | M25 | Docs and benchmark | done (2026-10-27) — v1 complete |
+| H3 | Performance | first pass (2026-10-27) |
+
+## H3 — Performance (first pass)
+
+Semantics unchanged: `npm run check` green (940 tests), plus a differential check of edge cases (index keys, TDZ
+and const globals, per-iteration closures, constructor arity order, error stacks, `maxCallDepth`) against the M25
+build. Step counts (`maxSteps`) shrink where fewer instructions are emitted.
+
+```
+case                          pscript ms     js ms   ratio  result
+fib(27)                            42.00      1.12     37x  196418
+loop of 1e6                        56.95      0.99     57x  2999997
+1e5 object allocations             21.60      0.56     39x  99999
+array map/filter                   24.00      1.33     18x  50000
+classes and methods                18.85      0.72     26x  90000
+string building                     3.21      0.08     41x  20000
+```
+
+What changed, roughly by effect:
+
+- **Opcode literals in the dispatch switch**: `build/vite-plugin-inline-enum.ts` replaces `Op.X` in `src/vm/vm.ts`
+  with its number (length-preserving, so source maps stay valid). With literal `case`s V8 dispatches through a jump
+  table instead of a chain of property loads and compares.
+- **No `stack.length = n`** on calls and returns (V8 handles it in a runtime call that may also trim the backing
+  store): items are popped instead (`truncate`, `popItems`).
+- **In-place stack top** for unary and binary operators and `GET_PROP`/`GET_INDEX`; number fast paths for
+  `+ - * / %` and the comparisons, boolean fast paths for jumps and `truthy`, a number fast path in `toNumber`.
+- **Calls**: closure arguments are bound straight from the operand stack (no `splice`); the arity check builds its
+  signature only on a mismatch; slot arrays are packed; `handlers` is allocated by the first `TRY`.
+- **Script bindings cached per closure** (`Closure.globalCache`, by constant index): they are never removed and
+  shadow realm globals, so a cached one stays valid; realm globals are still looked up each time.
+- **`new` of a base script class** runs the constructor in the current dispatch loop (field initialisers still run
+  nested, so the order of field initialisation and the arity check is unchanged).
+- **Compiler**: `for (let …)` emits `COPY_ENV` only when the loop may create a closure
+  (`src/compiler/closures.ts`); an unused `x++` is compiled as `++x`.
+- **Property access**: no closure or tuple allocation in prototype-chain reads, `getExotic` without a table search,
+  private-member check without an array of enclosing classes, integer-key fast paths for arrays.
+
+Not done yet (candidates for a second pass): block environments without captures folded into the function's
+environment (K9), superinstructions (`STORE`+`POP`, `LOAD 0 n`), member-access inline caches for class instances,
+running field initialisers and array callbacks without a nested dispatch loop.
 
 ## M25 — Docs and benchmark
 

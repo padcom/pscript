@@ -137,7 +137,11 @@ class MemberAccess {
 
   // Step 1: a private member of the home class (or an enclosing class) that the receiver has.
   privateOwner(): Class | undefined {
-    return enclosingClasses(this.ctx.homeClass).find(cls => privatesOf(cls, this.isStatic).has(this.key) && this.belongsTo(cls))
+    for (let cls = this.ctx.homeClass; cls; cls = cls.outerClass) {
+      if (privatesOf(cls, this.isStatic).has(this.key) && this.belongsTo(cls)) return cls
+    }
+
+    return undefined
   }
 
   belongsTo(cls: Class): boolean {
@@ -204,7 +208,9 @@ class MemberAccess {
   }
 
   private fieldValue(): Value {
-    const found = this.isStatic ? this.ownStatic() : own(this.receiver, this.key)
+    if (!this.isStatic) return this.receiver.props.has(this.key) ? this.receiver.props.get(this.key) as Value : null
+
+    const found = this.ownStatic()
 
     return found ? found[0] as Value : null
   }

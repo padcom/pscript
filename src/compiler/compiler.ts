@@ -51,6 +51,7 @@ import type {
 import type { FunctionNode } from '@/parser/ast-builders'
 import { parse } from '@/parser/parse'
 import { stdlibGlobalNames } from '@/stdlib'
+import { createsClosure } from './closures'
 import { classInfoOf, hasMember, keyName, type ClassInfo } from './class-info'
 import { ambiguityMessage, implicitIndex, memberCandidate, outerDescription, type ClassRecord } from './implicit-names'
 import { interfaceTemplate } from './interfaces'
@@ -613,10 +614,10 @@ class Compiler {
   }
 
   expressionStatement(expression: Expression) {
-    this.expression(expression)
-
-    if (this.tracksCompletion) this.expressionStatementTail()
-    else this.out.emit(Op.POP)
+    if (this.tracksCompletion) {
+      this.expression(expression)
+      this.expressionStatementTail()
+    } else this.discard(expression)
   }
 
   // `if`, loops and `try` set the completion value to undefined on entry (§4.4.10).
@@ -669,7 +670,8 @@ class Compiler {
     const outer = this.scope
     const head = this.forHead(node)
 
-    this.forLoop(node, head.hasEnv)
+    // without a closure in the loop, no one can tell the iterations' bindings apart: one environment will do
+    this.forLoop(node, head.hasEnv && createsClosure(node))
     this.scope = outer
 
     if (head.hasEnv) this.out.emit(Op.POP_ENV)
@@ -763,8 +765,9 @@ class Compiler {
     if (expression) this.discard(expression)
   }
 
+  // An unused `x++` is compiled as `++x`, which does not keep the old value.
   private discard(expression: Expression) {
-    this.expression(expression)
+    this.expression(expression.type === 'UpdateExpression' ? { ...expression, prefix: true } : expression)
     this.out.emit(Op.POP)
   }
 
