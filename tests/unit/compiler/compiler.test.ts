@@ -3,6 +3,7 @@ import { compile } from '@/compiler/compiler'
 import { disassemble } from '@/compiler/disassembler'
 import { Op } from '@/compiler/opcodes'
 import { parse } from '@/parser/parse'
+import type { Statement } from '@/parser/ast'
 
 describe('compiler', () => {
   it('compiles expression statements into the completion slot', () => {
@@ -59,7 +60,9 @@ describe('compiler inputs', () => {
 
     const [{ loc }] = program.body
 
-    program.body[0] = { type: 'InterfaceDeclaration', id: { type: 'Identifier', name: 'I', loc }, extends: [], body: [], loc }
-    expect(() => compile(program)).toThrow('InterfaceDeclaration is not supported yet')
+    const source = { type: 'Literal', value: 'm', raw: "'m'", loc } as const
+
+    program.body[0] = { type: 'ImportDeclaration', specifiers: [], source, loc } as unknown as Statement
+    expect(() => compile(program)).toThrow('ImportDeclaration is not supported yet')
   })
 })

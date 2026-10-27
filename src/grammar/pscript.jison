@@ -111,6 +111,7 @@ Statement
   : VariableDeclaration ';'
   | FunctionDeclaration
   | ClassDeclaration
+  | InterfaceDeclaration
   | Block
   | RETURN ';'
     { $$ = yy.returnStatement(null, @$) }
@@ -191,9 +192,67 @@ ClassExpression
 
 ClassTail
   : ClassBody
-    { $$ = { superClass: null, body: $1 } }
+    { $$ = { superClass: null, implements: [], body: $1 } }
   | EXTENDS LeftHandSideExpression ClassBody
-    { $$ = { superClass: $2, body: $3 } }
+    { $$ = { superClass: $2, implements: [], body: $3 } }
+  | IMPLEMENTS InterfaceList ClassBody
+    { $$ = { superClass: null, implements: $2, body: $3 } }
+  | EXTENDS LeftHandSideExpression IMPLEMENTS InterfaceList ClassBody
+    { $$ = { superClass: $2, implements: $4, body: $5 } }
+  ;
+
+InterfaceList
+  : LeftHandSideExpression
+    { $$ = [$1] }
+  | InterfaceList ',' LeftHandSideExpression
+    { $$ = $1.concat([$3]) }
+  ;
+
+/* Interfaces (§4.5.7). The token filter marks the body brace as CLASS_LBRACE, so members get class-body ASI. */
+InterfaceDeclaration
+  : INTERFACE IDENT InterfaceBody
+    { $$ = yy.interfaceDeclaration(yy.identifier($2, @2), [], $3, @$) }
+  | INTERFACE IDENT EXTENDS InterfaceList InterfaceBody
+    { $$ = yy.interfaceDeclaration(yy.identifier($2, @2), $4, $5, @$) }
+  ;
+
+InterfaceBody
+  : CLASS_LBRACE InterfaceElementList '}'
+    { $$ = $2 }
+  ;
+
+InterfaceElementList
+  : /* empty */
+    { $$ = [] }
+  | InterfaceElementList InterfaceElement
+    { $$ = $2 ? $1.concat([$2]) : $1 }
+  ;
+
+InterfaceElement
+  : ';'
+    { $$ = null }
+  | MemberModifiers InterfaceMember
+    { $$ = yy.interfaceMember($1, $2, @$) }
+  ;
+
+/* Bodies and initialisers are parsed so that they can be rejected with a clear message. */
+InterfaceMember
+  : ClassMemberName '(' FormalParameters ')' ';'
+    { $$ = { kind: 'method', key: $1, params: $3, loc: @$ } }
+  | GET ClassMemberName '(' ')' ';'
+    { $$ = { kind: 'get', key: $2, params: [], loc: @$ } }
+  | SET ClassMemberName '(' Parameter ')' ';'
+    { $$ = { kind: 'set', key: $2, params: [$4], loc: @$ } }
+  | ClassMemberName ';'
+    { $$ = { kind: 'property', key: $1, params: [], loc: @$ } }
+  | ClassMemberName '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
+    { $$ = { kind: 'method', key: $1, params: $3, body: true, loc: @$ } }
+  | GET ClassMemberName '(' ')' BLOCK_LBRACE StatementList '}'
+    { $$ = { kind: 'get', key: $2, params: [], body: true, loc: @$ } }
+  | SET ClassMemberName '(' Parameter ')' BLOCK_LBRACE StatementList '}'
+    { $$ = { kind: 'set', key: $2, params: [$4], body: true, loc: @$ } }
+  | ClassMemberName '=' AssignmentExpression ';'
+    { $$ = { kind: 'property', key: $1, params: [], initializer: true, loc: @$ } }
   ;
 
 ClassBody

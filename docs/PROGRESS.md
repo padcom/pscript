@@ -25,7 +25,27 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M16 | Accessors | done (2026-10-27) |
 | M17 | Access modifiers | done (2026-10-27) |
 | M18 | Overriding | done (2026-10-27) |
-| M19 | Interfaces | next |
+| M19 | Interfaces | done (2026-10-27) |
+| M20 | Implicit member access | next |
+
+## M19 — Interfaces
+
+Done: interface programs pass (`tests/programs/interfaces/`: §10.19, the §4.5.7 satisfaction table, declaration semantics), parser unit tests (`tests/unit/parser/interfaces.test.ts`). `npm run check` and `npm run build` green; 835 tests.
+
+What exists:
+
+- Grammar: `interface Name (extends LHS, …)? { members }` as a statement; `class … (extends LHS)? (implements LHS, …)? { … }` for declarations and expressions. Interface members: `m(a, ...r)`, `get x()`, `set x(v)`, `x`; bodies, initialisers, modifiers, defaults are parsed only to be rejected with clear SyntaxErrors (`src/parser/interface-members.ts`), duplicate names too (a `get`/`set` pair is allowed).
+- Token filter: `INTERFACE` sets up the body brace like a class declaration's (`{class-statement}` → `CLASS_LBRACE`), so class-body ASI and `get`/`set` detection apply.
+- Compiler: interfaces are `let` bindings (TDZ, not hoisted); `<parents…> INTERFACE k n` then INIT. `src/compiler/interfaces.ts` builds `InterfaceTemplate`s; `InterfaceMemberTemplate.description` (new field) is how a missing member is listed. CLASS gets the `implements` values above the superclass (`template.interfaceCount`).
+- VM (`src/vm/interfaces.ts`): `defineInterface` checks parents (`Interface extends value X is not an interface`), merges requirements parents-first then own (`get` + `set` → property; methods must agree on arity; otherwise `Interface 'D' has conflicting requirements for 'm'`), records ancestors, freezes. `defineClass` takes `{ superClass, interfaces }`; `checkInterfaces` (`Class implements value X is not an interface`); `implementInterfaces` fills `cls.interfaces` (superclass's ∪ listed with ancestors) and lists missing members per interface: `Class 'Bad' does not implement Shape: name (getter), compareTo(other)` — collected with override/member-ref violations into one TypeError.
+- Satisfaction (public members only, own or inherited): methods need exactly the required parameters (no optional ones, rest iff declared); built-in prototype methods (`toString`) count; getters/setters per half access; properties need a public field or public get+set.
+- `new I()` → `TypeError: I is an interface`; `print(I)` → `[interface I]`; `typeof I` is `'object'`; `instanceof I` uses `klass.interfaces` (already in operators).
+
+Deviations / gaps:
+
+- Missing members are listed parents first, then own members (§4.5.7's prose example lists them in a different order; §10.19 agrees with this order).
+- `export interface` waits for modules. No interface expressions (as specified).
+- The VM "unimplemented opcode" unit test now uses `LOAD_IMPLICIT` (M20 will need another one).
 
 ## M18 — Overriding
 

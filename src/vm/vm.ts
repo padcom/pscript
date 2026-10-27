@@ -1,5 +1,5 @@
 // The bytecode interpreter (§5.6).
-import type { ClassTemplate, CompiledScript, FunctionProto } from '@/compiler/function-proto'
+import type { ClassTemplate, CompiledScript, FunctionProto, InterfaceTemplate } from '@/compiler/function-proto'
 import { GlobalFlags, Op } from '@/compiler/opcodes'
 import { PScriptRuntimeError, formatExcerpt, type ScriptStackFrame } from '@/errors'
 import { addIn, toStringIn } from '@/runtime/conversions'
@@ -29,6 +29,7 @@ import {
   Closure,
   Environment,
   Function as ScriptFunction,
+  Interface,
   NativeFunction,
   Object as ScriptObject,
   UNINITIALIZED,
@@ -39,6 +40,7 @@ import {
   type Value,
 } from '@/runtime/values'
 import { defineClass, superMember } from './classes'
+import { defineInterface } from './interfaces'
 import type { Frame, Handler } from './frame'
 import { Globals } from './globals'
 
@@ -426,6 +428,7 @@ export class VM implements AccessContext {
   }
 
   private notAClass(callee: Value): never {
+    if (callee instanceof Interface) throw typeError(`${callee.name} is an interface`)
     throw typeError(`${callee instanceof ScriptFunction ? callee.name || 'anonymous function' : kindOf(callee)} is not a class`)
   }
 
@@ -693,10 +696,19 @@ export class VM implements AccessContext {
           break
         case Op.CLASS: {
           const template = constants[code[ip++]] as ClassTemplate
+          const interfaces = stack.splice(stack.length - template.interfaceCount, template.interfaceCount)
           const superClass = template.hasSuper ? stack.pop() : undefined
+          const site = { env: frame.env, homeClass: frame.homeClass, constants }
 
           frame.ip = ip
-          stack.push(defineClass(this, template, superClass, { env: frame.env, homeClass: frame.homeClass, constants }))
+          stack.push(defineClass(this, template, { superClass, interfaces }, site))
+          break
+        }
+        case Op.INTERFACE: {
+          const template = constants[code[ip++]] as InterfaceTemplate
+          const count = code[ip++]
+
+          stack.push(defineInterface(this.realm, template, stack.splice(stack.length - count, count)))
           break
         }
         case Op.SUPER_CALL: {

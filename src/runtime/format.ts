@@ -7,6 +7,7 @@ import {
   Array as ScriptArray,
   Class,
   Function as ScriptFunction,
+  Interface,
   Object as ScriptObject,
   type AccessContext,
   type Value,
@@ -21,6 +22,11 @@ function formatFunction(fn: ScriptFunction): string {
   }
 
   return fn.name ? `[Function: ${fn.name}]` : '[Function (anonymous)]'
+}
+
+// Functions, classes and interfaces print as a bracketed name.
+function formatNamed(value: ScriptFunction | Interface): string {
+  return value instanceof Interface ? `[interface ${value.name}]` : formatFunction(value)
 }
 
 function formatKey(key: string): string {
@@ -53,10 +59,12 @@ class Formatter {
 
   // Class instances print as their toString() (D35); functions and containers have their own forms.
   private object(object: ScriptObject, depth: number): string {
-    if (object instanceof ScriptFunction) return formatFunction(object)
+    if (object instanceof ScriptFunction || object instanceof Interface) return formatNamed(object)
 
-    if (!object.klass) return this.container(object, depth)
+    return object.klass ? this.instance(object) : this.container(object, depth)
+  }
 
+  private instance(object: ScriptObject): string {
     return this.ctx ? toStringIn(this.ctx, object) : toString(object)
   }
 

@@ -76,6 +76,7 @@ const EMIT_HOOKS: Record<string, (filter: TokenFilter, token: Token) => void> = 
   'FUNCTION': (filter, token) => filter.functionStart(token),
   'FINAL': (filter, token) => filter.finalStart(token),
   'CLASS': (filter, token) => filter.classStart(token),
+  'INTERFACE': filter => filter.interfaceStart(),
   '{': (filter, token) => filter.classifyBrace(token),
 }
 
@@ -436,6 +437,12 @@ export class TokenFilter {
     this.classIsStatement = this.atStatementStart() || Boolean(this.prev?.startsStatement)
 
     if (this.classIsStatement) token.name = 'CLASS_DECLARATION'
+    this.classDepth = this.brackets.length
+  }
+
+  // An interface body is parsed like a class body (member positions, ASI); interfaces are always declarations.
+  interfaceStart() {
+    this.classIsStatement = true
     this.classDepth = this.brackets.length
   }
 

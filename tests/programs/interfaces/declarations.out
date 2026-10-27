@@ -1,0 +1,13 @@
+tdz ReferenceError Cannot access 'Early' before initialization
+true true true
+merged property TypeError Class 'anonymous' does not implement AB: v
+conflict TypeError Interface 'D' has conflicting requirements for 'm'
+method vs property TypeError Interface 'F' has conflicting requirements for 'v'
+extends non-interface TypeError Interface extends value Impl is not an interface
+implements non-interface TypeError Class implements value Impl is not an interface
+implements value TypeError Class implements value number is not an interface
+frozen TypeError Cannot assign to read only property 'extra' of object
+read undefined
+call TypeError object is not a function
+[[interface A], [interface B]] {i: [interface AB]}
+[interface Inner]

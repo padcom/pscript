@@ -50,9 +50,9 @@ describe('vm', () => {
   })
 
   it('reports unimplemented opcodes', () => {
-    const main = proto([Op.INTERFACE, 0, 0, Op.HALT])
+    const main = proto([Op.LOAD_IMPLICIT, 0, 0, 0, Op.HALT])
 
-    expect(() => vm().execute({ main })).toThrow('Opcode INTERFACE is not implemented')
+    expect(() => vm().execute({ main })).toThrow('Opcode LOAD_IMPLICIT is not implemented')
   })
 })
 

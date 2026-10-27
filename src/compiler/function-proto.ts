@@ -149,6 +149,8 @@ export interface InterfaceMemberTemplate {
   paramCount: number
   /** whether the method has a rest parameter */
   hasRest: boolean
+  /** how a missing member is listed: `compareTo(other)`, `name (getter)`, `label (setter)`, `color` */
+  description: string
   /** source location */
   loc: SourceLocation
 }

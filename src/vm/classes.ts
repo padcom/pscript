@@ -1,5 +1,5 @@
 // Class definition (§5.6.7): the CLASS instruction builds a sealed class with flattened member indexes,
-// after the override/final checks (overrides.ts). Interfaces (M19) build on this.
+// after the override/final checks (overrides.ts) and interface conformance (interfaces.ts).
 import type {
   ClassFieldTemplate,
   ClassMemberRef,
@@ -8,6 +8,7 @@ import type {
   FunctionProto,
 } from '@/compiler/function-proto'
 import { kindOf } from '@/runtime/operators'
+import { checkInterfaces, implementInterfaces } from './interfaces'
 import { overrideViolations } from './overrides'
 import { typeError } from '@/runtime/script-error'
 import {
@@ -44,6 +45,16 @@ export interface DefinitionSite {
   homeClass: Class | null
   /** constants of the running proto (method protos are referenced by index) */
   constants: unknown[]
+}
+
+/**
+ * What a class definition inherits from: the evaluated `extends` and `implements` expressions.
+ */
+export interface Heritage {
+  /** the `extends` value (undefined without `extends`) */
+  superClass: Value
+  /** the `implements` values */
+  interfaces: Value[]
 }
 
 function hasInChain(object: ScriptObject | null, key: string): boolean {
@@ -217,18 +228,19 @@ class ClassBuilder {
  *
  * @param host the VM
  * @param template the class template
- * @param superClass the evaluated `extends` value (ignored when the class has none)
+ * @param heritage the evaluated `extends` value (ignored when the class has none) and `implements` values
  * @param site where the class is defined
  * @returns the class
  */
-export function defineClass(host: ClassHost, template: ClassTemplate, superClass: Value, site: DefinitionSite): Class {
-  const parent = checkSuperClass(superClass, template)
+export function defineClass(host: ClassHost, template: ClassTemplate, heritage: Heritage, site: DefinitionSite): Class {
+  const parent = checkSuperClass(heritage.superClass, template)
+  const interfaces = checkInterfaces(heritage.interfaces)
   const builder = new ClassBuilder(host, template, parent, site)
   const violations = overrideViolations(template, { realm: host.realm, superClass: parent, constants: site.constants })
 
   builder.members()
   builder.functions()
-  violations.push(...builder.memberRefViolations())
+  violations.push(...builder.memberRefViolations(), ...implementInterfaces(builder.cls, interfaces))
 
   // All violations of one class definition are reported together (§5.6.7).
   if (violations.length > 0) throw typeError(violations.join('; '))

@@ -1,0 +1,5 @@
+square -5
+true true false
+[interface Shape] object
+Bad TypeError Class 'Bad' does not implement Shape: name (getter), compareTo(other)
+new TypeError Shape is an interface

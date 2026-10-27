@@ -117,6 +117,8 @@ export interface ClassHead {
 export interface ClassTail {
   /** the `extends` expression */
   superClass: Expression | null
+  /** the `implements` list */
+  implements: Expression[]
   /** the class body */
   body: ClassBody
 }
@@ -184,8 +186,10 @@ export const builders = {
     return { type: 'MemberExpression', object, property, computed, optional: false, loc: toLoc(loc) }
   },
 
-  classNode(type: ClassNode['type'], { id, final }: ClassHead, { superClass, body }: ClassTail, loc: JisonLoc): ClassNode {
-    return { type, id, superClass, body, final, implements: [], loc: toLoc(loc) } as ClassNode
+  classNode(type: ClassNode['type'], { id, final }: ClassHead, tail: ClassTail, loc: JisonLoc): ClassNode {
+    const { superClass, body } = tail
+
+    return { type, id, superClass, body, final, implements: tail.implements, loc: toLoc(loc) } as ClassNode
   },
 
   classBody(body: ClassBody['body'], loc: JisonLoc): ClassBody {

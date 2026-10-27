@@ -1,0 +1,29 @@
+// @pscript-only: interface declarations at runtime (§4.5.7)
+function attempt(label, f) {
+  try { print(label, f()) } catch (e) { print(label, e.name, e.message) }
+}
+
+attempt('tdz', () => { const x = Early; interface Early {} })
+interface A { m(x); get v() }
+interface B { m(y); set v(x) }
+interface AB extends A, B {}
+class Impl implements AB { m(z) {} v = 1 }
+print(new Impl() instanceof A, new Impl() instanceof B, new Impl() instanceof AB)
+attempt('merged property', () => class implements AB { m(z) {} get v() { return 1 } })
+interface C { m(x, y) }
+attempt('conflict', () => { interface D extends A, C {} })
+interface E { v() }
+attempt('method vs property', () => { interface F extends A, E {} })
+attempt('extends non-interface', () => { interface G extends Impl {} })
+attempt('implements non-interface', () => class implements Impl {})
+attempt('implements value', () => class implements 42 {})
+attempt('frozen', () => { A.extra = 1 })
+attempt('read', () => A.m)
+attempt('call', () => A())
+print([A, B], { i: AB })
+let Dynamic = null
+{
+  interface Inner { x }
+  Dynamic = Inner
+}
+print(Dynamic)

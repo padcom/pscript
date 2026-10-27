@@ -1,0 +1,22 @@
+circle red big 9
+true true true
+everything missing TypeError Class 'Bad' does not implement Shape: name (getter), compareTo(other), color, label (setter)
+field as getter ok
+protected field TypeError Class 'anonymous' does not implement Named: name (getter)
+private getter TypeError Class 'anonymous' does not implement Named: name (getter)
+setter only TypeError Class 'anonymous' does not implement Named: name (getter)
+get+set pair ok
+getter only for property TypeError Class 'anonymous' does not implement Point: y
+protected setter TypeError Class 'anonymous' does not implement Point: y
+same arity ok
+fewer TypeError Class 'anonymous' does not implement Sized: size(a, b)
+optional TypeError Class 'anonymous' does not implement Sized: size(a, b)
+rest not declared TypeError Class 'anonymous' does not implement Sized: size(a, b)
+field for method TypeError Class 'anonymous' does not implement Sized: size(a, b)
+protected method TypeError Class 'anonymous' does not implement Sized: size(a, b)
+rest ok
+inherited built-in ok
+true true false
+override needed TypeError 'area' overrides 'Base.area' and must be marked 'override' (63:74)
+override given ok
+two interfaces TypeError Class 'Two' does not implement Comparable: compareTo(other); Class 'Two' does not implement HasArea: area()

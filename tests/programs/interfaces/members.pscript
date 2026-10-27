@@ -1,0 +1,66 @@
+// @pscript-only: interface requirements and how classes satisfy them (§4.5.7)
+function attempt(label, f) {
+  try { f(); print(label, 'ok') } catch (e) { print(label, e.name, e.message) }
+}
+
+interface Named {
+  get name()                 // a getter or a public field
+}
+interface Comparable {
+  compareTo(other)
+}
+interface Shape extends Named, Comparable {
+  area()
+  color                      // a public field, or a get+set pair
+  set label(v)               // a setter or a public field
+}
+
+class Circle implements Shape {
+  color = 'red'
+  r
+  text
+  constructor(r) { this.r = r }
+  get name() { return 'circle' }
+  set label(v) { this.text = v }
+  area() { return 3 * this.r ** 2 }
+  compareTo(other) { return this.area() - other.area() }
+}
+const c = new Circle(2)
+c.label = 'big'
+print(c.name, c.color, c.text, c.compareTo(new Circle(1)))
+print(c instanceof Shape, c instanceof Comparable, c instanceof Named)
+
+attempt('everything missing', () => class Bad implements Shape { area() {} })
+// Getters / setters / properties
+attempt('field as getter', () => class implements Named { name = 'x' })
+attempt('protected field', () => class implements Named { protected name = 'x' })
+attempt('private getter', () => class implements Named { private get name() { return 1 } })
+attempt('setter only', () => class implements Named { set name(v) {} })
+interface Point { x; y }
+attempt('get+set pair', () => class implements Point { x = 0; get y() { return 0 }; set y(v) {} })
+attempt('getter only for property', () => class implements Point { x = 0; get y() { return 0 } })
+attempt('protected setter', () => class implements Point { x = 0; get y() { return 0 }; protected set y(v) {} })
+// Methods: exact arity (D38)
+interface Sized { size(a, b) }
+attempt('same arity', () => class implements Sized { size(x, y) {} })
+attempt('fewer', () => class implements Sized { size(x) {} })
+attempt('optional', () => class implements Sized { size(x, y = 1) {} })
+attempt('rest not declared', () => class implements Sized { size(x, y, ...z) {} })
+attempt('field for method', () => class implements Sized { size = null })
+attempt('protected method', () => class implements Sized { protected size(a, b) {} })
+interface Logger { log(...messages) }
+attempt('rest', () => class implements Logger { log(...all) {} })
+interface Printable { toString() }
+attempt('inherited built-in', () => class implements Printable {})
+// Inherited members count, and subclasses inherit interfaces
+class Base { area() { return 1 } }
+class Derived extends Base implements Comparable { compareTo(other) { return 0 } }
+interface HasArea { area() }
+class Both extends Derived implements HasArea {}
+const both = new Both()
+print(both instanceof HasArea, both instanceof Comparable, new Base() instanceof HasArea)
+// Implementing is not overriding, but overriding still needs `override`
+attempt('override needed', () => class extends Base implements HasArea { area() { return 2 } })
+attempt('override given', () => class extends Base implements HasArea { override area() { return 2 } })
+// Several interfaces are each checked
+attempt('two interfaces', () => class Two implements Comparable, HasArea {})

@@ -9,6 +9,7 @@ import type {
   Expression,
   ForOfStatement,
   Identifier,
+  InterfaceMember,
   MemberExpression,
   Pattern,
   Program,
@@ -19,6 +20,7 @@ import type {
 import { builders, sourceLoc, type ForHeader, type FunctionHead, type FunctionType, type JisonLoc } from './ast-builders'
 import { EscapeError, checkNumber } from './literals'
 import { classMember, type Modifier, type RawMember } from './class-members'
+import { interfaceDeclaration, interfaceMember, type RawInterfaceMember } from './interface-members'
 import { TemplateBraces, templateElement } from './templates'
 import { createTokenFilter, type TokenState } from './token-filter'
 import { FUTURE_RESERVED_WORDS, KEYWORDS } from './tokens'
@@ -220,6 +222,14 @@ function classBuilders(errors: SyntaxErrorFactory) {
       if (member.kind === 'method') checkParams(errors, member.params)
 
       return classMember(modifiers, member, fail)
+    },
+    interfaceMember(modifiers: Modifier[], member: RawInterfaceMember) {
+      if (member.kind === 'method') checkParams(errors, member.params)
+
+      return interfaceMember(modifiers, member, fail)
+    },
+    interfaceDeclaration(id: Identifier, parents: Expression[], members: InterfaceMember[], loc: JisonLoc) {
+      return interfaceDeclaration({ id, parents }, members, loc, (reason, at) => { throw errors.at(reason, at) })
     },
     classBody(body: ClassBody['body'], loc: JisonLoc) {
       const constructors = body.filter(member => member.type === 'MethodDefinition' && member.kind === 'constructor')

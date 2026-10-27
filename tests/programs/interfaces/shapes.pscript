@@ -1,0 +1,30 @@
+// @pscript-only: interfaces (D31, D32), §10.19
+interface Named {
+  get name()
+}
+interface Comparable {
+  compareTo(other)
+}
+interface Shape extends Named, Comparable {
+  area()
+}
+
+class Square implements Shape {
+  side
+  constructor(side) { this.side = side }
+  get name() { return 'square' }
+  area() { return this.side ** 2 }
+  compareTo(other) { return this.area() - other.area() }
+}
+
+const a = new Square(2)
+const b = new Square(3)
+print(a.name, a.compareTo(b))
+print(a instanceof Shape, a instanceof Named, ({ area() {} }) instanceof Shape)
+print(Shape, typeof Shape)
+
+function attempt(label, f) {
+  try { print(label, f()) } catch (e) { print(label, e.name, e.message) }
+}
+attempt('Bad', () => class Bad implements Shape { area() { return 0 } })
+attempt('new', () => new Shape())

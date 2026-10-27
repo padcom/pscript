@@ -20,6 +20,7 @@ import type {
   FunctionDeclaration,
   FunctionExpression,
   Identifier,
+  InterfaceDeclaration,
   IfStatement,
   Literal,
   LogicalExpression,
@@ -47,6 +48,7 @@ import type {
 import type { FunctionNode } from '@/parser/ast-builders'
 import { parse } from '@/parser/parse'
 import { classInfoOf, hasMember, keyName, type ClassInfo } from './class-info'
+import { interfaceTemplate } from './interfaces'
 import type {
   ClassFieldTemplate,
   ClassMemberRef,
@@ -194,6 +196,7 @@ const STATEMENTS: { [K in Statement['type']]?: Handler<Extract<Statement, { type
   ContinueStatement: (c, node) => c.jump(node, 'continues'),
   ReturnStatement: (c, node) => c.returnStatement(node),
   ClassDeclaration: (c, node) => c.classDeclaration(node),
+  InterfaceDeclaration: (c, node) => c.interfaceDeclaration(node),
   ThrowStatement: (c, node) => c.throwStatement(node),
   TryStatement: (c, node) => c.tryStatement(node),
   FunctionDeclaration: () => {}, // hoisted to the start of its scope
@@ -285,11 +288,12 @@ function markArrowsUsingThis(fn: FunctionContext | null) {
   for (let context = fn; context?.isArrow; context = context.parent) context.usesThis = true
 }
 
-/** Pre-scan (§5.5): the lexical declarations of a statement list. Classes are constant bindings. */
+/** Pre-scan (§5.5): the lexical declarations of a statement list. Classes are constant bindings, interfaces `let` (§4.5.7). */
 const DECLARATIONS: Partial<Record<Statement['type'], (c: Compiler, node: any, scope: Scope) => void>> = {
   VariableDeclaration: (c, node, scope) => c.declareVariables(node, scope),
   FunctionDeclaration: (c, node, scope) => c.declareFunction(node, scope),
   ClassDeclaration: (c, node: ClassDeclaration, scope) => c.declareName(scope, node.id, 'const'),
+  InterfaceDeclaration: (c, node: InterfaceDeclaration, scope) => c.declareName(scope, node.id, 'let'),
 }
 
 class Compiler {
@@ -663,6 +667,13 @@ class Compiler {
   // ---------------------------------------------------------------------------
   // Classes (§4.5)
 
+  // <parent 1> … <parent n> INTERFACE k n, then the binding is initialised (TDZ until then, like `let`).
+  interfaceDeclaration(node: InterfaceDeclaration) {
+    for (const parent of node.extends) this.expression(parent)
+    this.emitAt(node.loc, Op.INTERFACE, this.out.constant(interfaceTemplate(node)), node.extends.length)
+    this.initialize(node.id.name)
+  }
+
   classDeclaration(node: ClassDeclaration) {
     this.compileClass(node, node.id.name)
     this.initialize(node.id.name)
@@ -688,12 +699,18 @@ class Compiler {
     if (named) this.enterClassScope(node.id as Identifier, info)
     const template = this.classTemplate(node, info)
 
-    if (node.superClass) this.expression(node.superClass)
+    this.classOperands(node)
     this.emitAt(node.loc, Op.CLASS, this.out.constant(template))
 
     if (!named) return
     this.scope = outer
     this.out.emit(Op.POP_ENV)
+  }
+
+  // CLASS takes the superclass (when there is one) and the `implements` values from the stack.
+  private classOperands({ superClass, implements: interfaces }: ClassNode) {
+    if (superClass) this.expression(superClass)
+    for (const implemented of interfaces) this.expression(implemented)
   }
 
   private enterClassScope(id: Identifier, info: ClassInfo) {
@@ -746,7 +763,7 @@ class Compiler {
       methods: methods.filter(m => m.kind !== 'constructor').map(method => this.methodTemplate(method, context(method.static))),
       memberRefs,
       fields: fields.map(fieldTemplate),
-      interfaceCount: 0,
+      interfaceCount: node.implements.length,
       implicitNames: [],
       bindsName: node.id !== null,
     }
