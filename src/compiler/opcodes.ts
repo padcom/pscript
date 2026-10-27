@@ -116,6 +116,10 @@ export enum Op {
   ASYNC_ITER_NEXT,
   ITER_STEP,
   ASYNC_ITER_CLOSE,
+  ASYNC_ITER_CLOSE_AT,
+  ASYNC_DELEGATE,
+  DELEGATE_STEP,
+  ASYNC_DELEGATE_YIELD,
   THROW,
   TRY,
   END_TRY,
@@ -281,6 +285,11 @@ export const OPCODES: Readonly<Record<Op, OpcodeInfo>> = {
   [Op.ASYNC_ITER_NEXT]: info('', 'iter → iter promise'), // the promise of the next step object { value, done }
   [Op.ITER_STEP]: info('target', 'iter step → iter value | (pops both, jumps)'), // reads done / value of a step object
   [Op.ASYNC_ITER_CLOSE]: info('', 'iter → promise'), // pops; the promise of return() (break out of for await)
+  // return() of the async iterator d items down; quiet: a promise that does not reject (D54)
+  [Op.ASYNC_ITER_CLOSE_AT]: info('d quiet', '→ promise'),
+  [Op.ASYNC_DELEGATE]: info('', 'iter sent → iter promise'), // async yield* (D54): next/throw/return as the generator was resumed
+  [Op.DELEGATE_STEP]: info('target', 'iter step → iter value | result (pops iter, jumps)'), // a completed `return` returns
+  [Op.ASYNC_DELEGATE_YIELD]: info('', 'v → sent'), // YIELD whose throw/return resumption goes to the delegate (D54)
   [Op.CLOSE_ITERS]: info('', 'v → v'), // return inside for…of: closes the frame's iterators below the value
   [Op.THROW]: info('', 'v →'),
   [Op.TRY]: info('catchTarget finallyTarget', '→'), // push handler (-1 = none)

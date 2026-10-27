@@ -22,7 +22,7 @@ import {
 import { formatNested } from '@/runtime/format'
 import { DONE, GeneratorIterator, ScriptIterator, getIterator } from '@/runtime/iterators'
 import { AsyncGeneratorObject, GeneratorObject, type IteratorStep, type ResumeMode } from '@/runtime/generators'
-import { AsyncGeneratorRunner, AsyncIterator } from './async-generators'
+import { AsyncGeneratorRunner, AsyncIterator, asyncGeneratorIterator, syncAsAsync } from './async-generators'
 import {
   defineAccessor,
   defineProperty,
@@ -1139,50 +1139,72 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
   // GET_ASYNC_ITER (D53): async generators and host async iterables step with their next(); other iterables are
   // iterated synchronously, each value awaited.
   private asyncIterator(value: Value): AsyncIterator {
-    if (value instanceof AsyncGeneratorObject) {
-      return new AsyncIterator(() => value.driver.enqueue('next', null), () => value.driver.enqueue('return', null))
-    }
+    if (value instanceof AsyncGeneratorObject) return asyncGeneratorIterator(value.driver)
 
     const host = value instanceof HostObject ? value.host.asyncIterator(value.target) : null
 
-    return host ? new AsyncIterator(host.next, host.return) : this.syncAsAsync(getIterator(value))
+    return host ? new AsyncIterator(host) : this.fromSync(getIterator(value))
   }
 
-  private syncAsAsync(iterator: ScriptIterator): AsyncIterator {
-    const step = (): Value => {
-      const next = iterator.next()
-      if (next === DONE) return this.stepObject(undefined, true)
+  private fromSync(iterator: ScriptIterator): AsyncIterator {
+    return syncAsAsync(this, iterator, iterator instanceof GeneratorIterator ? iterator.generator.driver : null)
+  }
 
-      const result = this.promises.create()
+  // ASYNC_DELEGATE (D54): resumes the delegate the way the generator was resumed. Without a `throw` method the delegate
+  // is closed and the throw fails; without `return` the generator returns.
+  private delegateAsync(coroutine: Coroutine, iterator: AsyncIterator, sent: Value): Value {
+    const { mode } = coroutine
 
-      const fulfilled = (value: Value) => this.promises.resolve(result, this.stepObject(value, false))
+    coroutine.mode = 'next'
 
-      this.promises.react(this.promises.promiseResolve(next), fulfilled, (reason, frames) => {
-        this.promises.reject(result, reason, frames)
-      })
+    if (iterator.has(mode)) return iterator.send(mode, sent)
+    if (mode === 'return') throw new GeneratorReturn(coroutine, sent)
 
-      return result
-    }
-    const finish = (): Value => {
-      iterator.close()
+    iterator.close()
+    throw typeError('The iterator does not provide a throw method')
+  }
 
-      return this.stepObject(null, true)
-    }
+  // DELEGATE_STEP (D54): like ITER_STEP, but the value of a finished delegate is the result of `yield*`, or (after a
+  // forwarded `return`) what the generator returns.
+  private delegateDone(coroutine: Coroutine, stack: Value[]): boolean {
+    const iterator = stack[stack.length - 2] as unknown as AsyncIterator
+    const [done, value] = this.stepOf(stack.pop(), true)
 
-    return new AsyncIterator(step, finish)
+    if (done) stack.pop()
+    stack.push(value)
+
+    if (done && iterator.lastMode === 'return') throw new GeneratorReturn(coroutine, value)
+
+    return done
+  }
+
+  // A promise of a value that is fulfilled with null once the value settles, either way (D54).
+  private settledQuietly(value: Value): PromiseObject {
+    const promise = this.promises.create()
+    const fulfill = () => this.promises.resolve(promise, null)
+
+    this.promises.react(this.promises.promiseResolve(value), fulfill, fulfill)
+
+    return promise
   }
 
   // ITER_STEP (D53): iter step → iter value, or pops both when the step object says done.
   private iterationDone(stack: Value[]): boolean {
-    const step = stack.pop()
+    const [done, value] = this.stepOf(stack.pop(), false)
+
+    if (done) stack.pop()
+    else stack.push(value)
+
+    return done
+  }
+
+  // `done` and `value` of a step object; the value of a finished step is read only when it is wanted.
+  private stepOf(step: Value, valueWhenDone: boolean): [boolean, Value] {
     if (!isObject(step)) throw typeError(`Iterator result ${kindOf(step)} is not an object`)
 
     const done = truthy(getProperty(this, step, 'done'))
 
-    if (done) stack.pop()
-    else stack.push(getProperty(this, step, 'value'))
-
-    return done
+    return [done, done && !valueWhenDone ? undefined : getProperty(this, step, 'value')]
   }
 
   private startGenerator(frame: Frame): GeneratorObject {
@@ -1827,6 +1849,29 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
         case Op.GET_ASYNC_ITER: stack.push(this.asyncIterator(stack.pop()) as unknown as Value); break
         case Op.ASYNC_ITER_NEXT: stack.push((stack[stack.length - 1] as unknown as AsyncIterator).nextStep()); break
         case Op.ASYNC_ITER_CLOSE: stack.push((stack.pop() as unknown as AsyncIterator).closeStep()); break
+        case Op.ASYNC_ITER_CLOSE_AT: {
+          const iterator = stack[stack.length - 1 - code[ip++]] as unknown as AsyncIterator
+          const result = iterator.closeStep()
+
+          stack.push(code[ip++] ? this.settledQuietly(result) : result)
+          break
+        }
+        case Op.ASYNC_DELEGATE:
+          a = stack.pop()
+          stack.push(this.delegateAsync(frame.coroutine as Coroutine, stack[stack.length - 1] as unknown as AsyncIterator, a))
+          break
+        case Op.DELEGATE_STEP:
+          if (this.delegateDone(frame.coroutine as Coroutine, stack)) ip = code[ip]
+          else ip++
+          break
+        case Op.ASYNC_DELEGATE_YIELD:
+          a = stack.pop()
+          frame.ip = ip
+          this.suspend(frame);
+          (frame.coroutine as Coroutine).awaiting = false;
+          (frame.coroutine as Coroutine).delegating = true
+
+          return a
         case Op.ITER_STEP:
           if (this.iterationDone(stack)) ip = code[ip]
           else ip++

@@ -52,7 +52,7 @@ export interface HostAccess {
   /** iterates a host iterable, converting each value */
   iterate(target: object): Iterator<Value>
   /** a host async iterable's iterator for `for await` (D53): each call gives the promise of a step object */
-  asyncIterator(target: object): { next(): Value, return(): Value } | null
+  asyncIterator(target: object): HostAsyncIterator | null
 }
 
 export type NativeImpl = (ctx: AccessContext, thisValue: Value, args: Value[]) => Value
@@ -267,6 +267,18 @@ export class HostObject extends Object {
   constructor(proto: Object | null, public target: object, public host: HostAccess) {
     super(proto)
   }
+}
+
+/**
+ * A host async iterator for `for await` and async `yield*` (D53, D54): each method gives the script promise of a step.
+ */
+export interface HostAsyncIterator {
+  /** `next(value)` */
+  next(value: Value): Value
+  /** `throw(value)`, when the iterator has it */
+  throw?(value: Value): Value
+  /** `return(value)`, when the iterator has it */
+  return?(value: Value): Value
 }
 
 /** Host functions that are not classes; host classes become `Class` with `host` set. */

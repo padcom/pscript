@@ -13,6 +13,7 @@ import {
   Object as ScriptObject,
   type AccessContext,
   type HostAccess,
+  type HostAsyncIterator,
   type Value,
 } from './values'
 
@@ -263,23 +264,21 @@ export class Interop implements HostAccess {
     return globalThis.Object.keys(target).filter(key => !BLOCKED_KEYS.has(key))
   }
 
-  asyncIterator(target: object): { /**
-                                    *
-                                    */
-    next(): Value /**
-                   *
-                   */
-    return(): Value
-  } | null {
+  asyncIterator(target: object): HostAsyncIterator | null {
     const iterable = target as Partial<AsyncIterable<unknown>>
     if (typeof iterable[Symbol.asyncIterator] !== 'function') return null
 
     const iterator = this.call(() => (iterable as AsyncIterable<unknown>)[Symbol.asyncIterator]())
-    const finish = () => (typeof iterator.return === 'function' ? iterator.return() : { value: undefined, done: true })
+    const method = (name: 'throw' | 'return') => {
+      const fn = iterator[name]
+
+      return fn ? (value: Value) => this.toScript(this.call(() => fn.call(iterator, this.toHost(value)))) : undefined
+    }
 
     return {
-      next: () => this.toScript(this.call(() => iterator.next())),
-      return: () => this.toScript(this.call(finish)),
+      next: value => this.toScript(this.call(() => iterator.next(this.toHost(value)))),
+      throw: method('throw'),
+      return: method('return'),
     }
   }
 

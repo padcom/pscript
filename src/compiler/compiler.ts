@@ -966,7 +966,7 @@ class Compiler {
     const done = this.iterationStep(node)
     const outer = this.scope
     const iteration = this.bindIterationValue(node.left, node.body)
-    const loop = this.withIterator(node.await, () => this.loopBody(node.body))
+    const loop = this.withIterator(node.await, () => (node.await ? this.closingLoopBody(node.body) : this.loopBody(node.body)))
 
     this.scope = outer
     this.patchAll(loop.continues)
@@ -978,6 +978,26 @@ class Compiler {
     if (iteration.hasEnv) this.out.emit(Op.POP_ENV)
     this.closeIterator(node.await) // `break`: a generator runs its finally blocks
     this.out.patch(done)
+  }
+
+  // The body of a `for await` (D54): when an exception (or generator.return()) leaves it, the iterator's return() is
+  // called and awaited before the exception goes on (a failure of return() is ignored).
+  // TRY -1 finally; <body>; END_TRY; JUMP end; finally: ASYNC_ITER_CLOSE_AT 1 1 AWAIT POP END_FINALLY; end:
+  private closingLoopBody(body: Statement): Loop {
+    return this.breakable(false, () => {
+      const tryAt = this.out.emit(Op.TRY, -1, -1)
+
+      this.inRegion({ finalizer: null, scope: this.scope }, () => this.statement(body))
+      this.out.emit(Op.END_TRY)
+      const end = this.out.emitJump(Op.JUMP)
+
+      this.out.patch(tryAt + 2)
+      this.out.emit(Op.ASYNC_ITER_CLOSE_AT, 1, 1)
+      this.out.emit(Op.AWAIT)
+      this.out.emit(Op.POP)
+      this.out.emit(Op.END_FINALLY)
+      this.out.patch(end)
+    })
   }
 
   private iterator({ right, await: async, loc }: ForOfStatement) {
@@ -2020,9 +2040,20 @@ class Compiler {
     this.fn.stackItems++
     this.leaveRegions(0)
     this.fn.stackItems--
+    this.closeAsyncIterators()
 
     if (this.fn.stackItems > 0) this.out.emit(Op.CLOSE_ITERS) // leaving for…of loops
     this.out.emit(Op.RETURN)
+  }
+
+  // `return` inside `for await` loops (D54): each iterator's return() is awaited, innermost first; the returned value
+  // stays on top.
+  private closeAsyncIterators() {
+    for (const position of [...this.fn.asyncIterators].reverse()) {
+      this.out.emit(Op.ASYNC_ITER_CLOSE_AT, this.fn.stackItems - position + 1, 0)
+      this.out.emit(Op.AWAIT)
+      this.out.emit(Op.POP)
+    }
   }
 
   // An async generator awaits the value it returns (D53).
@@ -2096,21 +2127,21 @@ class Compiler {
 
   // `yield* iterable` in an async generator (D53): yields each value the async (or sync) iterable produces, like
   // `for await (const v of iterable) yield v`; the values sent by next() are not forwarded and the result is null.
+  // GET_ASYNC_ITER NULL; top: ASYNC_DELEGATE AWAIT DELEGATE_STEP done; ASYNC_DELEGATE_YIELD; JUMP top; done: (D54)
   private asyncYieldDelegate(loc: SourceLocation) {
     this.emitAt(loc, Op.GET_ASYNC_ITER)
+    this.out.emit(Op.NULL) // the first step sends nothing
     const top = this.out.code.length
 
-    this.emitAt(loc, Op.ASYNC_ITER_NEXT)
-    this.out.emit(Op.AWAIT)
-    const done = this.out.emitJump(Op.ITER_STEP)
-
     this.withIterator(true, () => {
-      this.emitAt(loc, Op.YIELD)
-      this.out.emit(Op.POP)
+      this.emitAt(loc, Op.ASYNC_DELEGATE)
+      this.out.emit(Op.AWAIT)
+      const done = this.out.emitJump(Op.DELEGATE_STEP)
+
+      this.emitAt(loc, Op.ASYNC_DELEGATE_YIELD)
+      this.out.patch(this.out.emitJump(Op.JUMP), top)
+      this.out.patch(done)
     })
-    this.out.patch(this.out.emitJump(Op.JUMP), top)
-    this.out.patch(done)
-    this.out.emit(Op.NULL)
   }
 
   // `this` is dynamic in functions and lexical in arrows (§4.4.5).

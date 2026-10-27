@@ -1,0 +1,54 @@
+// Async yield* forwards next/throw/return; leaving for await awaits return() (D54)
+async function* inner() {
+  try {
+    const a = yield 'i1'
+    print('inner got', a)
+    const b = yield 'i2'
+    print('inner got', b)
+    return 'inner result'
+  } catch (e) {
+    print('inner caught', e)
+    yield 'after catch'
+  } finally {
+    print('inner finally')
+  }
+}
+async function* outer() {
+  const r = yield* inner()
+  print('yield* gave', r)
+  yield 'o-end'
+}
+async function* source() {
+  try { yield 1; yield 2; yield 3 } finally { await null; print('source closed') }
+}
+async function find() {
+  for await (const v of source()) if (v == 2) return 'found ' + v
+}
+async function failing() {
+  for await (const v of source()) throw new Error('body failed at ' + v)
+}
+async function main() {
+  const g = outer()
+  print((await g.next('ignored')).value)
+  print((await g.next('A')).value)
+  print((await g.next('B')).value)
+  print((await g.next()).done)
+  const h = outer()
+  await h.next()
+  print((await h.throw('boom')).value)
+  print((await h.return('early')).value)
+  const k = outer()
+  await k.next()
+  const ret = await k.return('stop')
+  print(ret.value, ret.done)
+  print(await find())
+  try { await failing() } catch (e) { print('caught', e.message) }
+  async function* wrapsSync() { return yield* [1, 2] }
+  const w = wrapsSync()
+  print((await w.next()).value, (await w.next()).value, (await w.next()).done)
+  async function* loopGen() { for await (const v of source()) yield v }
+  const lg = loopGen()
+  await lg.next()
+  print((await lg.return('r')).value)
+}
+main()

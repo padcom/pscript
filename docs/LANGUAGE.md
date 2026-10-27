@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D53).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D54).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -201,8 +201,8 @@ class Tree {
 - A class field followed by a `*method()` on the next line needs a `;` (as in JavaScript).
 - Async generators (`async function*`, `async *method()`) work as in JavaScript: `next()` / `return()` / `throw()`
   return promises of `{ value, done }`, `yield` and `return` await their value, and `for await (const x of …)`
-  iterates them (as well as host async iterables, and any iterable with each value awaited). `yield*` in an async
-  generator yields the values of another iterable but does not forward `next(v)` values.
+  iterates them (as well as host async iterables, and any iterable with each value awaited). `yield*` delegates with
+  everything forwarded, and leaving a `for await` early awaits the iterator's `return()`, as in JavaScript.
 
 ## Async functions and promises
 
@@ -417,7 +417,6 @@ Values cross the boundary by reference and identity is kept in both directions.
 | Generators give `undefined` for missing values | Generators give `null` (`yield`, `next()`, finished steps) |
 | Any object with a `then` method is a thenable | Only promises are adopted; `Promise` is final |
 | Top-level `await` only in modules | In modules and scripts |
-| `yield*` in async generators forwards `next(v)`, `throw`, `return` | It only yields the values |
 | Symbols, BigInt, getters on the global object | Not available |
 | Default exports, `export *` | Named exports only |
 | Integer-like keys are listed first | Insertion order for all keys |

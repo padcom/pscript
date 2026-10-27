@@ -53,6 +53,20 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L12 | Top-level `await`, asynchronous loaders and host API (D51) | done (2026-10-27) |
 | L13 | Dynamic `import()` (D52) | done (2026-10-27) |
 | L14 | Async generators and `for await` (D53) | done (2026-10-27) — v2 roadmap complete |
+| L15 | Async `yield*` forwarding, awaited `for await` cleanup (D54) | done (2026-10-27) |
+
+## L15 — Async `yield*` forwarding and awaited `for await` cleanup (D54)
+
+Design in `docs/PLAN.md` D54 (R43), §4.4.20.
+
+- **Compiler**: async `yield*` is `GET_ASYNC_ITER NULL; ASYNC_DELEGATE AWAIT DELEGATE_STEP; ASYNC_DELEGATE_YIELD`;
+  a `for await` body runs in a finally-only handler region (`ASYNC_ITER_CLOSE_AT 1 1 AWAIT POP END_FINALLY`, so the
+  original exception is rethrown with its stack); `return` awaits `ASYNC_ITER_CLOSE_AT d 0` per async iterator.
+- **VM**: `AsyncIterator` has `has` / `send` (next, throw, return) and a `closed` flag; `asyncGeneratorIterator` and
+  `syncAsAsync` (sync generators get all three) in `src/vm/async-generators.ts`; host async iterators expose
+  `throw` / `return` (`HostAsyncIterator`). `ASYNC_DELEGATE_YIELD` suspends with `delegating` set, so a `throw` /
+  `return` resumption reaches `ASYNC_DELEGATE` (as for sync `yield*`).
+- **Tests**: `tests/programs/async-generators/delegation.pscript` (against Node).
 
 ## L14 — Async generators and `for await` (D53)
 

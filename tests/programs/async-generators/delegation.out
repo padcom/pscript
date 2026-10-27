@@ -1,0 +1,21 @@
+i1
+inner got A
+i2
+inner got B
+inner finally
+yield* gave inner result
+o-end
+true
+inner caught boom
+after catch
+inner finally
+early
+inner finally
+stop true
+source closed
+found 2
+source closed
+caught body failed at 1
+1 2 true
+source closed
+r
