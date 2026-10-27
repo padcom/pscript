@@ -28,7 +28,26 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M19 | Interfaces | done (2026-10-27) |
 | M20 | Implicit member access | done (2026-10-27) |
 | M21 | Modules I | done (2026-10-27) |
-| M22 | Modules II | next |
+| M22 | Modules II | done (2026-10-27) |
+| M23 | Host interop | next |
+
+## M22 — Modules II
+
+Done: namespace, re-export, cycle and error programs pass in `tests/modules/` (all but `namespace-print` also against Node); host-module unit tests (`tests/unit/modules/host-modules.test.ts`). `npm run check` and `npm run build` green; 909 tests.
+
+What exists:
+
+- Namespace objects (`ModuleNamespace(record, names, read)`, one per record via `registry.namespace`): null prototype, frozen; reads go through the export cells (resolved on first read, TDZ `ReferenceError`), unknown keys are `undefined`; writes and new keys → `TypeError: Cannot assign to 'x' of a module namespace`; `in` checks the export names; `Object.keys/values/entries`, `JSON.stringify` list the exports in sorted order (`publicProps`); `print` shows `[Module] {a: 1, b: [Function: b]}`. Namespace imports (and exports of them, `import * as u …; export { u }`) use a cell that returns the namespace.
+- Re-exports (`export { a as b } from`, exporting an import) resolve through `followReexport`; `circular re-export of 'x'` is a link-time SyntaxError.
+- Cycles: hoisted functions are callable before their module runs; reading an uninitialised `let`/`const` of a module that is still evaluating is the TDZ `ReferenceError`.
+- Errored modules: the error propagates to the importers (which are errored too) and is rethrown by later imports.
+- Host modules: `Interpreter.defineModule(id, exports)` or a loader result `{ id, exports }`. Export names are the own enumerable keys at definition time; each read is `toScript(exports[name])` (live, `HostCell`). Bindings are read-only; defining an id twice → `PScriptRuntimeError`. Defined modules (and every loaded record) are found by their resolved specifier before the loader is asked.
+- Contract changes: `BindingCell = SlotCell | HostCell`, `HostExports { names, object }` replaces `hostExports: Map`, `ModuleRecord.namespace`; `readCell` in `src/modules/cells.ts`.
+
+Deviations / gaps:
+
+- Host modules can only export primitives until M23 (`toScript` rejects host objects and functions).
+- `String(ns)` gives `[object Object]` (JS: `[object Module]`).
 
 ## M21 — Modules I
 

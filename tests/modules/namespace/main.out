@@ -1,0 +1,5 @@
+object PI,counter,next true
+0 1 1 2 2
+true false undefined
+TypeError
+TypeError

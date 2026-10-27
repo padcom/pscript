@@ -11,6 +11,7 @@ import {
   Array as ScriptArray,
   Class,
   Function as ScriptFunction,
+  ModuleNamespace,
   Object as ScriptObject,
   type AccessContext,
   type Realm,
@@ -88,9 +89,23 @@ function getPlain(ctx: AccessContext, object: ScriptObject, key: string): Value 
   return object instanceof ScriptFunction ? getFunction(ctx, object, key) : lookup(ctx, object, key, object)
 }
 
+// A namespace has exactly its exports (live, TDZ-checked); anything else is undefined (§4.7.2).
+function getNamespace(_: AccessContext, namespace: ModuleNamespace, key: string): Value {
+  return namespace.names.includes(key) ? namespace.read(key) : undefined
+}
+
+type ExoticGetter = (ctx: AccessContext, object: any, key: string) => Value
+
+// Objects whose reads do not use ordinary properties: namespaces, `globalThis`, classes.
+const EXOTIC_GETTERS: [abstract new (...args: any[]) => ScriptObject, ExoticGetter][] = [
+  [ModuleNamespace, getNamespace],
+  [GlobalObject, getGlobal],
+  [Class, getClassMember],
+]
+
 function getExotic(ctx: AccessContext, object: ScriptObject, key: string): Value {
-  if (object instanceof GlobalObject) return getGlobal(ctx, object, key)
-  if (object instanceof Class) return getClassMember(ctx, object, key)
+  const getter = EXOTIC_GETTERS.find(([type]) => object instanceof type)?.[1]
+  if (getter) return getter(ctx, object, key)
 
   return object.klass ? getInstanceMember(ctx, object, key) : getPlain(ctx, object, key)
 }
@@ -134,6 +149,7 @@ function isReadOnlyFunctionKey(object: ScriptObject, key: string): boolean {
 
 function checkFrozen(object: ScriptObject, key: string) {
   if (object instanceof GlobalObject) throw typeError(`Cannot assign to '${key}' through globalThis`)
+  if (object instanceof ModuleNamespace) throw typeError(`Cannot assign to '${key}' of a module namespace`)
   if (object.frozen) throw typeError(`Cannot assign to read only property '${key}' of object`)
 }
 
@@ -239,6 +255,10 @@ export function defineAccessor(object: ScriptObject, key: string, half: 'get' | 
   object.props.set(key, accessor)
 }
 
+function isClassObject(object: Value): boolean {
+  return object instanceof Class || (object instanceof ScriptObject && object.klass !== undefined)
+}
+
 /**
  * `key in object` with access rules: class members count only when the caller may use them (§4.5.2).
  *
@@ -248,7 +268,7 @@ export function defineAccessor(object: ScriptObject, key: string, half: 'get' | 
  * @returns whether the property exists (and is accessible)
  */
 export function hasPropertyIn(ctx: AccessContext, key: Value, object: Value): boolean {
-  const isClassObject = object instanceof Class || (object instanceof ScriptObject && object.klass !== undefined)
+  if (object instanceof ModuleNamespace) return object.names.includes(propertyKey(key))
 
-  return isClassObject ? hasClassMember(ctx, object as ScriptObject, propertyKey(key)) : hasProperty(key, object)
+  return isClassObject(object) ? hasClassMember(ctx, object as ScriptObject, propertyKey(key)) : hasProperty(key, object)
 }

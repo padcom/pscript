@@ -4,9 +4,19 @@ import { compileModule } from '@/compiler/compiler'
 import type { FunctionProto } from '@/compiler/function-proto'
 import { PScriptRuntimeError, PScriptSyntaxError, formatExcerpt } from '@/errors'
 import type { SourceLocation } from '@/parser/ast'
-import { Environment, UNINITIALIZED, type Closure, type Slot } from '@/runtime/values'
-import type { LoadedModule, ModuleLoader } from './loader'
-import type { BindingCell, CompiledModule, ModuleImportEntry, ModuleIndirectExport, ModuleRecord } from './module-record'
+import { toScript } from '@/runtime/interop'
+import { referenceError } from '@/runtime/script-error'
+import { Environment, ModuleNamespace, UNINITIALIZED, type Closure, type Slot, type Value } from '@/runtime/values'
+import { readCell } from './cells'
+import { resolveSpecifier, type LoadedModule, type ModuleLoader } from './loader'
+import type {
+  BindingCell,
+  CompiledModule,
+  HostExports,
+  ModuleImportEntry,
+  ModuleIndirectExport,
+  ModuleRecord,
+} from './module-record'
 
 /**
  * What the registry needs from the VM.
@@ -36,6 +46,10 @@ function linkError(record: ModuleRecord, reason: string, { start: { line, column
   const excerpt = source === undefined ? undefined : formatExcerpt(source, line, column)
 
   return new PScriptSyntaxError(reason, { fileName: record.id, line, column, excerpt })
+}
+
+function hostCell({ names, object }: HostExports, name: string): BindingCell | null {
+  return names.includes(name) ? { read: () => toScript(object[name]) } : null
 }
 
 function notFound(specifier: string, referrer: string | null, cause: unknown): PScriptRuntimeError {
@@ -89,13 +103,38 @@ export class ModuleRegistry {
     }
   }
 
+  // Modules registered with `define` (or loaded before) under the resolved specifier skip the loader.
   private load(specifier: string, referrer: string | null): LinkedRecord {
+    return this.records.get(resolveSpecifier(specifier, referrer)) ?? this.loadNew(specifier, referrer)
+  }
+
+  private loadNew(specifier: string, referrer: string | null): LinkedRecord {
     const loaded = this.fetch(specifier, referrer)
     const existing = this.records.get(loaded.id)
     if (existing) return existing
-    if (!('source' in loaded)) throw new PScriptRuntimeError('Error', `Host module '${loaded.id}' is not supported`, undefined)
+    if ('exports' in loaded) return this.define(loaded.id, loaded.exports)
 
     return this.create(loaded.id, compileModule(loaded.source, loaded.id))
+  }
+
+  /**
+   * Registers a host module (§4.7.3): its export names are the object's own enumerable keys now, its values are read
+   * live on every access.
+   *
+   * @param id module id
+   * @param object the exports
+   * @returns the module record (already evaluated)
+   */
+  define(id: string, object: Record<string, unknown>): LinkedRecord {
+    if (this.records.has(id)) throw new PScriptRuntimeError('Error', `Module '${id}' is already defined`, undefined)
+
+    const hostExports = { names: globalThis.Object.keys(object), object }
+    const record: LinkedRecord = { id, status: 'evaluated', compiled: null, env: null, importCells: [], requested: [] }
+
+    record.hostExports = hostExports
+    this.records.set(id, record)
+
+    return record
   }
 
   // Registered before its requests are loaded, so cycles find it.
@@ -143,7 +182,7 @@ export class ModuleRegistry {
   }
 
   private importCell(record: LinkedRecord, { request, importName, loc }: ModuleImportEntry): BindingCell {
-    const cell = this.resolveExport(record.requested[request], importName, new Set())
+    const cell = this.cellFor(record.requested[request], importName, new Set())
     if (cell) return cell
 
     const specifier = compiledOf(record).requests[request]
@@ -160,6 +199,8 @@ export class ModuleRegistry {
    * @returns the binding cell, or null when the module has no such export
    */
   resolveExport(record: LinkedRecord, name: string, visiting: Set<string>): BindingCell | null {
+    if (record.hostExports) return hostCell(record.hostExports, name)
+
     const compiled = compiledOf(record)
     const local = compiled.localExports.find(entry => entry.exportName === name)
     if (local) return { env: record.env as Environment, slot: local.slot }
@@ -174,12 +215,47 @@ export class ModuleRegistry {
     if (visiting.has(key)) throw linkError(record, `circular re-export of '${indirect.exportName}'`, indirect.loc)
     visiting.add(key)
 
-    const cell = this.resolveExport(record.requested[indirect.request], indirect.importName, visiting)
+    const cell = this.cellFor(record.requested[indirect.request], indirect.importName, visiting)
     if (cell) return cell
 
     const specifier = compiledOf(record).requests[indirect.request]
 
     throw linkError(record, `Module '${specifier}' does not provide an export named '${indirect.importName}'`, indirect.loc)
+  }
+
+  // `*` stands for the namespace object (namespace imports, and exports of them).
+  private cellFor(record: LinkedRecord, importName: string, visiting: Set<string>): BindingCell | null {
+    if (importName !== '*') return this.resolveExport(record, importName, visiting)
+
+    const namespace = this.namespace(record)
+
+    return { read: () => namespace }
+  }
+
+  /**
+   * The module namespace object of a module, one per record (§4.7.2).
+   *
+   * @param record the module
+   * @returns its namespace
+   */
+  namespace(record: LinkedRecord): ModuleNamespace {
+    record.namespace ??= new ModuleNamespace(record, this.exportNames(record), this.exportReader(record))
+
+    return record.namespace
+  }
+
+  // Cells are resolved on first read: a namespace of a module that is still linking (cycle) may be created early.
+  private exportReader(record: LinkedRecord): (name: string) => Value {
+    const cells = new Map<string, BindingCell>()
+
+    return name => {
+      if (!cells.has(name)) cells.set(name, this.resolveExport(record, name, new Set()) as BindingCell)
+
+      const value = readCell(cells.get(name) as BindingCell)
+      if (value === UNINITIALIZED) throw referenceError(`Cannot access '${name}' before initialization`)
+
+      return value
+    }
   }
 
   // Depth-first, post-order; a module that is still evaluating (cycle) is not re-entered.
@@ -211,6 +287,8 @@ export class ModuleRegistry {
    * @returns the names
    */
   exportNames(record: LinkedRecord): string[] {
+    if (record.hostExports) return [...record.hostExports.names].sort()
+
     const { localExports, indirectExports } = compiledOf(record)
 
     return [...localExports, ...indirectExports].map(entry => entry.exportName).sort()

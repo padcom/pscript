@@ -4,6 +4,7 @@ import { find, functionProperty, noMember, onlyGetter, own, resolve, type Found 
 import { accessError, typeError } from './script-error'
 import {
   Class,
+  ModuleNamespace,
   type Accessor,
   type AccessContext,
   type MemberEntry,
@@ -405,11 +406,14 @@ export function isPublicField(object: ScriptObject, key: string): boolean {
 }
 
 /**
- * The own properties reflection shows (§4.5.2): public members only, for class instances.
+ * The own properties reflection shows (§4.5.2): public members only, for class instances; the exports of a module
+ * namespace (§4.7.2).
  *
  * @param object any object
  * @returns key/value pairs in insertion order
  */
 export function publicProps(object: ScriptObject): [string, Value | Accessor][] {
+  if (object instanceof ModuleNamespace) return object.names.map(name => [name, object.read(name)])
+
   return [...object.props].filter(([key]) => isPublicField(object, key))
 }

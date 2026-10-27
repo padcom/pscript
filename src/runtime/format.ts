@@ -1,6 +1,7 @@
 // print formatting (§4.6.2, D18). Class instances (D35) and accessors (M16) come later.
 import { IDENT_PATTERN } from '@/parser/tokens'
 import { toStringIn } from './conversions'
+import { publicProps } from './members'
 import { toString } from './operators'
 import {
   Accessor,
@@ -8,6 +9,7 @@ import {
   Class,
   Function as ScriptFunction,
   Interface,
+  ModuleNamespace,
   Object as ScriptObject,
   type AccessContext,
   type Value,
@@ -96,10 +98,12 @@ class Formatter {
     return value instanceof Accessor ? accessorLabel(value) : this.value(value, depth)
   }
 
+  // Module namespaces print as `[Module] {a: 1}` (§4.7.2).
   private plainObject(object: ScriptObject, depth: number): string {
-    const entries = [...object.props].map(([key, value]) => `${formatKey(key)}: ${this.property(value, depth + 1)}`)
+    const entries = publicProps(object).map(([key, value]) => `${formatKey(key)}: ${this.property(value, depth + 1)}`)
+    const text = entries.length === 0 ? '{}' : `{${entries.join(', ')}}`
 
-    return entries.length === 0 ? '{}' : `{${entries.join(', ')}}`
+    return object instanceof ModuleNamespace ? `[Module] ${text}` : text
   }
 }
 

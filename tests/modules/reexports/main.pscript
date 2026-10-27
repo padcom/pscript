@@ -1,0 +1,2 @@
+import { circleArea, PI, twice, VERSION, utils } from './api'
+print(circleArea(1), PI, twice(4), VERSION, utils.twice(1))

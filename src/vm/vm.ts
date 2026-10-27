@@ -1,5 +1,6 @@
 // The bytecode interpreter (§5.6).
 import type { ClassTemplate, CompiledScript, FunctionProto, InterfaceTemplate } from '@/compiler/function-proto'
+import { readCell } from '@/modules/cells'
 import type { CompiledModule, ModuleRecord } from '@/modules/module-record'
 import { GlobalFlags, Op } from '@/compiler/opcodes'
 import { PScriptRuntimeError, formatExcerpt, type ScriptStackFrame } from '@/errors'
@@ -136,8 +137,7 @@ function contextOf({ thisValue }: ImplicitReceiver): 'static' | 'instance' {
 // An import is a live view of the exporter's binding, with the TDZ check (§4.7.2).
 function readImport(frame: Frame, index: number): Value {
   const record = frame.module as ModuleRecord
-  const cell = record.importCells[index]
-  const value = cell.env.slots[cell.slot]
+  const value = readCell(record.importCells[index])
 
   if (value !== UNINITIALIZED) return value
 

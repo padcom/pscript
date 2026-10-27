@@ -4,6 +4,7 @@ import type { CompiledScript } from '@/compiler/function-proto'
 import { toHost, toScript } from '@/runtime/interop'
 import { createRealm, defineGlobal } from '@/runtime/realm'
 import { memoryLoader, type ModuleLoader } from '@/modules/loader'
+import { readCell } from '@/modules/cells'
 import type { BindingCell } from '@/modules/module-record'
 import { ModuleRegistry, type LinkedRecord } from '@/modules/registry'
 import { UNINITIALIZED, type Realm } from '@/runtime/values'
@@ -123,6 +124,17 @@ export class Interpreter {
     return this.namespaceView(this.modules.import(specifier, null))
   }
 
+  /**
+   * Registers a host module (§4.7.3): scripts import its exports by name, and every read sees the current value of
+   * the property (live, D9). The export names are the object's own enumerable keys now.
+   *
+   * @param id the module id (what scripts import, e.g. `host:fs`)
+   * @param exports the exports object
+   */
+  defineModule(id: string, exports: Record<string, unknown>) {
+    this.modules.define(id, exports)
+  }
+
   // Each property reads the export's binding on access (live, §4.7.2); uninitialised bindings read as undefined.
   private namespaceView(record: LinkedRecord): Record<string, unknown> {
     const view = globalThis.Object.create(null) as Record<string, unknown>
@@ -130,7 +142,7 @@ export class Interpreter {
     for (const name of this.modules.exportNames(record)) {
       const cell = this.modules.resolveExport(record, name, new Set()) as BindingCell
       const get = () => {
-        const value = cell.env.slots[cell.slot]
+        const value = readCell(cell)
 
         return value === UNINITIALIZED ? undefined : toHost(value)
       }

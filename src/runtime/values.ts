@@ -209,11 +209,21 @@ export class Interface extends Object {
   }
 }
 
-/** §4.7.2, exotic: reads go through binding cells. */
+/**
+ * §4.7.2, exotic: a frozen, null-prototype object with one live property per export name (sorted). Reads go through
+ * the exports' binding cells (`read` throws the TDZ error for uninitialised bindings).
+ */
 export class ModuleNamespace extends Object {
-  constructor(proto: Object | null, public record: ModuleRecord) {
-    super(proto)
+  constructor(
+    public record: ModuleRecord,
+    /** export names, sorted */
+    public names: string[],
+    /** reads an export */
+    public read: (name: string) => Value,
+  ) {
+    super(null)
     this.extensible = false
+    this.frozen = true
   }
 }
 

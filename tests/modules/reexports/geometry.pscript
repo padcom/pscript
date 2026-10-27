@@ -1,0 +1,2 @@
+export const PI = 3
+export function area(r) { return PI * r * r }

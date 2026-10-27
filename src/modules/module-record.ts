@@ -1,7 +1,7 @@
 // Module contract (§5.4): compiled modules and their runtime records.
 import type { FunctionProto } from '@/compiler/function-proto'
 import type { SourceLocation } from '@/parser/ast'
-import type { Environment, Value } from '@/runtime/values'
+import type { Environment, ModuleNamespace, Value } from '@/runtime/values'
 
 /**
  * A named import; its index is the `LOAD_IMPORT` operand.
@@ -74,13 +74,33 @@ export interface CompiledModule {
 }
 
 /**
- * Live view of an exported binding, used by importers.
+ * Live view of an exported binding of a PScript module, used by importers.
  */
-export interface BindingCell {
+export interface SlotCell {
   /** environment of the exporting module */
   env: Environment
   /** slot of the binding */
   slot: number
+}
+
+/**
+ * Live view of a host module's export: every read converts the export's current value (§4.7.3, D9).
+ */
+export interface HostCell {
+  /** reads the current value */
+  read(): Value
+}
+
+export type BindingCell = SlotCell | HostCell
+
+/**
+ * The exports of a host module: names fixed when it was loaded, values read live from the object.
+ */
+export interface HostExports {
+  /** export names (own enumerable keys at load time) */
+  names: string[]
+  /** the host's exports object */
+  object: Record<string, unknown>
 }
 
 export type ModuleStatus = 'new' | 'linking' | 'linked' | 'evaluating' | 'evaluated' | 'errored'
@@ -100,7 +120,9 @@ export interface ModuleRecord {
   /** resolved per `CompiledModule.imports` index */
   importCells: BindingCell[]
   /** exports of a host module */
-  hostExports?: Map<string, Value>
+  hostExports?: HostExports
+  /** the module namespace object, created on first use (namespace imports, §4.7.2) */
+  namespace?: ModuleNamespace
   /** error of an errored module, rethrown on every import */
   error?: unknown
 }

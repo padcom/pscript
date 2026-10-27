@@ -1,0 +1,3 @@
+import { isEven } from './even'
+print('odd evaluated', isEven(0))       // hoisted: callable before even.pscript runs
+export function isOdd(n) { return n == 0 ? false : isEven(n - 1) }

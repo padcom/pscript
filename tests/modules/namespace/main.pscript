@@ -1,0 +1,8 @@
+import * as math from './math'
+import * as again from './math'
+import { next } from './math'
+print(typeof math, Object.keys(math).join(','), math == again)
+print(math.counter, math.next(), math.counter, next(), math.counter)
+print('next' in math, 'nope' in math, math.nope)
+try { math.counter = 5 } catch (e) { print(e.name) }
+try { math.extra = 5 } catch (e) { print(e.name) }

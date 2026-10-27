@@ -1,0 +1,2 @@
+[Module] {a: [Function: a], b: [1, 2]}
+[["a", [Function: a]], ["b", [1, 2]]] {"b":[1,2]}

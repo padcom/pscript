@@ -1,0 +1,4 @@
+// @pscript-only: print format of namespaces, namespace reads in the TDZ
+import * as lib from './lib'
+print(lib)
+print(Object.entries(lib), JSON.stringify(lib))

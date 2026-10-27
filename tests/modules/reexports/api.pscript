@@ -1,0 +1,5 @@
+import { VERSION } from './version'
+import * as utils from './utils'
+export { area as circleArea, PI } from './geometry'
+export { twice } from './utils'
+export { VERSION, utils }
