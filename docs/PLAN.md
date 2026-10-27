@@ -36,6 +36,7 @@
 8. Risks & mitigations
 9. Reference program
 10. Feature examples
+11. `psc`: the PScript-to-JavaScript transpiler
 
 ---
 
@@ -3085,3 +3086,90 @@ print('text', 42, [1, 'a', [true]], { a: 1, b: 'x' })   // → text 42 [1, "a", 
 class P { x = 1 }
 print(new P(), P, print, () => 1)    // → P(x = 1) [class P] [Function: print] [Function (anonymous)]
 ```
+
+---
+
+## 11. `psc`: the PScript-to-JavaScript transpiler
+
+> Status: planned (2026-10-27). Milestones T1–T5 below, tracked in `docs/PROGRESS.md`.
+
+### 11.1 Goal and non-goals
+
+`psc` compiles PScript source to plain, readable JavaScript (ES modules) that runs in Node and browsers without
+PScript. It uses PScript as a **stricter source language**: the value is in the **compile-time checks** (arity,
+constant bindings, closed classes, access modifiers, `override`/`final`, interfaces, implicit members, module
+exports), not in reproducing the VM's runtime behaviour.
+
+- **The interpreter is unchanged.** The VM, runtime and stdlib stay the core of the project; `psc` is an additional
+  backend that reuses the front end (parser, token filter, AST) and the compiler's checks. It must not change
+  `compile()`'s behaviour or the bytecode contract.
+- **Non-goal: runtime equality with the VM.** The emitted code has JavaScript runtime semantics wherever a PScript
+  guarantee would need a runtime helper on a hot path (operators, property reads, array indexing). Those
+  differences are documented, not bugs (§11.4).
+- **No runtime dependency by default.** Output needs no PScript package. The few helpers it needs are emitted
+  inline, only when used.
+
+### 11.2 Decisions
+
+| ID | Topic | Decision |
+|---|---|---|
+| P1 | Diagnostics | `transpile()` first runs the existing `compile()` / `compileModule()` on the AST and discards the bytecode, so `psc` reports exactly the interpreter's compile-time errors (`PScriptSyntaxError`). The first error stops compilation (as in `compile()`). |
+| P2 | Emitter | A separate AST → JS printer (`src/transpiler/`). It needs its own light name resolution only for implicit members (T2); everything else is syntax-directed. |
+| P3 | Output style | ES2022, 2-space indent, semicolons (generated code must not depend on ASI), one statement per line, original literal spelling (`raw`). Comments are not kept (the parser drops them). |
+| P4 | Cheap semantics kept | `==`/`!=` → `===`/`!==` (D1); `typeof` yields `'null'` for `null` (helper); `-x ** 2` → `-(x ** 2)`; `let x` and fields without initialiser start as `null` (D37); bare `return` returns `null`. |
+| P5 | Semantics left to JS | Operators converting objects (D5), array reads out of range (§4.4.7), functions falling off the end return `undefined`, strict arity of dynamic calls (D38: only callees known at compile time are checked), integer-like keys listed first, completion values (D12). |
+| P6 | Globals | Stdlib globals map to the JS ones of the same name. `print` maps to `console.log` (an inline `const print = …` when used); its PScript formatting (D18) is not reproduced. Unknown globals are left as free names (host globals). |
+| P7 | Classes (T2) | Implicit members become `this.x` / `C.x` (static). `private` members become `#x` (JS private names: per class, brand-checked). `o.x` inside a class where `x` resolves to a private member of an enclosing class becomes `o.#x`. `protected`, `override`, `final`, `final class`, `implements` are checked at compile time and erased. Fields without initialiser are `= null`. |
+| P8 | Interfaces (T2) | Interfaces are erased, except when used as values (`x instanceof I`): then `const I = $interface('I', [...])` with a `Symbol.hasInstance` that checks a hidden list of implemented interfaces set by each implementing class. |
+| P9 | Modules (T3) | Native ESM: `import { a } from './m'` → `'./m.js'` (the `.pscript`/`.psc` extension is replaced by `.js`, an extensionless relative specifier gets `.js`). Bare and `host:` specifiers are left as they are. ESM gives live bindings, TDZ and cycle order for free. |
+| P10 | Whole-program checks (T4) | `psc` compiles a set of files together, so checks the VM can only do when a class is defined or a module is linked (inherited members, `override`/`final` of imported superclasses, `implements` of imported interfaces, arity of imported functions, missing exports) are reported at compile time. |
+| P11 | Source maps (T5) | Version 3 source maps from AST `loc`s, written with a small VLQ encoder (no dependency). |
+
+### 11.3 Architecture
+
+```
+source ─► parse() ─► Program ─┬─► compile()/compileModule()  (checks only, bytecode discarded)
+                              └─► Emitter ─► JS text (+ source map, T5)
+```
+
+| Path | Contents |
+|---|---|
+| `src/transpiler/transpile.ts` | public `transpile(source, options)` → `{ code }`; runs the checks, then the emitter |
+| `src/transpiler/emitter.ts` | statements, expressions, functions, objects (T1); classes, interfaces (T2); modules (T3) |
+| `src/transpiler/precedence.ts` | operator precedence, parenthesisation rules |
+| `src/transpiler/helpers.ts` | inline helpers (`$typeof`, `print`, `$interface` …), emitted once at the top when used |
+| `bin/psc.js` (T3) | CLI: `psc file.pscript…` / `psc -o outDir src/`, writes `.js` next to or under the output dir |
+
+`transpile` is exported from `src/index.ts`. It adds no runtime dependency and is tree-shaken away by embedders that
+only use the interpreter.
+
+### 11.4 Differences of the emitted code from the VM
+
+Programs that rely on these behave differently when compiled with `psc` (P5):
+
+- `[] + 1`, `{} < 1` and other operators on objects convert instead of throwing;
+- `arr[10]` and `arr[-1]` give `undefined`; writing past the end leaves holes;
+- reading an undeclared member of a class instance through an unknown receiver gives `undefined`;
+- a function without `return` returns `undefined`; a dynamic call with the wrong argument count is not an error;
+- `protected` members are reachable through receivers the compiler cannot see (they are plain properties);
+- `print` output follows `console.log`; there are no `maxSteps`/`maxCallDepth` limits;
+- runtime errors are native JS errors (`AccessError` does not exist; access violations on `#x` are `TypeError`s).
+
+### 11.5 Testing
+
+- Unit tests per construct: PScript in, expected JS text out (`tests/unit/transpiler/`).
+- **Differential test**: every `tests/programs` program without `@pscript-only` that `psc` supports is transpiled,
+  run in a fresh Node context, and must print the same lines and fail with the same error kind as the original in
+  Node (`tests/transpiler.test.ts`). Programs using constructs of a later milestone are skipped until it lands.
+- `@pscript-only` programs whose `.err` is a compile-time error must fail `transpile()` with the same message.
+- Modules (T3): the `tests/modules` fixtures are transpiled to a temporary directory and imported by Node.
+
+### 11.6 Milestones
+
+| # | Milestone | Read | Done when |
+|---|---|---|---|
+| T1 | **Emitter core**: `transpile()` with P1 checks, statements, expressions with correct parenthesisation, functions, arrows, objects, arrays, templates, P4 semantics, P6 globals; scripts only (classes, interfaces and modules rejected with "not supported by psc yet") | §11, §5.3 | every supported Node-compatible program passes the differential test |
+| T2 | **Classes and interfaces**: P7, P8; implicit-member resolution reusing `class-info.ts` / `implicit-names.ts`; accessors, statics, `super` | §11, §4.5 | class, accessor, access, overriding, interface and implicit-member programs pass |
+| T3 | **Modules and CLI**: P9, `compileModule()` checks, `bin/psc.js` (files and directories, `-o`), package `bin` entry | §11, §4.7, H5 in PROGRESS | `tests/modules` fixtures run under Node after transpiling |
+| T4 | **Whole-program checks**: P10 across the files of one `psc` run | §11, §4.5.6, §4.5.7, §4.4.13 | cross-module `override`/`final`/`implements`/arity/missing-export errors at compile time |
+| T5 | **Source maps**: P11, `--source-map` / inline maps | §11 | Node stack traces of transpiled programs point at `.pscript` lines |
