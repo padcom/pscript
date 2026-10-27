@@ -34,6 +34,7 @@ import type {
   Property,
   PropertyDefinition,
   ReturnStatement,
+  SourceLocation,
   Statement,
   Super,
   TemplateLiteral,
@@ -51,6 +52,7 @@ import { declaringClass, inheritedHalves, privateKey, staticPrefix, uniquePrivat
 import { Helpers } from './helpers'
 import { exportList, importClause, isModuleDeclaration, sourceText } from './modules'
 import { Precedence, binaryPrecedence, precedenceOf, startsAmbiguously } from './precedence'
+import { MARK_START, marker, resolveMarks } from './source-map'
 
 /** Names JavaScript's strict mode does not allow as bindings. */
 const RESTRICTED_NAMES = new Set(['arguments', 'eval'])
@@ -59,6 +61,9 @@ const RESTRICTED_NAMES = new Set(['arguments', 'eval'])
 const OPERATORS: Partial<Record<string, string>> = { '==': '===', '!=': '!==' }
 
 const INDENT = '  '
+
+/** Expressions that start a mapping of the source map: where runtime errors and stack frames point. */
+const MAPPED_EXPRESSIONS = new Set<Expression['type']>(['CallExpression', 'NewExpression', 'MemberExpression'])
 
 /**
  * Names declared in a block or function, to tell local names from globals; class declarations carry what the
@@ -269,6 +274,8 @@ export class Emitter {
   private readonly classNodes: Map<ClassInfo, ClassNode>
   /** the local names of the imports */
   private readonly importNames = new Set<string>()
+  /** the locations of the marked nodes, while printing with a source map (P11) */
+  private locations: SourceLocation[] | null = null
 
   constructor(
     private readonly program: Program,
@@ -297,6 +304,31 @@ export class Emitter {
     const lines = [...statements.slice(0, split), ...this.helpers.code(), ...statements.slice(split)]
 
     return `${lines.filter(text => text !== '').join('\n')}\n`
+  }
+
+  /**
+   * Prints the program with the mappings of a source map (P11).
+   *
+   * @returns the JavaScript code and its mappings
+   */
+  emitMapped(): { code: string, mappings: string } {
+    // a source containing the marker characters (noncharacters) gets no mappings
+    if (this.source?.includes(MARK_START)) return { code: this.emit(), mappings: '' }
+
+    this.locations = []
+
+    try {
+      return resolveMarks(this.emit(), this.locations)
+    } finally {
+      this.locations = null
+    }
+  }
+
+  // Marks where the code of a node starts, for the source map.
+  private mark(node: Node, text: string): string {
+    if (this.locations === null || text === '') return text
+
+    return marker(this.locations.push(node.loc) - 1) + text
   }
 
   /**
@@ -483,7 +515,7 @@ export class Emitter {
   // Statements
 
   statement(node: Statement): string {
-    return (STATEMENTS[node.type] as Printer<Statement>)(this, node)
+    return this.mark(node, (STATEMENTS[node.type] as Printer<Statement>)(this, node))
   }
 
   /**
@@ -643,7 +675,8 @@ export class Emitter {
    * @returns the expression text
    */
   expression(node: Expression, min: Precedence = Precedence.Lowest): string {
-    const text = (EXPRESSIONS[node.type] as Printer<Expression>)(this, node)
+    const printed = (EXPRESSIONS[node.type] as Printer<Expression>)(this, node)
+    const text = MAPPED_EXPRESSIONS.has(node.type) ? this.mark(node, printed) : printed
 
     return precedenceOf(node) < min ? `(${text})` : text
   }
@@ -911,7 +944,7 @@ export class Emitter {
     this.depth++
 
     try {
-      const members = node.body.body.map(member => this.classMember(member, record, node.superClass !== null))
+      const members = node.body.body.map(member => this.mark(member, this.classMember(member, record, node.superClass !== null)))
       const lines = [...this.implementsBlock(implemented), ...members, ...inheritedHalves(node, info, this.classNodes)]
 
       const inner = lines.map(text => INDENT.repeat(this.depth) + text)
@@ -986,7 +1019,7 @@ export class Emitter {
   // Modules (P9)
 
   private moduleDeclaration(node: ModuleDeclaration): string {
-    return node.type === 'ImportDeclaration' ? this.importText(node) : this.exportText(node)
+    return this.mark(node, node.type === 'ImportDeclaration' ? this.importText(node) : this.exportText(node))
   }
 
   private importText(node: ImportDeclaration): string {

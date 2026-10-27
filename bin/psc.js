@@ -3,7 +3,8 @@
 // PScript files that compiled files import are compiled too; all of them are checked together as one program.
 // Node-only, so it lives outside `src/`.
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { Buffer } from 'node:buffer'
 import process from 'node:process'
 import { PScriptError, parse, transpileModules } from '../dist/index.js'
 import { findFile, isDirectory, isPScriptFile, isPath } from './files.js'
@@ -20,6 +21,8 @@ imported class are errors. Nothing is written when there is an error.
 Options:
   -o, --out-dir <dir>   write the .js files under <dir>, laid out as the sources are below their common
                         directory (default: next to each source file)
+  --source-map          write a source map next to each .js file (<file>.js.map)
+  --inline-source-map   embed the source map in each .js file
   -h, --help            show this help
   -v, --version         show the version`
 
@@ -31,6 +34,8 @@ const FLAGS = {
   '--help': options => { options.command = 'help' },
   '-v': options => { options.command = 'version' },
   '--version': options => { options.command = 'version' },
+  '--source-map': options => { options.sourceMap = 'file' },
+  '--inline-source-map': options => { options.sourceMap = 'inline' },
 }
 
 const VALUE_FLAGS = {
@@ -61,7 +66,7 @@ function parseArg(args, i, options) {
 }
 
 function parseArgs(args) {
-  const options = { inputs: [], outDir: null, command: 'compile' }
+  const options = { inputs: [], outDir: null, sourceMap: null, command: 'compile' }
 
   for (let i = 0; i < args.length; i++) i = parseArg(args, i, options)
 
@@ -147,31 +152,53 @@ function outputPath(file, root, outDir) {
 }
 
 // All files are compiled together, so imports are checked against the imported modules (P10).
-function compile(sources) {
+function compile(sources, sourceMap) {
   const files = [...sources.keys()]
   const cwd = process.cwd()
   const base = files.every(file => isInside(file, cwd)) ? cwd : commonDirectory(files)
-  const results = transpileModules(Object.fromEntries(files.map(file => [moduleId(file, base), sources.get(file)])))
+  const modules = Object.fromEntries(files.map(file => [moduleId(file, base), sources.get(file)]))
+  const results = transpileModules(modules, { sourceMap: sourceMap !== null })
 
-  return files.map(file => ({ file, code: results[moduleId(file, base)].code }))
+  return files.map(file => ({ file, ...results[moduleId(file, base)] }))
 }
 
-function write(results, root, outDir) {
-  for (const { file, code } of results) {
-    const path = outputPath(file, root, outDir)
+const MAP_URL = '//# sourceMappingURL='
+
+const INLINE_MAP = 'data:application/json;charset=utf-8;base64,'
+
+// The map points from the written file to the source file (P11).
+function relocatedMap(map, file, path) {
+  return { ...map, file: basename(path), sources: [relative(dirname(path), file).split(sep).join('/')] }
+}
+
+// The code, with a separate or inline source map.
+function withSourceMap({ file, code, map }, path, sourceMap) {
+  if (sourceMap === null) return code
+
+  const json = JSON.stringify(relocatedMap(map, file, path))
+  if (sourceMap === 'inline') return `${code}${MAP_URL}${INLINE_MAP}${Buffer.from(json).toString('base64')}\n`
+
+  writeFileSync(`${path}.map`, json)
+
+  return `${code}${MAP_URL}${basename(path)}.map\n`
+}
+
+function write(results, root, { outDir, sourceMap }) {
+  for (const result of results) {
+    const path = outputPath(result.file, root, outDir)
 
     mkdirSync(dirname(path), { recursive: true })
-    writeFileSync(path, code)
+    writeFileSync(path, withSourceMap(result, path, sourceMap))
   }
 }
 
-function run({ inputs, outDir }) {
-  if (inputs.length === 0) throw new Error(`no input files\n\n${USAGE}`)
+function run(options) {
+  if (options.inputs.length === 0) throw new Error(`no input files\n\n${USAGE}`)
 
-  const sources = collect(inputs)
+  const sources = collect(options.inputs)
   if (sources.size === 0) throw new Error('no PScript files found')
 
-  write(compile(sources), commonDirectory([...sources.keys()]), outDir)
+  write(compile(sources, options.sourceMap), commonDirectory([...sources.keys()]), options)
 }
 
 const COMMANDS = {

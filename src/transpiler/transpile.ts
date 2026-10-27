@@ -6,12 +6,21 @@ import { parse } from '@/parser/parse'
 import { ModuleGraph } from './module-graph'
 import { hasModuleDeclarations } from './modules'
 import { transpileProgram, transpileScript } from './program'
+import type { SourceMap } from './source-map'
+
+/**
+ * Options of `transpileModules()`.
+ */
+export interface TranspileModulesOptions {
+  /** produce a source map (P11): `true` returns it as `map`, `'inline'` also appends it to the code as a comment */
+  sourceMap?: boolean | 'inline'
+}
 
 /**
  * Options of `transpile()`.
  */
-export interface TranspileOptions {
-  /** file name used in error messages; a module's id */
+export interface TranspileOptions extends TranspileModulesOptions {
+  /** file name used in error messages and source maps; a module's id */
   fileName?: string
   /** compile as a script or as an ES module (default: a module when the source has `import`/`export` declarations) */
   goal?: 'script' | 'module'
@@ -23,6 +32,8 @@ export interface TranspileOptions {
 export interface TranspileResult {
   /** the JavaScript code */
   code: string
+  /** the source map, when asked for; it names the source relative to the code, taken to be next to it (`lib/a.js`) */
+  map?: SourceMap
 }
 
 // The id of a module without a file name, as in `Interpreter.runModule()`.
@@ -62,19 +73,19 @@ export function checkedProgram(source: string, options: TranspileOptions = {}): 
  * accepts is one the interpreter would compile.
  *
  * @param source source text
- * @param options file name and goal
- * @returns the JavaScript code
+ * @param options file name, goal and source maps
+ * @returns the JavaScript code (and source map)
  * @throws {PScriptSyntaxError} on syntax errors, failed checks and constructs `psc` does not support yet
  */
 export function transpile(source: string, options: TranspileOptions = {}): TranspileResult {
   const { fileName } = options
   const program = checkedProgram(source, options)
 
-  if (program.sourceType === 'script') return transpileScript({ id: fileName ?? '', source, program }, fileName)
+  if (program.sourceType === 'script') return transpileScript({ id: fileName ?? '<script>', source, program }, options)
 
   const id = moduleId(fileName)
 
-  return transpileProgram(new ModuleGraph([{ id, source, program }])).get(id)!
+  return transpileProgram(new ModuleGraph([{ id, source, program }]), options).get(id)!
 }
 
 /**
@@ -85,12 +96,16 @@ export function transpile(source: string, options: TranspileOptions = {}): Trans
  * `.psc`; other specifiers are modules outside the program.
  *
  * @param sources source text by module id (e.g. `main.pscript`, `lib/util.psc`)
+ * @param options source maps
  * @returns the JavaScript code by module id
  * @throws {PScriptSyntaxError} on the first error
  */
-export function transpileModules(sources: Record<string, string>): Record<string, TranspileResult> {
+export function transpileModules(
+  sources: Record<string, string>,
+  options: TranspileModulesOptions = {},
+): Record<string, TranspileResult> {
   const units = Object.entries(sources).map(([id, source]) => ({ id, source, program: checkedProgram(source, { fileName: id }) }))
-  const results = transpileProgram(new ModuleGraph(units))
+  const results = transpileProgram(new ModuleGraph(units), options)
 
   return Object.fromEntries(units.map(({ id }) => [id, results.get(id)!]))
 }

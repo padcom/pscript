@@ -51,9 +51,11 @@ then `.pscript`, then `.psc`. Errors go to stderr and set the exit code to 1.
 ```sh
 npx -p @padcom/pscript psc main.pscript       # writes main.js, and a .js for every PScript file main imports
 npx -p @padcom/pscript psc -o dist src/       # every .pscript/.psc file under src/, laid out the same under dist/
+npx -p @padcom/pscript psc --source-map src/  # also write main.js.map …; --inline-source-map embeds them
 ```
 
-Nothing is written when a file has an error.
+All files of a run are checked together as one program. Nothing is written when there is an error. With source maps,
+`node --enable-source-maps main.js` reports errors at the `.pscript` lines.
 
 ## Installing and building
 
@@ -110,8 +112,9 @@ is defined (`override`, `final`, access, `implements`). Classes become JavaScrip
 `'./m.js'`). A source with `import`/`export` declarations is a module (or pass `{ goal: 'module' }`).
 `transpileModules({ 'main.pscript': …, 'lib/util.psc': … })` compiles the files of a program together (as `psc`
 does), so imports of missing exports, the arity of imported functions, and `override`/`final`/`implements` across
-modules are compile-time errors too. The output has JavaScript runtime semantics; see `docs/PLAN.md` §11 for the
-design and the list of differences.
+modules are compile-time errors too. Both take `{ sourceMap: true }` (the result's `map`) or `{ sourceMap: 'inline' }`
+(also appended to the code). The output has JavaScript runtime semantics; see `docs/PLAN.md` §11 for the design and
+the list of differences.
 
 ```js
 import { transpile } from '@padcom/pscript'

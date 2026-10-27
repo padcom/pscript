@@ -3092,7 +3092,7 @@ print(new P(), P, print, () => 1)    // → P(x = 1) [class P] [Function: print]
 
 ## 11. `psc`: the PScript-to-JavaScript transpiler
 
-> Status: in progress (2026-10-27): T1–T4 done. Milestones T1–T5 below, tracked in `docs/PROGRESS.md`.
+> Status: done (2026-10-27): T1–T5 below, tracked in `docs/PROGRESS.md`.
 
 ### 11.1 Goal and non-goals
 

@@ -38,6 +38,32 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | T2 | psc: classes and interfaces | done (2026-10-27) |
 | T3 | psc: modules and CLI | done (2026-10-27) |
 | T4 | psc: whole-program checks | done (2026-10-27) |
+| T5 | psc: source maps | done (2026-10-27) — psc complete |
+
+## T5 — psc: source maps
+
+`transpile()` / `transpileModules()` take `sourceMap: true | 'inline'` (`docs/PLAN.md` §11, P11); the result gets
+`map` (a version 3 `SourceMap`, exported type: `file` and `sources` are base names, i.e. relative to a `.js` written
+next to its source; `sourcesContent` holds the source), and `'inline'` also appends
+`//# sourceMappingURL=data:application/json;charset=utf-8;base64,…`.
+
+- `src/transpiler/source-map.ts`: Base64 VLQ encoder, `resolveMarks()`, `inlineSourceMapComment()` (UTF-8 Base64
+  without `Buffer`, so the library stays browser-safe).
+- The emitter's strings carry no positions, so `Emitter.emitMapped()` turns on **markers**: `mark(node, text)`
+  prefixes the text of statements, module declarations, class members and call / `new` / member expressions with
+  `U+FDD0 index U+FDD1` (Unicode noncharacters; `index` into the list of marked `loc`s). `resolveMarks()` strips them
+  in one pass, tracking the generated line/column, and encodes one segment per marker (nested nodes starting at the
+  same place keep the outer one). The emitter's few text inspections (`startsWith('(')`, the `/^[+-]/` unary check,
+  shorthand properties, the `$this` alias insertion) were checked to be unaffected by a leading marker. A source
+  that itself contains U+FDD0 gets an empty mapping. Columns are 0-based UTF-16 units; PScript `loc`s are 1-based.
+- `bin/psc.js`: `--source-map` writes `x.js.map` (with `file`/`sources` relocated relative to the written file) and
+  appends `//# sourceMappingURL=x.js.map`; `--inline-source-map` embeds the relocated map. `npm run build` checks
+  that a map is written.
+
+Tests: `tests/unit/transpiler/source-map.test.ts` (VLQ values; mappings decoded with Node's `module.SourceMap`;
+inline maps; every program of the corpus emits identical code with and without markers and only maps into the
+source); `tests/transpiler-source-maps.test.ts` runs transpiled scripts and modules (nested directories, classes)
+with `node --enable-source-maps` and checks the stack frames are `file.pscript:line:column` of the throw and calls.
 
 ## T4 — psc: whole-program checks
 

@@ -5,7 +5,15 @@ export { compile, compileModule, type CompileOptions } from './compiler/compiler
 
 export { disassemble } from './compiler/disassembler'
 
-export { transpile, transpileModules, type TranspileOptions, type TranspileResult } from './transpiler/transpile'
+export {
+  transpile,
+  transpileModules,
+  type TranspileModulesOptions,
+  type TranspileOptions,
+  type TranspileResult,
+} from './transpiler/transpile'
+
+export type { SourceMap } from './transpiler/source-map'
 
 export { Interpreter, run, type InterpreterOptions, type ModuleRunOptions, type RunOptions } from './interpreter'
 

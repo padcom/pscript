@@ -47,7 +47,7 @@ function cliRuns() {
   return output === '7\n' ? [] : ['bin/pscript.js does not run scripts']
 }
 
-// psc follows the import of `b` and writes both modules next to their sources.
+// psc follows the import of `b` and writes both modules (and their source maps) next to their sources.
 function pscCompiles() {
   const dir = mkdtempSync(join(tmpdir(), 'psc-check-'))
 
@@ -55,10 +55,11 @@ function pscCompiles() {
     writeFileSync(join(dir, 'a.pscript'), "import { b } from './b'\nprint(b * 2)\n")
     writeFileSync(join(dir, 'b.psc'), 'export const b = 21\n')
     writeFileSync(join(dir, 'package.json'), '{ "type": "module" }\n')
-    execFileSync(process.execPath, ['bin/psc.js', join(dir, 'a.pscript')])
+    execFileSync(process.execPath, ['bin/psc.js', '--source-map', join(dir, 'a.pscript')])
     const output = execFileSync(process.execPath, [join(dir, 'a.js')], { encoding: 'utf8' })
+    const problems = output === '42\n' ? [] : ['bin/psc.js does not compile modules']
 
-    return output === '42\n' ? [] : ['bin/psc.js does not compile modules']
+    return existsSync(join(dir, 'b.js.map')) ? problems : [...problems, 'bin/psc.js does not write source maps']
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
