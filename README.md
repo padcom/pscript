@@ -92,6 +92,21 @@ interpreter.defineModule('host:clock', { now: () => Date.now() })
 - Errors are `PScriptSyntaxError` (at compile time) or `PScriptRuntimeError` (uncaught script exceptions, with the
   thrown value, the script stack and a source excerpt).
 
+### Transpiling to JavaScript (experimental)
+
+`transpile(source)` compiles a script to plain JavaScript with the interpreter's compile-time checks (arity, constant
+bindings, …). The output has JavaScript runtime semantics; see `docs/PLAN.md` §11 for the plan (classes, modules and
+a `psc` command line are next) and the list of differences.
+
+```js
+import { transpile } from '@padcom/pscript'
+
+transpile('let x\nprint(x == null)').code
+// → const print = (...args) => console.log(...args);
+//   let x = null;
+//   print(x === null);
+```
+
 ### Host values
 
 Values cross the boundary by reference: host objects and functions are live proxies inside scripts, and script

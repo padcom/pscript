@@ -34,6 +34,39 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M25 | Docs and benchmark | done (2026-10-27) — v1 complete |
 | H3 | Performance | second pass (2026-10-27) |
 | H5 | CLI/REPL | done (2026-10-27) |
+| T1 | psc: emitter core | done (2026-10-27) |
+
+## T1 — psc: emitter core
+
+`transpile(source, { fileName })` (exported from `src/index.ts`) compiles a script to JavaScript (`docs/PLAN.md` §11):
+
+- `src/transpiler/transpile.ts`: runs `compile()` on the source text first (P1; the bytecode is discarded), then the
+  emitter on a fresh parse. Parsing twice keeps the code excerpts in `compile()`'s errors without changing its API.
+- `src/transpiler/emitter.ts`: table-driven printer (like the compiler's `EXPRESSIONS`/`STATEMENTS`). Every printer
+  returns a string; the first line of a statement is not indented and its other lines carry absolute indentation, so
+  multi-line template literals are never re-indented. Branch and loop bodies always get braces. A light `Names`
+  scope chain tells locals from globals (for `print` and `typeof`); it is where T2's implicit-member resolution
+  plugs in.
+- `src/transpiler/precedence.ts`: JS precedence levels, `leftmost()` / `startsAmbiguously()` (statements and arrow
+  bodies starting with `{`, `function`, `class` are parenthesised). Special cases: left operand of `**` (D15),
+  `??` mixed with `&&`/`||`, `- -x` → `-(-x)`, `new (f())()`, `(1).x`, `in` inside a `for` initialiser.
+- `src/transpiler/helpers.ts`: `$typeof` (D39) and `print` (P6), emitted once at the top when used; helper names
+  avoid every identifier of the program (`$typeof2` …). `typeof` of an undeclared global stays non-throwing.
+- `let x` → `let x = null`, bare `return` → `return null` (D37). `arguments`/`eval` as declared names are rejected.
+- Classes, interfaces, `super` and modules throw "… are not supported by psc yet" (T2, T3).
+
+Tests: `tests/unit/transpiler/emitter.test.ts` (JS text per construct) and `tests/transpiler.test.ts`: 78 Node-
+compatible programs transpile and behave like the original in Node; 4 are skipped until T2 (they use classes);
+`stdlib/basics` is a known difference (`globalThis.print`, listed in `KNOWN_DIFFERENCES`). Every program whose
+`.err` is a compile-time error fails `transpile()` with the same message.
+
+Notes for T2:
+
+- Class members need the `Names` chain extended with a class record; reuse `classInfoOf`/`memberCandidate` from
+  `src/compiler/` (the compiler has already rejected ambiguous names, so the emitter only has to decide
+  member vs. outer name).
+- `ClassExpression` and `Super` currently reach `unsupported()` from `expression()`, `call()` and `member()`.
+- A constructor's bare `return` must stay `return;` (a derived constructor returning `null` is a TypeError in JS).
 
 ## H5 — CLI/REPL
 

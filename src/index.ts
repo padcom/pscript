@@ -5,6 +5,8 @@ export { compile, compileModule, type CompileOptions } from './compiler/compiler
 
 export { disassemble } from './compiler/disassembler'
 
+export { transpile, type TranspileOptions, type TranspileResult } from './transpiler/transpile'
+
 export { Interpreter, run, type InterpreterOptions, type ModuleRunOptions, type RunOptions } from './interpreter'
 
 export { markAsClass } from './runtime/interop'
