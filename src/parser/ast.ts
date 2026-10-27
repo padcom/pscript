@@ -90,7 +90,7 @@ export interface ExportNamedDeclaration extends NodeBase {
   /** node type */
   type: 'ExportNamedDeclaration'
   /** exported declaration, or `null` for a specifier list */
-  declaration: VariableDeclaration | FunctionDeclaration | ClassDeclaration | null
+  declaration: VariableDeclaration | FunctionDeclaration | ClassDeclaration | InterfaceDeclaration | null
   /** exported names; empty when `declaration` is set */
   specifiers: ExportSpecifier[]
   /** non-null for re-exports */

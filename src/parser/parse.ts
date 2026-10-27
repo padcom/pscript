@@ -10,6 +10,7 @@ import type {
   ForOfStatement,
   Identifier,
   InterfaceMember,
+  Literal,
   MemberExpression,
   Pattern,
   Program,
@@ -20,6 +21,7 @@ import type {
 import { builders, sourceLoc, type ForHeader, type FunctionHead, type FunctionType, type JisonLoc } from './ast-builders'
 import { EscapeError, checkNumber } from './literals'
 import { classMember, type Modifier, type RawMember } from './class-members'
+import { checkModuleDeclarations, moduleBuilders } from './module-declarations'
 import { interfaceDeclaration, interfaceMember, type RawInterfaceMember } from './interface-members'
 import { TemplateBraces, templateElement } from './templates'
 import { createTokenFilter, type TokenState } from './token-filter'
@@ -107,11 +109,10 @@ const LINE_HELPERS = {
 
 function lexerHelpers(errors: SyntaxErrorFactory, tokens: TokenState) {
   return {
-    identToken(text: string, loc: JisonLoc): string {
+    identToken(text: string): string {
       if (KEYWORD_SET.has(text)) return text.toUpperCase()
-      if (FUTURE_RESERVED_SET.has(text)) throw errors.atToken(`Unexpected reserved word '${text}'`, loc)
 
-      return 'IDENT'
+      return FUTURE_RESERVED_SET.has(text) ? 'RESERVED' : 'IDENT' // rejected by the token filter
     },
     numberToken(text: string, loc: JisonLoc, rest: string): string {
       const problem = checkNumber(text, rest)
@@ -286,6 +287,15 @@ function templateHelpers(errors: SyntaxErrorFactory) {
 
 function createYy(source: string, options: ParseOptions, tokens: TokenState) {
   const errors = new SyntaxErrorFactory(source, options.fileName)
+  const stringLiteral = (raw: string, loc: JisonLoc): Literal => {
+    try {
+      return builders.stringLiteral(raw, loc)
+    } catch (e) {
+      if (e instanceof EscapeError) throw errors.atToken(e.message, loc, e.offset)
+      throw e
+    }
+  }
+  const modules = moduleBuilders(errors, stringLiteral)
 
   return {
     ...templateHelpers(errors),
@@ -296,17 +306,15 @@ function createYy(source: string, options: ParseOptions, tokens: TokenState) {
     ...controlFlowBuilders(errors),
     ...objectBuilders(errors),
     ...classBuilders(errors),
+    ...modules,
     program(body: Statement[]): Program {
-      return { type: 'Program', sourceType: options.goal ?? 'script', body, loc: sourceLoc(source) }
+      const program: Program = { type: 'Program', sourceType: options.goal ?? 'script', body, loc: sourceLoc(source) }
+
+      checkModuleDeclarations(errors, program, modules.declarations)
+
+      return program
     },
-    stringLiteral(raw: string, loc: JisonLoc) {
-      try {
-        return builders.stringLiteral(raw, loc)
-      } catch (e) {
-        if (e instanceof EscapeError) throw errors.atToken(e.message, loc, e.offset)
-        throw e
-      }
-    },
+    stringLiteral,
   }
 }
 

@@ -60,9 +60,7 @@ describe('compiler inputs', () => {
 
     const [{ loc }] = program.body
 
-    const source = { type: 'Literal', value: 'm', raw: "'m'", loc } as const
-
-    program.body[0] = { type: 'ImportDeclaration', specifiers: [], source, loc } as unknown as Statement
-    expect(() => compile(program)).toThrow('ImportDeclaration is not supported yet')
+    program.body[0] = { type: 'WithStatement', loc } as unknown as Statement
+    expect(() => compile(program)).toThrow('WithStatement is not supported yet')
   })
 })

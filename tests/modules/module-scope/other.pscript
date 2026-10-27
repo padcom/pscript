@@ -1,0 +1,2 @@
+let secret = 42
+export function visible() { return secret }

@@ -1,0 +1,8 @@
+import { PI, area as circleArea, Vector, counter, count, next } from './math'
+print(PI, circleArea(1))
+print(new Vector(1, 2).toText())
+print(counter, count)
+next()
+next()
+print(counter, count)     // live bindings
+print(typeof next, typeof Vector)

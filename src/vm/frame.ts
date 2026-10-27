@@ -1,5 +1,6 @@
 // Call frames of the VM (§5.6.1).
 import type { FunctionProto } from '@/compiler/function-proto'
+import type { ModuleRecord } from '@/modules/module-record'
 import type { Class, Closure, Environment, ImplicitReceiver, Object as ScriptObject, Value } from '@/runtime/values'
 
 /**
@@ -40,6 +41,8 @@ export interface Frame {
   homeObject: ScriptObject | null
   /** frame of the enclosing method, whose `this` implicit member accesses use (null: this frame, §4.5.8) */
   implicitFrame: ImplicitReceiver | null
+  /** module the code belongs to (imports, error locations; §5.6.8) */
+  module: ModuleRecord | null
   /** active exception handlers */
   handlers: Handler[]
   /** called through `new` */

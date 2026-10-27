@@ -1,5 +1,6 @@
 // The bytecode interpreter (§5.6).
 import type { ClassTemplate, CompiledScript, FunctionProto, InterfaceTemplate } from '@/compiler/function-proto'
+import type { CompiledModule, ModuleRecord } from '@/modules/module-record'
 import { GlobalFlags, Op } from '@/compiler/opcodes'
 import { PScriptRuntimeError, formatExcerpt, type ScriptStackFrame } from '@/errors'
 import { addIn, toStringIn } from '@/runtime/conversions'
@@ -35,7 +36,6 @@ import {
   UNINITIALIZED,
   type AccessContext,
   type ImplicitReceiver,
-  type NativeClassImpl,
   type Realm,
   type Slot,
   type Value,
@@ -133,6 +133,20 @@ function contextOf({ thisValue }: ImplicitReceiver): 'static' | 'instance' {
   return thisValue instanceof ClassValue ? 'static' : 'instance'
 }
 
+// An import is a live view of the exporter's binding, with the TDZ check (§4.7.2).
+function readImport(frame: Frame, index: number): Value {
+  const record = frame.module as ModuleRecord
+  const cell = record.importCells[index]
+  const value = cell.env.slots[cell.slot]
+
+  if (value !== UNINITIALIZED) return value
+
+  throw referenceError(`Cannot access '${record.compiled?.imports[index].localName}' before initialization`)
+}
+
+/** A built-in class with its native constructor. */
+type NativeClass = ClassValue & Required<Pick<ClassValue, 'native'>>
+
 function nullish(value: Value): boolean {
   return value === null || value === undefined
 }
@@ -144,6 +158,8 @@ export class VM implements AccessContext {
   /** instructions executed by the current `execute()` (counted only when maxSteps is finite) */
   steps = 0
   private script: CompiledScript | null = null
+  /** source text of the modules evaluated so far, by id (error excerpts) */
+  private moduleSources = new Map<string, string>()
 
   constructor(readonly realm: Realm, readonly options: VMOptions) {
     this.globals = new Globals(realm)
@@ -194,6 +210,7 @@ export class VM implements AccessContext {
     frame.homeClass = closure.homeClass
     frame.homeObject = closure.homeObject
     frame.implicitFrame = closure.implicitFrame
+    frame.module = closure.module
     this.frames.push(frame)
 
     return frame
@@ -232,10 +249,45 @@ export class VM implements AccessContext {
       homeClass: null,
       homeObject: null,
       implicitFrame: null,
+      module: null,
       handlers: [],
       isConstruct: false,
       newTarget: null,
     }
+  }
+
+  /**
+   * Evaluates a linked module: runs its body in the module's top environment, with `this` null (§5.6.8).
+   *
+   * @param record the module (its `env` and imports are set up by the linker)
+   */
+  evaluateModule(record: ModuleRecord) {
+    const { main, source } = record.compiled as CompiledModule
+    const frame = this.newFrame(main, record.env as Environment, null)
+
+    if (source !== undefined) this.moduleSources.set(record.id, source)
+    frame.module = record
+    this.frames.push(frame)
+
+    try {
+      this.run(1)
+    } catch (e) {
+      throw this.uncaught(e)
+    } finally {
+      this.frames.length = 0
+      this.stack.length = 0
+    }
+  }
+
+  /**
+   * Creates a function of a module that is initialised when the module is linked (hoisted, §4.7.2).
+   *
+   * @param record the module
+   * @param proto the function's proto
+   * @returns the closure
+   */
+  moduleFunction(record: ModuleRecord, proto: FunctionProto): Closure {
+    return new Closure(this.realm.FunctionPrototype, proto, record.env as Environment, record)
   }
 
   /**
@@ -271,14 +323,14 @@ export class VM implements AccessContext {
 
   private uncaughtThrow({ value, frames }: ScriptThrow): PScriptRuntimeError {
     const [name, reason] = describeThrown(value)
-    const { line, column } = frames[0] ?? { line: 0, column: 0 }
+    const { line, column, fileName = this.script?.fileName } = frames[0] ?? { line: 0, column: 0 }
 
     return new PScriptRuntimeError(name, reason, toHost(value), {
       scriptStack: frames,
-      fileName: this.script?.fileName,
+      fileName,
       line,
       column,
-      excerpt: this.excerpt(line, column),
+      excerpt: this.excerpt(frames[0], line, column),
     })
   }
 
@@ -290,8 +342,9 @@ export class VM implements AccessContext {
   captureStack(): ScriptStackFrame[] {
     return this.frames.map(frame => {
       const [line, column] = location(frame.proto, frame.opStart)
+      const where = { functionName: functionName(frame.proto), line, column }
 
-      return { functionName: functionName(frame.proto), line, column }
+      return frame.module ? { ...where, fileName: frame.module.id } : where
     }).reverse()
   }
 
@@ -304,11 +357,7 @@ export class VM implements AccessContext {
   }
 
   private errorObject(name: string, message: string): Value {
-    const cls = (this.realm.globals.get(name) ?? this.realm.globals.get('Error'))?.value as ClassValue & { /**
-                                                                                                            *
-                                                                                                            */
-      native: NativeClassImpl
-    }
+    const cls = (this.realm.globals.get(name) ?? this.realm.globals.get('Error'))?.value as NativeClass
 
     return cls.native.construct(this, cls, [message])
   }
@@ -346,8 +395,12 @@ export class VM implements AccessContext {
     }
   }
 
-  private excerpt(line: number, column: number): string | undefined {
-    const source = this.script?.source
+  private sourceOf(moduleId: string | undefined): string | undefined {
+    return moduleId === undefined ? this.script?.source : this.moduleSources.get(moduleId)
+  }
+
+  private excerpt(frame: ScriptStackFrame | undefined, line: number, column: number): string | undefined {
+    const source = this.sourceOf(frame?.fileName)
 
     return source === undefined ? undefined : formatExcerpt(source, line, column)
   }
@@ -355,7 +408,7 @@ export class VM implements AccessContext {
   // Arrows capture `this` (when they read it, §4.4.5) and the home object (for `super`) lexically; every nested
   // function inherits the home class, which decides private and protected access (§4.5.2).
   private closure(proto: FunctionProto, frame: Frame): Closure {
-    const closure = new Closure(this.realm.FunctionPrototype, proto, frame.env, null)
+    const closure = new Closure(this.realm.FunctionPrototype, proto, frame.env, frame.module)
 
     closure.homeClass = frame.homeClass
     closure.implicitFrame = frame.implicitFrame ?? frame
@@ -463,6 +516,8 @@ export class VM implements AccessContext {
   // The recorded fallback of an implicit name: an enclosing binding (depth, slot) or a script binding / global.
   private loadOuter(frame: Frame, { index, a, b }: ImplicitOperands): Value {
     const { name, outer } = (frame.homeClass as ClassValue).template.implicitNames[index]
+
+    if (outer === 'import') return readImport(frame, a)
 
     return outer === 'lexical' ? initialized(lookupEnv(frame.env, a).slots[b], frame) : this.globals.load(name)
   }
@@ -744,6 +799,7 @@ export class VM implements AccessContext {
         case Op.DEFINE_PROP:
           this.defineProperty(stack.pop(), stack[stack.length - 1] as ScriptObject, constants[code[ip++]] as string)
           break
+        case Op.LOAD_IMPORT: stack.push(readImport(frame, code[ip++])); break
         case Op.LOAD_IMPLICIT: {
           const operands = { index: code[ip++], a: code[ip++], b: code[ip++] }
 
@@ -814,7 +870,7 @@ export class VM implements AccessContext {
           const template = constants[code[ip++]] as ClassTemplate
           const interfaces = stack.splice(stack.length - template.interfaceCount, template.interfaceCount)
           const superClass = template.hasSuper ? stack.pop() : undefined
-          const site = { env: frame.env, homeClass: frame.homeClass, constants }
+          const site = { env: frame.env, homeClass: frame.homeClass, constants, module: frame.module }
 
           frame.ip = ip
           stack.push(defineClass(this, template, { superClass, interfaces }, site))

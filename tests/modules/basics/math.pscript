@@ -1,0 +1,11 @@
+export const PI = 3.14159
+export function area(r) { return PI * r * r }
+export class Vector {
+  x
+  y
+  constructor(x, y) { this.x = x; this.y = y }
+  toText() { return '(' + this.x + ', ' + this.y + ')' }
+}
+let counter = 0
+export function next() { return ++counter }
+export { counter, counter as count }

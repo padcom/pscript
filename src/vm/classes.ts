@@ -7,6 +7,7 @@ import type {
   ClassTemplate,
   FunctionProto,
 } from '@/compiler/function-proto'
+import type { ModuleRecord } from '@/modules/module-record'
 import { kindOf } from '@/runtime/operators'
 import { resolveImplicitNames } from './implicit'
 import { checkInterfaces, implementInterfaces } from './interfaces'
@@ -48,6 +49,8 @@ export interface DefinitionSite {
   homeClass: Class | null
   /** constants of the running proto (method protos are referenced by index) */
   constants: unknown[]
+  /** module of the running code (methods read its imports) */
+  module: ModuleRecord | null
 }
 
 /**
@@ -133,7 +136,7 @@ class ClassBuilder {
   }
 
   closure(proto: FunctionProto, isStatic: boolean): Closure {
-    const closure = new Closure(this.host.realm.FunctionPrototype, proto, this.site.env, null)
+    const closure = new Closure(this.host.realm.FunctionPrototype, proto, this.site.env, this.site.module)
 
     closure.homeClass = this.cls
     closure.homeObject = isStatic ? this.cls : this.cls.prototype

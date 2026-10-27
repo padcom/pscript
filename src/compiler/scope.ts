@@ -1,8 +1,11 @@
 // Compile-time scopes and static name resolution (§5.5, §4.4.4).
 import type { Signature } from './signature'
 
-/** `function`: a function declaration or the name of a named function expression (constant, D38). */
-export type BindingKind = 'let' | 'const' | 'function'
+/**
+ * `function`: a function declaration or the name of a named function expression (constant, D38);
+ * `import`: an imported binding of a module (read-only, read through `LOAD_IMPORT`, §4.7.2).
+ */
+export type BindingKind = 'let' | 'const' | 'function' | 'import'
 
 /**
  * A declared name.
@@ -16,6 +19,8 @@ export interface Binding {
   slot: number
   /** parameters of the function bound here, when known at compile time (D38) */
   signature?: Signature
+  /** imports: index into `CompiledModule.imports` (the `LOAD_IMPORT` operand) */
+  importIndex?: number
 }
 
 /** Where a name lives: a lexical environment slot, a script-level binding, or the globals. */

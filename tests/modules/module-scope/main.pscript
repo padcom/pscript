@@ -1,0 +1,4 @@
+import { visible } from './other'
+print(typeof secret, typeof visible, visible())
+let own = 'own'
+print(own)

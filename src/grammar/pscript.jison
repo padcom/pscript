@@ -26,7 +26,7 @@ TEMPLATE_TEXT   (?:[^`\\$]|\\[\s\S]|\$(?!\{))*
 \'([^'\\\r\n\u2028\u2029]|\\(\r\n|[\s\S]))*\'     return 'STRING'
 ["']                                            yy.lexError("Unterminated string", yylloc)
 
-{IDENT}                                         return yy.identToken(yytext, yylloc)
+{IDENT}                                         return yy.identToken(yytext)
 
 /* Template literals (§4.1.8): a chunk runs from ` or } to the next ` or ${. Whether a } closes an
    interpolation is decided by the brace stack in yy; if not, the action gives the text back (less). */
@@ -112,6 +112,8 @@ Statement
   | FunctionDeclaration
   | ClassDeclaration
   | InterfaceDeclaration
+  | ImportDeclaration
+  | ExportDeclaration
   | Block
   | RETURN ';'
     { $$ = yy.returnStatement(null, @$) }
@@ -206,6 +208,76 @@ InterfaceList
     { $$ = [$1] }
   | InterfaceList ',' LeftHandSideExpression
     { $$ = $1.concat([$3]) }
+  ;
+
+/* Modules (§4.7.1). The token filter emits SPEC_LBRACE for the `{` after import/export and AS/FROM in their
+   clauses; parse.ts rejects module declarations outside the top level of a module. */
+ImportDeclaration
+  : IMPORT STRING ';'
+    { $$ = yy.importDeclaration([], $2, @2, @$) }
+  | IMPORT SPEC_LBRACE ImportSpecifiers '}' FROM STRING ';'
+    { $$ = yy.importDeclaration($3, $6, @6, @$) }
+  | IMPORT '*' AS IDENT FROM STRING ';'
+    { $$ = yy.importDeclaration([yy.namespaceSpecifier(yy.identifier($4, @4), @$)], $6, @6, @$) }
+  ;
+
+ImportSpecifiers
+  : /* empty */
+    { $$ = [] }
+  | ImportSpecifierList
+  | ImportSpecifierList ','
+  ;
+
+ImportSpecifierList
+  : ImportSpecifier
+    { $$ = [$1] }
+  | ImportSpecifierList ',' ImportSpecifier
+    { $$ = $1.concat([$3]) }
+  ;
+
+ImportSpecifier
+  : IDENT
+    { $$ = yy.importSpecifier(yy.identifier($1, @1), yy.identifier($1, @1), @$) }
+  | IDENT AS IDENT
+    { $$ = yy.importSpecifier(yy.identifier($1, @1), yy.identifier($3, @3), @$) }
+  ;
+
+ExportDeclaration
+  : EXPORT VariableDeclaration ';'
+    { $$ = yy.exportDeclaration($2, [], null, @$) }
+  | EXPORT FunctionDeclaration
+    { $$ = yy.exportDeclaration($2, [], null, @$) }
+  | EXPORT ClassDeclaration
+    { $$ = yy.exportDeclaration($2, [], null, @$) }
+  | EXPORT InterfaceDeclaration
+    { $$ = yy.exportDeclaration($2, [], null, @$) }
+  | EXPORT SPEC_LBRACE ExportSpecifiers '}' ';'
+    { $$ = yy.exportDeclaration(null, $3, null, @$) }
+  | EXPORT SPEC_LBRACE ExportSpecifiers '}' FROM STRING ';'
+    { $$ = yy.exportDeclaration(null, $3, yy.moduleSource($6, @6), @$) }
+  ;
+
+ExportSpecifiers
+  : /* empty */
+    { $$ = [] }
+  | ExportSpecifierList
+  | ExportSpecifierList ','
+  ;
+
+ExportSpecifierList
+  : ExportSpecifier
+    { $$ = [$1] }
+  | ExportSpecifierList ',' ExportSpecifier
+    { $$ = $1.concat([$3]) }
+  ;
+
+ExportSpecifier
+  : IDENT
+    { $$ = yy.exportSpecifier(yy.identifier($1, @1), yy.identifier($1, @1), @$) }
+  | IDENT AS IDENT
+    { $$ = yy.exportSpecifier(yy.identifier($1, @1), yy.identifier($3, @3), @$) }
+  | IDENT AS STRING
+    { yy.fail('string export names are not supported', @3) }
   ;
 
 /* Interfaces (§4.5.7). The token filter marks the body brace as CLASS_LBRACE, so members get class-body ASI. */

@@ -1,0 +1,3 @@
+import { suffix } from '../shared/config'
+import { upper } from './case'
+export function shout(text) { return upper(text) + suffix }

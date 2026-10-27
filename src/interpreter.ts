@@ -3,7 +3,10 @@ import { compile } from '@/compiler/compiler'
 import type { CompiledScript } from '@/compiler/function-proto'
 import { toHost, toScript } from '@/runtime/interop'
 import { createRealm, defineGlobal } from '@/runtime/realm'
-import type { Realm } from '@/runtime/values'
+import { memoryLoader, type ModuleLoader } from '@/modules/loader'
+import type { BindingCell } from '@/modules/module-record'
+import { ModuleRegistry, type LinkedRecord } from '@/modules/registry'
+import { UNINITIALIZED, type Realm } from '@/runtime/values'
 import { installStdlib } from '@/stdlib'
 import { VM } from '@/vm/vm'
 
@@ -23,6 +26,10 @@ export interface InterpreterOptions {
   maxCallDepth?: number
   /** `Math.random` override (deterministic tests) */
   random?: () => number
+  /** resolves and loads modules (§4.7.3); takes precedence over `modules` */
+  moduleLoader?: ModuleLoader
+  /** in-memory modules for the built-in loader: source text or host exports, by id */
+  modules?: Record<string, string | Record<string, unknown>>
 }
 
 /**
@@ -33,6 +40,14 @@ export interface RunOptions {
   fileName?: string
 }
 
+/**
+ * Options of `Interpreter.runModule()`.
+ */
+export interface ModuleRunOptions {
+  /** the module's id: relative imports resolve against it, errors name it (default `main`) */
+  id?: string
+}
+
 const DEFAULTS = {
   globals: {},
   stdout: (text: string) => console.log(text),
@@ -40,9 +55,11 @@ const DEFAULTS = {
   maxSteps: Infinity,
   maxCallDepth: 10_000,
   random: Math.random,
-} satisfies Required<InterpreterOptions>
+  moduleLoader: undefined,
+  modules: {},
+} satisfies InterpreterOptions
 
-function withDefaults(options: InterpreterOptions): Required<InterpreterOptions> {
+function withDefaults(options: InterpreterOptions): typeof DEFAULTS & InterpreterOptions {
   const given = globalThis.Object.entries(options).filter(([, value]) => value !== undefined)
 
   return { ...DEFAULTS, ...globalThis.Object.fromEntries(given) }
@@ -51,13 +68,15 @@ function withDefaults(options: InterpreterOptions): Required<InterpreterOptions>
 export class Interpreter {
   private readonly realm: Realm
   private readonly vm: VM
+  private readonly modules: ModuleRegistry
 
   constructor(options: InterpreterOptions = {}) {
-    const { globals, stdout, stderr, random, maxSteps, maxCallDepth } = withDefaults(options)
+    const { globals, stdout, stderr, random, maxSteps, maxCallDepth, moduleLoader, modules } = withDefaults(options)
 
     this.realm = createRealm()
     installStdlib(this.realm, { stdout, stderr, random })
     this.vm = new VM(this.realm, { maxSteps, maxCallDepth })
+    this.modules = new ModuleRegistry(moduleLoader ?? memoryLoader(modules), this.vm)
 
     for (const [name, value] of globalThis.Object.entries(globals)) this.set(name, value)
   }
@@ -81,6 +100,45 @@ export class Interpreter {
    */
   execute(script: CompiledScript): unknown {
     return toHost(this.vm.execute(script))
+  }
+
+  /**
+   * Runs an entry module given as source text, after its dependencies (§4.7, D20).
+   *
+   * @param source module source
+   * @param options the module's id
+   * @returns a live, read-only view of the module's exports
+   */
+  runModule(source: string, options: ModuleRunOptions = {}): Record<string, unknown> {
+    return this.namespaceView(this.modules.runSource(source, options.id ?? 'main'))
+  }
+
+  /**
+   * Loads a module through the loader, evaluating it (and its dependencies) once.
+   *
+   * @param specifier module specifier
+   * @returns a live, read-only view of the module's exports
+   */
+  importModule(specifier: string): Record<string, unknown> {
+    return this.namespaceView(this.modules.import(specifier, null))
+  }
+
+  // Each property reads the export's binding on access (live, §4.7.2); uninitialised bindings read as undefined.
+  private namespaceView(record: LinkedRecord): Record<string, unknown> {
+    const view = globalThis.Object.create(null) as Record<string, unknown>
+
+    for (const name of this.modules.exportNames(record)) {
+      const cell = this.modules.resolveExport(record, name, new Set()) as BindingCell
+      const get = () => {
+        const value = cell.env.slots[cell.slot]
+
+        return value === UNINITIALIZED ? undefined : toHost(value)
+      }
+
+      globalThis.Object.defineProperty(view, name, { get, enumerable: true })
+    }
+
+    return globalThis.Object.freeze(view)
   }
 
   /**

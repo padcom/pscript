@@ -99,8 +99,8 @@ export interface ClassFieldTemplate {
 export interface ImplicitName {
   /** the name */
   name: string
-  /** fallback when it is not a member: an enclosing lexical binding, or global lookup */
-  outer: 'lexical' | 'global'
+  /** fallback when it is not a member: an enclosing lexical binding, a module import, or global lookup */
+  outer: 'lexical' | 'import' | 'global'
   /** contexts that use the name (static methods/initialisers vs. the rest) */
   contexts: ('instance' | 'static')[]
   /** first use, for error messages */

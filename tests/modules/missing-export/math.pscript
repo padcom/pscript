@@ -1,0 +1,2 @@
+print('never runs')
+export const PI = 3

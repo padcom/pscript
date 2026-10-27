@@ -23,6 +23,8 @@ export interface ScriptStackFrame {
   line: number
   /** 1-based column */
   column: number
+  /** id of the module the code belongs to (absent for scripts) */
+  fileName?: string
 }
 
 /**

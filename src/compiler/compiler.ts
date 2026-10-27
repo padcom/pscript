@@ -19,7 +19,10 @@ import type {
   ForStatement,
   FunctionDeclaration,
   FunctionExpression,
+  ExportNamedDeclaration,
   Identifier,
+  ModuleDeclaration,
+  ImportDeclaration,
   InterfaceDeclaration,
   IfStatement,
   Literal,
@@ -51,6 +54,8 @@ import { stdlibGlobalNames } from '@/stdlib'
 import { classInfoOf, hasMember, keyName, type ClassInfo } from './class-info'
 import { ambiguityMessage, implicitIndex, memberCandidate, outerDescription, type ClassRecord } from './implicit-names'
 import { interfaceTemplate } from './interfaces'
+import { ModuleTables } from './module-tables'
+import type { CompiledModule, HoistedFunction } from '@/modules/module-record'
 import type {
   ClassFieldTemplate,
   ClassMemberRef,
@@ -59,6 +64,7 @@ import type {
   CompiledScript,
   FunctionKind,
   FunctionProto,
+  ImplicitName,
 } from './function-proto'
 import { GlobalFlags, Op } from './opcodes'
 import { ProtoBuilder } from './proto-builder'
@@ -96,9 +102,34 @@ type AnyFunction = FunctionNode | ArrowFunctionExpression
 
 type ClassNode = ClassDeclaration | ClassExpression
 
-// Where a bare name that is not a member is found: an enclosing environment, or by name (script bindings, globals).
-function outerKind({ where }: Resolution): 'lexical' | 'global' {
-  return where === 'lexical' ? 'lexical' : 'global'
+// Where a bare name that is not a member is found: an enclosing environment, a module import, or by name (script
+// bindings, globals).
+function outerKind(resolution: Resolution): ImplicitName['outer'] {
+  if (resolution.where !== 'lexical') return 'global'
+
+  return resolution.binding.kind === 'import' ? 'import' : 'lexical'
+}
+
+// The fallback operands of LOAD/STORE/CALL_IMPLICIT: `depth slot`, `i 0` (import) or `k 0` (by name).
+function fallbackOperands(resolution: Resolution, constant: (name: string) => number, name: string): number[] {
+  if (resolution.where !== 'lexical') return [constant(name), 0]
+
+  const { importIndex } = resolution.binding
+
+  return importIndex === undefined ? [resolution.depth, resolution.slot] : [importIndex, 0]
+}
+
+/** Statements and, at the top level of modules, import/export declarations. */
+type TopLevel = Statement | ModuleDeclaration
+
+// A top-level statement, or the declaration an `export` wraps.
+function exportedDeclaration(node: TopLevel): TopLevel | null {
+  return node.type === 'ExportNamedDeclaration' ? node.declaration : node
+}
+
+// The names an exported declaration binds.
+function declaredNames(declaration: NonNullable<ExportNamedDeclaration['declaration']>): Identifier[] {
+  return declaration.type === 'VariableDeclaration' ? declaration.declarations.map(({ id }) => id) : [declaration.id]
 }
 
 function bindingOf(resolution: Resolution): Binding | undefined {
@@ -195,7 +226,7 @@ const DUPLICATE_BASE: Record<number, Op> = { 1: Op.DUP, 2: Op.DUP2 }
 const ROTATE_BELOW_BASE: Record<number, Op> = { 1: Op.ROT3, 2: Op.ROT4 }
 const DROP_BASE: Record<number, Op[]> = { 1: [Op.SWAP, Op.POP], 2: [Op.ROT3, Op.POP, Op.POP] }
 
-const STATEMENTS: { [K in Statement['type']]?: Handler<Extract<Statement, { type: K }>> } = {
+const STATEMENTS: { [K in TopLevel['type']]?: Handler<Extract<TopLevel, { type: K }>> } = {
   ExpressionStatement: (c, node) => c.expressionStatement(node.expression),
   VariableDeclaration: (c, node) => c.variableDeclaration(node),
   BlockStatement: (c, node) => c.block(node),
@@ -211,6 +242,8 @@ const STATEMENTS: { [K in Statement['type']]?: Handler<Extract<Statement, { type
   ThrowStatement: (c, node) => c.throwStatement(node),
   TryStatement: (c, node) => c.tryStatement(node),
   FunctionDeclaration: () => {}, // hoisted to the start of its scope
+  ImportDeclaration: () => {}, // bindings are created when the module is linked
+  ExportNamedDeclaration: (c, node) => c.exportDeclaration(node),
   EmptyStatement: () => {},
 }
 
@@ -300,11 +333,13 @@ function markArrowsUsingThis(fn: FunctionContext | null) {
 }
 
 /** Pre-scan (§5.5): the lexical declarations of a statement list. Classes are constant bindings, interfaces `let` (§4.5.7). */
-const DECLARATIONS: Partial<Record<Statement['type'], (c: Compiler, node: any, scope: Scope) => void>> = {
+const DECLARATIONS: Partial<Record<TopLevel['type'], (c: Compiler, node: any, scope: Scope) => void>> = {
   VariableDeclaration: (c, node, scope) => c.declareVariables(node, scope),
   FunctionDeclaration: (c, node, scope) => c.declareFunction(node, scope),
   ClassDeclaration: (c, node: ClassDeclaration, scope) => c.declareName(scope, node.id, 'const'),
   InterfaceDeclaration: (c, node: InterfaceDeclaration, scope) => c.declareName(scope, node.id, 'let'),
+  ImportDeclaration: (c, node: ImportDeclaration, scope) => c.declareImports(node, scope),
+  ExportNamedDeclaration: (c, node: ExportNamedDeclaration, scope) => c.declareExport(node, scope),
 }
 
 class Compiler {
@@ -329,7 +364,13 @@ class Compiler {
   /** classes whose bodies lexically enclose the code being compiled, innermost last (§4.5.3, §4.5.8) */
   private enclosingClasses: ClassRecord[] = []
 
-  constructor(private source: string | undefined, private fileName: string | undefined) {}
+  constructor(private source: string | undefined, private fileName: string | undefined, goal: 'script' | 'module' = 'script') {
+    if (goal === 'module') {
+      const out = new ProtoBuilder({ name: '', kind: 'module' })
+
+      this.fn = { ...this.fn, out, scope: new Scope(null, 'function'), tracksCompletion: false }
+    }
+  }
 
   get out(): ProtoBuilder {
     return this.fn.out
@@ -371,6 +412,76 @@ class Compiler {
     return { main: out.build(), source: this.source, fileName: this.fileName }
   }
 
+  // Module goal (§5.5): top-level bindings live in the module's top environment; imports are read through cells;
+  // function declarations are initialised when the module is linked (hoistedFunctions), not by the body.
+  module(program: Program, id: string): CompiledModule {
+    const { out } = this
+    const body = program.body as TopLevel[]
+
+    this.moduleTables = new ModuleTables((reason, loc) => this.error(reason, loc))
+    this.declare(body as Statement[], this.scope)
+
+    const hoistedFunctions = this.moduleFunctions(body)
+
+    this.statements(body as Statement[])
+    this.exportLists(body)
+    out.emit(Op.UNDEFINED)
+    out.emit(Op.HALT)
+    out.scopeSize = this.scope.bindings.size
+
+    const { requests, imports, localExports, indirectExports } = this.moduleTables
+
+    return { id, main: out.build(), requests, imports, localExports, indirectExports, hoistedFunctions, source: this.source }
+  }
+
+  private moduleTables: ModuleTables | null = null
+
+  private moduleFunctions(body: TopLevel[]): HoistedFunction[] {
+    return body.map(exportedDeclaration).filter(node => node?.type === 'FunctionDeclaration').map(node => {
+      const { id } = node as FunctionDeclaration
+      const proto = this.out.constant(this.functionProto(node as FunctionDeclaration, id.name))
+
+      return { slot: (this.scope.bindings.get(id.name) as Binding).slot, proto }
+    })
+  }
+
+  declareImports(node: ImportDeclaration, scope: Scope) {
+    const tables = this.moduleTables as ModuleTables
+    const first = tables.imports.length
+
+    tables.addImports(node).forEach(({ localName }, i) => {
+      const binding = scope.declare(localName, 'import')
+      if (!binding) throw this.error(`Identifier '${localName}' has already been declared`, node.specifiers[i].local.loc)
+      binding.importIndex = first + i
+    })
+  }
+
+  declareExport(node: ExportNamedDeclaration, scope: Scope) {
+    if (node.declaration) DECLARATIONS[node.declaration.type]?.(this, node.declaration, scope)
+  }
+
+  exportDeclaration({ declaration }: ExportNamedDeclaration) {
+    if (declaration && declaration.type !== 'FunctionDeclaration') this.statement(declaration)
+  }
+
+  // Export tables are built once every top-level binding is known (`export { a }` may precede `let a`).
+  private exportLists(body: TopLevel[]) {
+    const tables = this.moduleTables as ModuleTables
+    const lookup = (name: string) => this.scope.bindings.get(name)
+
+    for (const node of body) {
+      if (node.type === 'ExportNamedDeclaration') this.exportEntries(tables, node, lookup)
+    }
+  }
+
+  private exportEntries(tables: ModuleTables, node: ExportNamedDeclaration, lookup: (name: string) => Binding | undefined) {
+    const { declaration } = node
+
+    if (node.source) tables.addReexports(node)
+    else if (declaration) declaredNames(declaration).forEach(id => tables.addLocal(id.name, lookup(id.name) as Binding, id.loc))
+    else tables.addList(node.specifiers, lookup)
+  }
+
   // ---------------------------------------------------------------------------
   // Scopes
 
@@ -407,8 +518,16 @@ class Compiler {
 
     if (this.implicit(Op.LOAD_IMPLICIT, name, loc)) return
 
-    if (resolution.where === 'lexical') this.lexical(Op.LOAD, name, resolution)
+    if (resolution.where === 'lexical') this.loadLexical(name, resolution)
     else this.out.emit(Op.LOAD_GLOBAL, this.out.constant(name))
+  }
+
+  // Imports are live views of the exporter's binding: LOAD_IMPORT i (§5.6.8).
+  private loadLexical(name: string, resolution: Extract<Resolution, { where: 'lexical' }>) {
+    const { importIndex } = resolution.binding
+
+    if (importIndex === undefined) this.lexical(Op.LOAD, name, resolution)
+    else this.out.emit(Op.LOAD_IMPORT, importIndex)
   }
 
   private store(name: string, loc: SourceLocation) {
@@ -428,8 +547,7 @@ class Compiler {
     const index = this.implicitName(name, loc)
     if (index === null) return false
 
-    const resolution = this.scope.resolve(name)
-    const fallback = resolution.where === 'lexical' ? [resolution.depth, resolution.slot] : [this.out.constant(name), 0]
+    const fallback = fallbackOperands(this.scope.resolve(name), value => this.out.constant(value), name)
 
     this.out.nameNext(name)
     this.out.emit(op, index, ...(argc === undefined ? [] : [argc]), ...fallback)
@@ -464,6 +582,7 @@ class Compiler {
 
   private checkAssignable({ name, kind }: Binding, loc: SourceLocation) {
     if (kind === 'const') throw this.error(`Assignment to constant variable '${name}'`, loc)
+    if (kind === 'import') throw this.error(`Cannot assign to import '${name}'`, loc)
     if (kind === 'function') throw this.error(`Cannot assign to function '${name}': function declarations are constant`, loc)
   }
 
@@ -1568,6 +1687,20 @@ class Compiler {
   unsupported(node: Node): PScriptSyntaxError {
     return this.error(`${'operator' in node ? `'${node.operator}'` : node.type} is not supported yet`, node.loc)
   }
+}
+
+/**
+ * Compiles a module (§4.7, §5.5 "Module goal").
+ *
+ * @param source source text or a program parsed with the module goal
+ * @param id the module id (also used as file name in errors)
+ * @returns the compiled module
+ */
+export function compileModule(source: string | Program, id: string): CompiledModule {
+  const program = typeof source === 'string' ? parse(source, { fileName: id, goal: 'module' }) : source
+  const text = typeof source === 'string' ? source : undefined
+
+  return new Compiler(text, id, 'module').module(program, id)
 }
 
 /**

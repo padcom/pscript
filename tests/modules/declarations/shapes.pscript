@@ -1,0 +1,10 @@
+export { describe, total, bump }
+export interface Shape { area() }
+export final class Square implements Shape {
+  side
+  constructor(side) { this.side = side }
+  area() { return side * side }
+}
+function describe(shape) { return 'area ' + shape.area() }
+let total = 0
+function bump() { total += 10 }

@@ -1,5 +1,6 @@
 // Module contract (§5.4): compiled modules and their runtime records.
 import type { FunctionProto } from '@/compiler/function-proto'
+import type { SourceLocation } from '@/parser/ast'
 import type { Environment, Value } from '@/runtime/values'
 
 /**
@@ -12,6 +13,8 @@ export interface ModuleImportEntry {
   importName: string
   /** local binding name */
   localName: string
+  /** the specifier, for link errors */
+  loc: SourceLocation
 }
 
 /**
@@ -34,6 +37,18 @@ export interface ModuleIndirectExport {
   request: number
   /** name exported by the other module */
   importName: string
+  /** the specifier, for link errors */
+  loc: SourceLocation
+}
+
+/**
+ * A function declaration initialised when the module is linked, before any module body runs (cycles, §4.7.2).
+ */
+export interface HoistedFunction {
+  /** slot in `main`'s top environment */
+  slot: number
+  /** index of the function's proto in `main`'s constants */
+  proto: number
 }
 
 /**
@@ -52,8 +67,10 @@ export interface CompiledModule {
   localExports: ModuleLocalExport[]
   /** re-exports */
   indirectExports: ModuleIndirectExport[]
-  /** slots initialised at instantiation (cycle support) */
-  hoistedFunctions: number[]
+  /** functions initialised at instantiation (cycle support) */
+  hoistedFunctions: HoistedFunction[]
+  /** source text, for error excerpts */
+  source?: string
 }
 
 /**

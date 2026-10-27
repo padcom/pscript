@@ -1,0 +1,4 @@
+// @pscript-only: errors name the module and line
+import { fail } from './util'
+print(this)
+fail()

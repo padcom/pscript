@@ -1,0 +1,6 @@
+// @pscript-only: interfaces, final classes and export lists before declarations
+import { Shape, Square, describe, total, bump } from './shapes'
+const s = new Square(3)
+print(s instanceof Shape, describe(s), total)
+bump()
+print(total)

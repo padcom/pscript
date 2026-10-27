@@ -38,12 +38,24 @@ interface Token {
   startsStatement?: boolean
 }
 
+/** Module syntax that PScript does not support, keyed by what follows `import` / `export` (§4.7.1). */
+const UNSUPPORTED_IMPORTS: Record<string, string> = {
+  'IDENT': "default imports are not supported; use named imports: import { name } from '…'",
+  '(': 'import() is not supported',
+  '.': 'import.meta is not supported',
+}
+const UNSUPPORTED_EXPORTS: Record<string, string> = {
+  'default': 'export default is not supported; use named exports: export { name }',
+  '*': "export * is not supported; list the names: export { a, b } from '…'",
+}
+
 /**
  * Open brackets. Braces (§4.2.2) are `{statement}` (block statements and function-declaration
  * bodies), `{block}` (bodies of function expressions, arrows and methods: the expression goes on
  * after the `}`) or `{object}` (object literals).
  */
 type Bracket = '(' | '(header)' | '[' | '{statement}' | '{block}' | '{object}' | '{template}' | '{class}' | '{class-statement}'
+  | '{specifiers}'
 
 /** Brackets whose contents are statements or class members: ASI applies inside them. */
 const BLOCK_LIKE = new Set<Bracket | undefined>(['{statement}', '{block}', '{class}', '{class-statement}'])
@@ -57,6 +69,7 @@ const CONTEXTUAL_MODIFIERS: Record<string, string> = { final: 'FINAL', override:
 
 /** `get` / `set` before a member name on the same line (§4.2.5). */
 const ACCESSOR_KEYWORDS: Record<string, string> = { get: 'GET', set: 'SET' }
+const MODULE_KEYWORDS: Record<string, string> = { as: 'AS', from: 'FROM' }
 
 /** Tokens after which a class member starts. */
 const MEMBER_PRECEDERS = new Set(['CLASS_LBRACE', ';', '}', 'GET', 'SET', ...MODIFIERS])
@@ -77,11 +90,18 @@ const EMIT_HOOKS: Record<string, (filter: TokenFilter, token: Token) => void> = 
   'FINAL': (filter, token) => filter.finalStart(token),
   'CLASS': (filter, token) => filter.classStart(token),
   'INTERFACE': filter => filter.interfaceStart(),
+  'IMPORT': filter => filter.moduleStart('import'),
+  'EXPORT': filter => filter.moduleStart('export'),
+  ';': filter => filter.moduleEnd(),
+  'STRING': filter => filter.moduleEnd(),
   '{': (filter, token) => filter.classifyBrace(token),
 }
 
 /** A `{` after one of these opens a block statement. */
-const STATEMENT_BRACE_PRECEDERS = new Set([';', 'BLOCK_LBRACE', '}', 'ELSE', 'TRY', 'CATCH', 'FINALLY'])
+const STATEMENT_BRACE_PRECEDERS = new Set([';', 'BLOCK_LBRACE', '}', 'ELSE', 'TRY', 'CATCH', 'FINALLY', 'EXPORT'])
+
+/** A `{` after one of these opens an import or export list (§4.2.5). */
+const SPECIFIER_BRACE_PRECEDERS = new Set(['IMPORT', 'EXPORT'])
 
 /** A `{` after one of these opens a function, arrow or method body. */
 const BODY_BRACE_PRECEDERS = new Set([')', '=>'])
@@ -90,6 +110,7 @@ const BRACE_TOKENS: Partial<Record<Bracket, string>> = {
   '{object}': 'OBJ_LBRACE',
   '{class}': 'CLASS_LBRACE',
   '{class-statement}': 'CLASS_LBRACE',
+  '{specifiers}': 'SPEC_LBRACE',
 }
 
 /** Brackets whose `}` completes a statement (no `;` needed after it). */
@@ -157,6 +178,8 @@ export class TokenFilter {
   /** bracket depth of a class whose body brace is still to come, or -1; and whether it is a declaration */
   private classDepth = -1
   private classIsStatement = false
+  /** inside an `import` / `export … from` clause, where `as` and `from` are keywords (§4.2.5) */
+  private moduleClause = false
 
   constructor(private base: JisonLexer, private terminals: Record<number, string>, private state: TokenState) {
     this.options = base.options
@@ -173,6 +196,7 @@ export class TokenFilter {
     this.lookahead = []
     this.declarationDepth = -1
     this.classDepth = -1
+    this.moduleClause = false
 
     return this
   }
@@ -199,6 +223,8 @@ export class TokenFilter {
     const token = this.lookahead.shift() ?? this.readRaw()
 
     this.current = token
+
+    if (token.name === 'RESERVED') this.state.fail(`Unexpected reserved word '${token.text}'`, token.loc)
     this.contextualKeyword(token)
     this.keywordAsName(token)
     ARROW_STARTS[token.name]?.(this, token)
@@ -224,11 +250,20 @@ export class TokenFilter {
     if (keyword) token.name = keyword
   }
 
-  // `final` / `override` as modifiers, `get` / `set` as accessor keywords (§4.2.5).
+  // `final` / `override` as modifiers, `get` / `set` as accessor keywords, `as` / `from` in module clauses (§4.2.5).
   private contextualName(text: string): string | undefined {
+    if (this.isModuleKeyword(text)) return MODULE_KEYWORDS[text]
+
     const modifier = CONTEXTUAL_MODIFIERS[text]
 
     return modifier ? this.asModifier(modifier) : this.asAccessorKeyword(ACCESSOR_KEYWORDS[text])
+  }
+
+  // `as` in a module clause; `from` there too, but not inside `{ … }` (`export { from }`).
+  private isModuleKeyword(text: string): boolean {
+    if (!this.moduleClause) return false
+
+    return text === 'as' || (text === 'from' && this.top() !== '{specifiers}')
   }
 
   private asModifier(modifier: string): string | undefined {
@@ -440,6 +475,20 @@ export class TokenFilter {
     this.classDepth = this.brackets.length
   }
 
+  // `import …` / `export { … }`: the clause runs to its module specifier or `;`. `export <declaration>` is not a
+  // clause (its names stay ordinary). Unsupported forms fail here with a hint (§4.7.1).
+  moduleStart(kind: 'import' | 'export') {
+    const next = this.peek(0)
+    const unsupported = kind === 'import' ? UNSUPPORTED_IMPORTS[next.name] : UNSUPPORTED_EXPORTS[next.text]
+
+    if (unsupported) this.state.fail(unsupported, next.loc)
+    this.moduleClause = kind === 'import' || next.name === '{'
+  }
+
+  moduleEnd() {
+    if (this.top() !== '{specifiers}') this.moduleClause = false
+  }
+
   // An interface body is parsed like a class body (member positions, ASI); interfaces are always declarations.
   interfaceStart() {
     this.classIsStatement = true
@@ -453,10 +502,14 @@ export class TokenFilter {
 
   // Brace classification (§4.2.2): BLOCK_LBRACE or OBJ_LBRACE, with the matching stack entry.
   classifyBrace(token: Token) {
-    const kind = this.braceKind()
+    const kind = this.opensSpecifiers() ? '{specifiers}' : this.braceKind()
 
     token.name = BRACE_TOKENS[kind] ?? 'BLOCK_LBRACE'
     this.brackets.push(kind)
+  }
+
+  private opensSpecifiers(): boolean {
+    return SPECIFIER_BRACE_PRECEDERS.has(this.prev?.name ?? '')
   }
 
   private braceKind(): Bracket {

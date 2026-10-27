@@ -27,7 +27,30 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M18 | Overriding | done (2026-10-27) |
 | M19 | Interfaces | done (2026-10-27) |
 | M20 | Implicit member access | done (2026-10-27) |
-| M21 | Modules I | next |
+| M21 | Modules I | done (2026-10-27) |
+| M22 | Modules II | next |
+
+## M21 — Modules I
+
+Done: module graphs under `tests/modules/<case>/` (entry `main.pscript`, `main.out` / `main.err`) pass in PScript and, unless `@pscript-only`, in Node (`tests/modules.test.ts`; `tests/helpers/node-modules.ts` writes the graph as `.mjs` files with rewritten equality and specifiers and runs it in a child process). Unit tests in `tests/unit/modules/`. `npm run check` and `npm run build` green; 891 tests.
+
+What exists:
+
+- Token filter (§4.2.5): `{` after `import`/`export` → `SPEC_LBRACE` (`{specifiers}`, no ASI); inside an import clause or `export { … }` clause, `as` → `AS` and `from` → `FROM` (not inside the braces); `export` counts as a statement start (so `export function`/`class`/`final class` are declarations). Unsupported forms fail with a hint: default imports (incl. `import x, {…}`), `export default`, `export *`, `import()`, `import.meta`; string export names fail in the grammar. Future reserved words now come from the lexer as `RESERVED` and are rejected by the filter (so `export default` can get its own message).
+- Grammar: `import 'm'`, `import { a, b as c } from 'm'`, `import * as ns from 'm'`, `export <let/const/function/class/final class/interface>`, `export { a, b as c }`, `export { a as b } from 'm'` (trailing commas allowed). `src/parser/module-declarations.ts` builds the nodes and rejects them in scripts and below the top level.
+- `compileModule(source, id)` (exported): module goal with a function-like top scope (no `DECLARE_GLOBAL`, no completion value), `import` bindings (`BindingKind 'import'`, read with `LOAD_IMPORT i`, assignment → `Cannot assign to import 'x'`, also usable as implicit-member fallbacks), `ModuleTables` (`src/compiler/module-tables.ts`) for requests (deduplicated), imports, local/indirect exports (exporting an import is an indirect export) and duplicate/undefined export checks. Top-level function declarations (also exported ones) are `hoistedFunctions` `{ slot, proto }` initialised at link time, not by the body.
+- Contract changes (`src/modules/module-record.ts`): `ModuleImportEntry.loc`, `ModuleIndirectExport.loc` (link errors point at the specifier), `HoistedFunction { slot, proto }` instead of `number[]`, `CompiledModule.source`; `ScriptStackFrame.fileName` (module id).
+- Loader (`src/modules/loader.ts`): `ModuleLoader`, `memoryLoader(modules)` (exact id, then `.pscript`, then `.psc`; both → ambiguity error), `resolveSpecifier` (POSIX-style relative resolution against the referrer's id).
+- Registry (`src/modules/registry.ts`): load graph (records registered before their requests, so cycles terminate), link (environment created first, then requests, import cells, re-export resolution with `circular re-export` detection, hoisted functions), evaluate (depth-first post-order, once; `evaluating` modules are not re-entered; errors mark the record `errored` and are rethrown on later imports). Link errors are `PScriptSyntaxError`s of the importing module (`Module './math' does not provide an export named 'x'`); loader failures become `PScriptRuntimeError: Cannot find module './x' imported from 'main': …`.
+- VM: frames and closures carry their module (class methods too, via `DefinitionSite.module`); `LOAD_IMPORT` reads the cell with the TDZ check; `evaluateModule(record)` runs the body with `this` null; runtime errors in modules name the module id and show its source excerpt.
+- API: `InterpreterOptions.moduleLoader` / `modules`, `Interpreter.runModule(source, { id })` (default id `main`) and `importModule(specifier)` return a frozen, null-prototype object with live getters for the export names (sorted).
+
+Deviations / gaps (for M22):
+
+- Namespace imports parse and compile (`importName '*'`) but linking them fails (no module namespace objects yet); host modules (`{ exports }` from the loader) are rejected; `defineModule` is missing.
+- Re-exports and cycles already work through the registry but have no dedicated programs yet.
+- `import { as }` / `import { from }` (keywords as imported names) are not supported.
+- The host-side namespace view returns script values as they are (`toHost` is still the identity until M23).
 
 ## M20 — Implicit member access
 

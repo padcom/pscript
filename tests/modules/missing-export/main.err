@@ -1,0 +1,1 @@
+main.pscript:1:14 SyntaxError: Module './math' does not provide an export named 'nope'
