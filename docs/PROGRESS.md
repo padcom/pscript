@@ -54,6 +54,13 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L13 | Dynamic `import()` (D52) | done (2026-10-27) |
 | L14 | Async generators and `for await` (D53) | done (2026-10-27) — v2 roadmap complete |
 | L15 | Async `yield*` forwarding, awaited `for await` cleanup (D54) | done (2026-10-27) |
+| L16 | The comma operator (D55) | done (2026-10-27) |
+
+## L16 — The comma operator (D55)
+
+- **Parser**: `Expression ',' AssignmentExpression` → flat `SequenceExpression`; `yy.parenthesized` keeps `(a, b), c`
+  nested (acorn's shape). **Compiler**: `POP` after every element but the last. **psc**: lowest precedence.
+- **Tests**: `tests/programs/operators/comma.pscript`.
 
 ## L15 — Async `yield*` forwarding and awaited `for await` cleanup (D54)
 

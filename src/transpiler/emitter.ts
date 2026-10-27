@@ -192,6 +192,7 @@ const EXPRESSIONS: { [K in Expression['type']]?: Printer<Extract<Expression, { t
   AwaitExpression: (e, node) => `await ${e.expression(node.argument, Precedence.Unary)}`,
   ChainExpression: (e, node) => e.expression(node.expression, Precedence.Member),
   ImportExpression: (e, node) => e.dynamicImport(node),
+  SequenceExpression: (e, node) => node.expressions.map(item => e.expression(item, Precedence.Assignment)).join(', '),
 }
 
 /** Unary operators not printed as `<operator><operand>` with the `- -x` guard. */

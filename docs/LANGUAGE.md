@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D54).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D55).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -93,7 +93,7 @@ Precedence and associativity follow JavaScript, with these rules:
   member optionally as `this.m?.()`.
 - Bitwise operators `& | ^ ~ << >> >>>` and their compound assignments work as in JavaScript (32-bit integers,
   JavaScript precedence: `a & b == c` is `a & (b == c)`); like arithmetic, they reject objects.
-- Not supported: comma expressions.
+- The comma operator works as in JavaScript: `for (let i = 0, j = n; i < j; i++, j--)`, `(a(), b())`.
 
 ## Statements
 

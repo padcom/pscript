@@ -47,6 +47,7 @@ import type {
   PropertyDefinition,
   RestElement,
   ReturnStatement,
+  SequenceExpression,
   SourceLocation,
   SpreadElement,
   Statement,
@@ -303,6 +304,7 @@ const EXPRESSIONS: { [K in Expression['type']]?: Handler<Extract<Expression, { t
   AwaitExpression: (c, node) => c.awaitExpression(node),
   ChainExpression: (c, node) => c.chain(node),
   ImportExpression: (c, node) => c.importExpression(node),
+  SequenceExpression: (c, node) => c.sequence(node),
 }
 
 /**
@@ -1667,6 +1669,15 @@ class Compiler {
 
     if (node.optional) this.optional(isMethod ? 2 : 1)
     this.emitAt(node.loc, isMethod ? Op.CALL_METHOD : Op.CALL, this.arguments(node.arguments))
+  }
+
+  // `a, b` (D55): every value but the last is dropped.
+  sequence({ expressions }: SequenceExpression) {
+    for (const expression of expressions.slice(0, -1)) {
+      this.expression(expression)
+      this.out.emit(Op.POP)
+    }
+    this.expression(expressions[expressions.length - 1])
   }
 
   // `import(specifier)` (D52) → <specifier> IMPORT_DYNAMIC: a promise of the module's namespace.

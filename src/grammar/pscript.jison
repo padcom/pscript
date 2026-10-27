@@ -619,8 +619,11 @@ Declarator
 
 /* Expressions, lowest to highest precedence (§4.4.3). */
 
+/* The comma operator (D55): `a, b` evaluates both and gives b. */
 Expression
   : AssignmentExpression
+  | Expression ',' AssignmentExpression
+    { $$ = yy.sequence($1, $3, @$) }
   ;
 
 /* The target is checked by yy.assignment: a name, a member, or an object/array literal that becomes a pattern (D40). */
@@ -912,7 +915,7 @@ PrimaryExpression
   | ObjectLiteral
   | ArrayLiteral
   | '(' Expression ')'
-    { $$ = $2 }
+    { $$ = yy.parenthesized($2) }
   ;
 
 /* Object literals (§4.4.6). OBJ_LBRACE comes from the token filter's brace classification (§4.2.2). */

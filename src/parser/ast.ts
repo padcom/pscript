@@ -122,7 +122,7 @@ export type Expression
     | ArrowFunctionExpression | ClassExpression | UnaryExpression | UpdateExpression
     | BinaryExpression | LogicalExpression | AssignmentExpression | ConditionalExpression
     | CallExpression | NewExpression | MemberExpression | ThisExpression | TemplateLiteral | YieldExpression
-    | AwaitExpression | ChainExpression | ImportExpression
+    | AwaitExpression | ChainExpression | ImportExpression | SequenceExpression
 
 /** What binds names: a name, or an object or array pattern of names (D40). */
 export type BindingPattern = Identifier | ObjectPattern | ArrayPattern
@@ -269,6 +269,16 @@ export interface AssignmentPattern extends NodeBase {
   left: PatternTarget
   /** default value */
   right: Expression
+}
+
+/**
+ * `a, b, c` (D55): evaluates every expression, gives the last one.
+ */
+export interface SequenceExpression extends NodeBase {
+  /** node type */
+  type: 'SequenceExpression'
+  /** the expressions, at least two */
+  expressions: Expression[]
 }
 
 /**

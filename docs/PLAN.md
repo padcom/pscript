@@ -112,6 +112,7 @@ Each feature in this document has one of these tags:
 | R41 | Dynamic `import(specifier)` (D52) | 4.7.5 |
 | R42 | Async generators and `for await` (D53) | 4.4.20 |
 | R43 | Async `yield*` forwarding and awaited `for await` cleanup (D54) | 4.4.20 |
+| R44 | The comma operator (D55) | 4.4.3 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -131,7 +132,7 @@ Each feature in this document has one of these tags:
 
 ### 1.5 COULD (Phase 3+)
 
-~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), the comma operator in `for` headers, ~~`do … while`, `switch`~~ (done, D41), `for … in`, ~~bitwise operators, hex/binary/octal literals~~ (done, D50), ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, ~~Map/Set~~ (done, D49), a CLI/REPL, a disassembler CLI, source maps for errors.
+~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), ~~the comma operator in `for` headers~~ (done, D55: everywhere), ~~`do … while`, `switch`~~ (done, D41), `for … in`, ~~bitwise operators, hex/binary/octal literals~~ (done, D50), ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, ~~Map/Set~~ (done, D49), a CLI/REPL, a disassembler CLI, source maps for errors.
 
 ### 1.6 WON'T (v1)
 
@@ -230,6 +231,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D52 | Dynamic `import()` | **As in JavaScript**: `import(specifier)` in scripts and modules returns a promise of the module's namespace; the module is loaded (with the asynchronous path, so asynchronous loaders work), linked and evaluated once, waiting for its top-level `await`; a failure (not found, link error, exception) rejects. Relative specifiers resolve against the module of the code that calls `import()` (scripts: none). The work starts in a host microtask, so it completes after `run()` returns even with a synchronous loader (`run()` / `runAsync()` of a script awaiting it give a promise / wait). No import attributes (`import(x, { with })`). psc emits native `import()` (a literal specifier is rewritten like a static one). Details in §4.7.5 | no |
 | D53 | Async generators and `for await` | **As in JavaScript**: `async function*` (declarations and expressions), `async *m()` methods (classes, also static, and object literals, also with computed keys); the object's `next` / `return` / `throw` return promises of `{ value, done }` and are queued, answered in order; `yield v` and `return v` await `v`; `for await (… of …)` in async functions, async generators and at the top level iterates async generators, host async iterables (`Symbol.asyncIterator`) and any sync iterable (each value awaited), with the same job order as Node. **Deviations**: "no value" is `null` (D37); async generator objects are not sync iterable. (D53 also had `yield*` without forwarding and an unawaited `return()` on `return` / exceptions; D54 removed both.) They print as `[AsyncGenerator]` and reach the host as async iterators. Details in §4.4.20 | minor (null, `yield*` forwarding) |
 | D54 | Async `yield*` and `for await` cleanup | **Exactly as in JavaScript**: `yield*` in an async generator forwards `next(v)`, `throw(e)` and `return(v)` to the delegate (an async generator, a host async iterator, a sync generator, or any iterable for `next`), and evaluates to the delegate's return value; a forwarded `return` that completes ends the generator. Leaving a `for await` by `return`, by an exception or by `generator.return()` calls the iterator's `return()` and awaits it (on an exception, a failure of `return()` is ignored and the original exception goes on), innermost loop first. Details in §4.4.20 | no |
+| D55 | The comma operator | **As in JavaScript**, everywhere an expression is allowed (not only in `for` headers): `a, b` evaluates `a`, then `b`, and gives `b`. Arguments, array elements and declarators keep using `,` as a separator, so a sequence there needs parentheses. ESTree `SequenceExpression` (flat; a parenthesized sequence stays one element). Details in §4.4.3 | no |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -632,7 +634,7 @@ Modifiers       := Access? 'static'? FINAL? OVERRIDE?                (fixed orde
 Access          := 'public' | 'protected' | 'private'
 MemberName      := IDENT | STRING | NUMBER
 
-Expr            := AssignExpr                               (comma operator: COULD)
+Expr            := AssignExpr ( ',' AssignExpr )*              (comma operator, D55)
 AssignExpr      := ConditionalExpr
                  | ArrowFunction
                  | LeftHandSideExpr AssignOp AssignExpr       (target validity checked in builder)
@@ -721,6 +723,7 @@ As in JS. Falsy values: `false`, `0`, `-0`, `NaN`, `''`, `null`, `undefined`. Ev
 
 | Level | Operators | Assoc |
 |---|---|---|
+| 0 | `,` (comma, D55) | left |
 | 1 | `=>` (arrow) | right |
 | 2 | `= += -= *= /= %= **= &&= \|\|= ??= &= \|= ^= <<= >>= >>>=` | right |
 | 3 | `? :` | right |

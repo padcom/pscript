@@ -41,6 +41,7 @@ import type {
   Property,
   RestElement,
   ReturnStatement,
+  SequenceExpression,
   SourceLocation,
   Statement,
   Super,
@@ -58,6 +59,9 @@ import type {
   YieldExpression,
 } from './ast'
 import { cookString } from './literals'
+
+/** Sequences written in parentheses (D55). */
+const parenthesizedSequences = new WeakSet<SequenceExpression>()
 
 /** What follows a `?.` (D47): a property or an argument list. */
 type OptionalLink = { property: Expression, computed: boolean } | { arguments: CallExpression['arguments'] }
@@ -222,6 +226,21 @@ export const builders = {
 
   member(object: Expression, property: Expression, computed: boolean, loc: JisonLoc): MemberExpression {
     return { type: 'MemberExpression', object, property, computed, optional: false, loc: toLoc(loc) }
+  },
+
+  // `(e)`: the node itself; a parenthesized sequence stays one element of an enclosing one (D55).
+  parenthesized(node: Expression): Expression {
+    if (node.type === 'SequenceExpression') parenthesizedSequences.add(node)
+
+    return node
+  },
+
+  // `a, b` (D55): one flat list, as in ESTree.
+  sequence(left: Expression, right: Expression, loc: JisonLoc): SequenceExpression {
+    const flat = left.type === 'SequenceExpression' && !parenthesizedSequences.has(left)
+    const expressions = flat ? [...left.expressions, right] : [left, right]
+
+    return { type: 'SequenceExpression', expressions, loc: toLoc(loc) }
   },
 
   // `for await (… of …)` (D53).

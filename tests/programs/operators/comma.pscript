@@ -1,0 +1,21 @@
+// The comma operator (D55): evaluates left to right, gives the last value
+let a = (1, 2, 3)
+print(a)
+
+for (let i = 0, j = 10; i < j; i += 3, j -= 3) print(i, j)
+
+let x = 0
+let y = 0
+x++, y += 2
+print(x, y, (x, y))
+
+const step = () => (x++, x * 10)
+print(step(), [(1, 2), 3].join(), ((1, 2), 3))
+
+const log = []
+const last = (log.push('first'), log.push('second'), log.length)
+print(last, log.join('+'))
+
+let k = 0
+while ((k++, k < 3)) print('k', k)
+print(((p, q) => p + q)(1, 2))
