@@ -122,6 +122,7 @@ export type Expression
     | ArrowFunctionExpression | ClassExpression | UnaryExpression | UpdateExpression
     | BinaryExpression | LogicalExpression | AssignmentExpression | ConditionalExpression
     | CallExpression | NewExpression | MemberExpression | ThisExpression | TemplateLiteral | YieldExpression
+    | AwaitExpression
 
 /** What binds names: a name, or an object or array pattern of names (D40). */
 export type BindingPattern = Identifier | ObjectPattern | ArrayPattern
@@ -730,6 +731,16 @@ export interface YieldExpression extends NodeBase {
   argument: Expression | null
   /** `yield*` */
   delegate: boolean
+}
+
+/**
+ * `await value` (D43); only in async functions.
+ */
+export interface AwaitExpression extends NodeBase {
+  /** node type */
+  type: 'AwaitExpression'
+  /** the awaited value */
+  argument: Expression
 }
 
 /**

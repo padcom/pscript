@@ -7,7 +7,7 @@ describe('lexical errors', () => {
     ['1 === 1', "'===' is not supported; use '=='", 3],
     ['1 !== 1', "'!==' is not supported; use '!='", 3],
     ['var', "Unexpected reserved word 'var'", 1],
-    ['1 + async', "Unexpected reserved word 'async'", 5],
+    ['1 + enum', "Unexpected reserved word 'enum'", 5],
     ['1 @ 2', "Unexpected character '@'", 3],
   ])('%s', (source, reason, column) => {
     expect(() => parse(source)).toThrow(expect.objectContaining({ reason, line: 1, column }))

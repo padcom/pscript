@@ -5,6 +5,7 @@ import type {
   AssignmentExpression,
   AssignmentPattern,
   AssignmentOperator,
+  AwaitExpression,
   BindingPattern,
   BinaryOperator,
   BlockStatement,
@@ -192,6 +193,10 @@ export const builders = {
 
   yieldExpression(argument: Expression | null, delegate: boolean, loc: JisonLoc): YieldExpression {
     return { type: 'YieldExpression', argument, delegate, loc: toLoc(loc) }
+  },
+
+  awaitExpression(argument: Expression, loc: JisonLoc): AwaitExpression {
+    return { type: 'AwaitExpression', argument, loc: toLoc(loc) }
   },
 
   assignmentPattern(left: PatternTarget, right: Expression, loc: JisonLoc): AssignmentPattern {

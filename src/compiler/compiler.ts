@@ -58,6 +58,7 @@ import type {
   VariableDeclaration,
   WhileStatement,
   YieldExpression,
+  AwaitExpression,
 } from '@/parser/ast'
 import type { FunctionNode } from '@/parser/ast-builders'
 import { parse } from '@/parser/parse'
@@ -166,6 +167,9 @@ function bindingOf(resolution: Resolution): Binding | undefined {
   return resolution.where === 'global' ? undefined : resolution.binding
 }
 
+const AWAIT_OUTSIDE_ASYNC = "'await' is only valid in async functions"
+const TOP_LEVEL_AWAIT = "'await' is only valid in async functions (top-level await is not supported)"
+
 /** Statements that declare bindings with a TDZ. */
 const LEXICAL_DECLARATIONS = new Set<Statement['type']>(['VariableDeclaration', 'ClassDeclaration', 'InterfaceDeclaration'])
 
@@ -246,6 +250,7 @@ const EXPRESSIONS: { [K in Expression['type']]?: Handler<Extract<Expression, { t
   TemplateLiteral: (c, node) => c.template(node),
   ClassExpression: (c, node) => c.classExpression(node),
   YieldExpression: (c, node) => c.yieldExpression(node),
+  AwaitExpression: (c, node) => c.awaitExpression(node),
 }
 
 /**
@@ -369,6 +374,8 @@ interface FunctionContext {
   superCall: boolean
   /** compiling a generator's body (D42): `yield` is allowed (not in its parameters) */
   generator: boolean
+  /** compiling an async function's body (D43): `await` is allowed (not in its parameters) */
+  async: boolean
 }
 
 /**
@@ -425,6 +432,7 @@ class Compiler {
     isConstructor: false,
     superCall: false,
     generator: false,
+    async: false,
   }
 
   /** compile-time knowledge of class declarations, by binding (§4.5.9) */
@@ -1827,6 +1835,13 @@ class Compiler {
     else this.emitAt(loc, Op.YIELD)
   }
 
+  // `await v` suspends the async function until v (as a promise) settles (D43).
+  awaitExpression({ argument, loc }: AwaitExpression) {
+    if (!this.fn.async) throw this.error(this.fn.parent ? AWAIT_OUTSIDE_ASYNC : TOP_LEVEL_AWAIT, loc)
+    this.expression(argument)
+    this.emitAt(loc, Op.AWAIT)
+  }
+
   private yieldDelegate(loc: SourceLocation) {
     this.emitAt(loc, Op.GET_ITER)
     this.out.emit(Op.NULL) // the first step sends nothing
@@ -1875,25 +1890,31 @@ class Compiler {
       isConstructor: false,
       superCall: false,
       generator: false,
+      async: false,
       ...inherited,
       ...options,
     }
   }
 
+  // The parameters are bound by the call; a generator's body runs on the first next() (D42), an async function's
+  // body runs now, until its first await (D43).
+  private coroutinePrologue({ generator, async }: AnyFunction) {
+    if (generator) this.out.emit(Op.GENERATOR)
+    if (async) this.out.emit(Op.ASYNC)
+    this.fn.generator = generator
+    this.fn.async = async
+  }
+
   // Function env layout: parameters (rest last), then the body's top-level declarations.
   // Names bound by parameter patterns come after the parameters (D40).
-  private functionBody({ params, body, generator }: AnyFunction, signature: Signature): FunctionProto {
+  private functionBody(node: AnyFunction, signature: Signature): FunctionProto {
+    const { params, body } = node
     const slots = params.map(paramSlot)
     const patternNames = params.filter(param => paramTarget(param).type !== 'Identifier').flatMap(boundNames)
 
     for (const name of [...slots, ...patternNames]) this.declareName(this.scope, name, 'let')
     this.parameters(params, slots)
-
-    // a generator's parameters are bound by the call; its body runs on the first next() (D42)
-    if (generator) {
-      this.out.emit(Op.GENERATOR)
-      this.fn.generator = true
-    }
+    this.coroutinePrologue(node)
 
     if (body.type === 'BlockStatement') this.blockBody(body)
     else this.expressionBody(body)

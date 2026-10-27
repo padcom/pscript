@@ -226,3 +226,18 @@ describe('psc: generators (D42)', () => {
     expect(js('function* g() { const s = (yield 1) + (yield 2) }')).toContain('const s = (yield 1) + (yield 2);')
   })
 })
+
+describe('psc: async functions (D43)', () => {
+  it('prints async functions, arrows, methods and await', () => {
+    expect(js('async function f(x) {\n  return await x\n}')).toBe('async function f(x) {\n  return await x;\n}')
+    expect(js('const g = async x => await x + 1')).toBe('const g = async x => await x + 1;')
+    expect(js('const h = async (a, b) => {}')).toBe('const h = async (a, b) => {};')
+    expect(js('const o = { async m() {} }')).toBe('const o = {\n  async m() {},\n};')
+    expect(js('class A {\n  static async of() {}\n}')).toContain('static async of() {}')
+    expect(js('const e = async function () {}')).toBe('const e = async function () {};')
+  })
+
+  it('parenthesises await operands', () => {
+    expect(js('async function f() { return (await a).b + await (b + c) }')).toContain('return (await a).b + await (b + c);')
+  })
+})

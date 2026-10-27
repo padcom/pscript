@@ -92,6 +92,8 @@ export enum Op {
   DELETE_INDEX,
   GENERATOR,
   YIELD,
+  ASYNC,
+  AWAIT,
   YIELD_DELEGATE,
   ITER_CLOSE,
   CLOSE_ITERS,
@@ -231,6 +233,8 @@ export const OPCODES: Readonly<Record<Op, OpcodeInfo>> = {
   [Op.DELETE_INDEX]: info('', 'obj key → bool'), // `delete o[key]`
   [Op.GENERATOR]: info('', '→'), // generator prologue (D42): suspends the frame and returns a generator object
   [Op.YIELD]: info('', 'v → sent'), // suspends with v; resumes with the value sent by next()
+  [Op.ASYNC]: info('', '→'), // async prologue (D43): runs the body until its first await; the call returns a promise
+  [Op.AWAIT]: info('', 'v → result'), // suspends until PromiseResolve(v) settles; resumes with its value or throws
   [Op.YIELD_DELEGATE]: info('', 'iter sent → iter | result'), // yield*: one step of the delegate; re-runs on resume
   [Op.ITER_CLOSE]: info('', 'iter →'), // pops; closes a generator iterator that is not done (break, patterns)
   [Op.CLOSE_ITERS]: info('', 'v → v'), // return inside for…of: closes the frame's iterators below the value

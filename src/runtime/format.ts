@@ -3,6 +3,7 @@
 import { IDENT_PATTERN } from '@/parser/tokens'
 import { toStringIn } from './conversions'
 import { GeneratorObject } from './generators'
+import { PromiseObject } from './promises'
 import { publicProps } from './members'
 import { toString } from './operators'
 import {
@@ -56,6 +57,9 @@ function namedForm(object: ScriptObject): string | null {
   return object instanceof GeneratorObject ? '[Generator]' : null
 }
 
+/** How a promise's state prints (D43): `Promise(<pending>)`, `Promise(1)`, `Promise(<rejected> Error: x)`. */
+const PROMISE_STATES: Record<PromiseObject['state'], string> = { pending: '<pending>', fulfilled: '', rejected: '<rejected> ' }
+
 function formatKey(key: string): string {
   return IDENT_PATTERN.test(key) ? key : JSON.stringify(key)
 }
@@ -88,8 +92,15 @@ class Formatter {
   private object(object: ScriptObject, depth: number): string {
     const named = namedForm(object)
     if (named !== null) return named
+    if (object instanceof PromiseObject) return this.promise(object, depth)
 
     return object.klass ? this.instance(object) : this.container(object, depth)
+  }
+
+  private promise({ state, result }: PromiseObject, depth: number): string {
+    const label = PROMISE_STATES[state]
+
+    return `Promise(${state === 'pending' ? label : label + this.value(result, depth + 1)})`
   }
 
   private instance(object: ScriptObject): string {

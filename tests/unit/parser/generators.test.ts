@@ -1,4 +1,4 @@
-// Generator syntax (D42): the AST matches acorn's, including `yield` precedence and ASI after `yield`.
+// Generator and async syntax (D42, D43): the AST matches acorn's, including `yield` precedence and ASI after `yield`.
 import { parse as acornParse } from 'acorn'
 import { describe, expect, it } from 'vitest'
 import { parse } from '@/parser/parse'
@@ -59,5 +59,37 @@ describe('generator syntax', () => {
 
   it('rejects generator constructors', () => {
     expect(() => parse('class A { *constructor() {} }')).toThrow('Class constructor may not be a generator')
+  })
+})
+
+describe('async syntax', () => {
+  it.each([
+    'async function f() { await x }',
+    'export_ = async function () { return await f() }',
+    'const f = async function named(a) {}',
+    'const f = async x => await x',
+    'const f = async (a, b = 1) => { await a }',
+    'const f = async () => ({ a: await b })',
+    'const o = { async m() { await 1 }, async delete() {}, async: 1 }',
+    'class A { async m() { await this.x } static async of() {} async() {} }',
+    'async function f() { const [a, b] = await Promise.all([x, y]) }',
+    'async function f() { return await a + await b }',
+    'async function f() { for (const x of await list()) await x }',
+    'async function f() { await\nx }',
+  ])('%j', source => sameAsAcorn(source))
+
+  it('marks async functions in the AST', () => {
+    expect(parse('async function f() {}').body[0]).toMatchObject({ type: 'FunctionDeclaration', async: true, generator: false })
+    expect(parse('async x => x').body[0]).toMatchObject({ expression: { type: 'ArrowFunctionExpression', async: true } })
+  })
+
+  it.each([
+    ['async function* g() {}', 'async generators are not supported'],
+    ['const o = { async *g() {} }', 'async generators are not supported'],
+    ['async\nfunction f() {}', "Line terminator not permitted after 'async'"],
+    ['class A { async constructor() {} }', 'Class constructor may not be an async method'],
+    ['let async = 1', "Unexpected token 'async'"],
+  ])('rejects %j', (source, message) => {
+    expect(() => parse(source)).toThrow(message)
   })
 })

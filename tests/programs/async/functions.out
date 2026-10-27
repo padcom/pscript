@@ -1,0 +1,20 @@
+true
+sum 6
+parallel 10
+guarded start false
+guarded finally false
+guarded ok
+guarded start true
+guarded caught failed
+guarded finally true
+guarded recovered
+plain 10
+countdown 3
+countdown 2
+countdown 1
+liftoff
+balance 15
+counter 2
+items: 2
+caught TypeError: async arrow failed
+main done

@@ -73,7 +73,10 @@ export class Interpreter {
 
     this.realm = createRealm()
     installStdlib(this.realm, { stdout, stderr, random })
-    this.vm = new VM(this.realm, { maxSteps, maxCallDepth })
+    // errors of jobs that run after `run()` returned (unhandled rejections) go to stderr (D43)
+    const reportError = (error: unknown) => stderr(error instanceof Error ? error.message : String(error))
+
+    this.vm = new VM(this.realm, { maxSteps, maxCallDepth, reportError })
     this.modules = new ModuleRegistry(moduleLoader ?? memoryLoader(modules), this.vm)
 
     for (const [name, value] of globalThis.Object.entries(globals)) this.set(name, value)

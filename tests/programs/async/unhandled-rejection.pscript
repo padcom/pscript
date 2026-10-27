@@ -1,0 +1,5 @@
+// @pscript-only: an unhandled rejection is reported like an uncaught exception
+async function load() {
+  throw new Error('lost')
+}
+load()

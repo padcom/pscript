@@ -1,0 +1,35 @@
+// @pscript-only: promise printing, null for missing values (D37), only promises are adopted, Promise is final
+const pending = new Promise(() => {})
+const fulfilled = Promise.resolve([1, 'a'])
+const rejected = Promise.reject(new Error('boom'))
+rejected.catch(() => null)
+print(pending, fulfilled, rejected)
+
+Promise.resolve().then(value => print('resolve() gives', value))
+new Promise(resolve => resolve()).then(value => print('resolve() in an executor gives', value))
+
+// an object with a then method is not a thenable: it is the value
+const thenable = { then(resolve) { resolve('adopted') } }
+Promise.resolve(thenable).then(value => print('thenable kept:', value == thenable))
+
+// handlers receive only the arguments they declare (strict arity, D38)
+Promise.resolve(1).then(() => print('zero-parameter handler works'))
+
+async function noReturn() {}
+noReturn().then(value => print('async function without return gives', value))
+
+try {
+  class Mine extends Promise {}
+} catch (e) {
+  print(e.name, e.message)
+}
+try {
+  Promise.resolve(1).value
+} catch (e) {
+  print(e.name, e.message)
+}
+try {
+  new Promise(1)
+} catch (e) {
+  print(e.name, e.message)
+}

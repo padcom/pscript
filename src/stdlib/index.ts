@@ -10,6 +10,7 @@ import { installJson } from './json'
 import { installMath } from './math'
 import { installNumber } from './number'
 import { installObject } from './object'
+import { installPromise } from './promise'
 import { installString } from './string'
 
 export type { StdlibIO }
@@ -31,6 +32,7 @@ export function installStdlib(realm: Realm, io: Partial<StdlibIO> & Pick<StdlibI
   installJson(realm)
   installErrors(realm)
   installGenerator(realm)
+  installPromise(realm)
 }
 
 let globalNames: ReadonlySet<string> | null = null

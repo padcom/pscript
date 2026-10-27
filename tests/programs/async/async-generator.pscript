@@ -1,0 +1,2 @@
+// @pscript-only: async generators are valid JavaScript
+async function* g() {}

@@ -293,8 +293,8 @@ function checkedBuilders(errors: SyntaxErrorFactory, patterns: PatternBuilder) {
     update(operator: '++' | '--', prefix: boolean, argument: Expression, loc: JisonLoc) {
       return builders.update(operator, prefix, checkTarget(errors, argument, `'${operator}'`), loc)
     },
-    arrow(params: Pattern[], body: BlockStatement | Expression, loc: JisonLoc) {
-      return builders.arrow(checkParams(errors, params), body, loc)
+    arrow(params: Pattern[], body: BlockStatement | Expression, loc: JisonLoc, async = false) {
+      return builders.arrow(checkParams(errors, params), body, loc, async)
     },
     functionNode(type: FunctionType, head: FunctionHead, body: BlockStatement, loc: JisonLoc) {
       return builders.functionNode(type, { ...head, params: checkParams(errors, head.params) }, body, loc)

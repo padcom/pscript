@@ -1,0 +1,26 @@
+object true [object Promise]
+executor runs synchronously
+after constructor
+then: first value
+executor threw TypeError: bad executor
+finally (fulfilled)
+finally (rejected)
+all of none: 0
+not iterable: TypeError
+withResolvers: resolved from outside
+self resolution: TypeError
+chained: 11
+caught later: passes through
+finally failed
+all: 1,2,3
+all rejected: one failed
+allSettled: fulfilled=ok rejected=no
+race: winner
+any: b
+any rejected: true x,y
+recovered from in handler
+outer: adopted
+Promise.resolve keeps a promise: true
+continues with recovered
+after finally: kept
+after finally: still rejected

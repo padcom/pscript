@@ -42,6 +42,36 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L1 | Destructuring and named parameters (D40) | done (2026-10-27) |
 | L2 | `do … while`, `switch`, `void`, `delete` (D41) | done (2026-10-27) |
 | L3 | Generators (D42) | done (2026-10-27) |
+| L4 | `async` / `await` and Promises (D43) | done (2026-10-27) |
+
+## L4 — `async` / `await` and Promises (D43)
+
+Design in `docs/PLAN.md` §4.4.17 (D43, R32) and §5.6.10, user docs in `docs/LANGUAGE.md` → Async functions and
+promises. Done ahead of the v2 roadmap (§1.7); top-level `await`, the async loader, async generators and `for await`
+remain v2.
+
+- **Syntax**: `async` and `await` are keywords. Grammar: `ASYNC FUNCTION_DECLARATION …`, `ASYNC FUNCTION …`,
+  `ASYNC ClassMemberName …`, `ASYNC IDENT|LiteralPropertyName MethodTail`, `ASYNC ARROW_IDENT|ARROW_LPAREN …`,
+  `AWAIT UnaryExpression` (no conflicts). Token filter: an `async` at a statement start makes the following
+  `function` a declaration; `async` in member/key position starts a method name (`async delete()`); a line break after
+  `async` and `async function*` / `async *m()` are errors. ESTree `AwaitExpression`; arrows carry `async`.
+- **Compiler**: `coroutinePrologue` emits `GENERATOR` or `ASYNC` after the parameters and sets `fn.generator` /
+  `fn.async`; `await` elsewhere is a `SyntaxError` (with a hint at the top level).
+- **VM**: `ASYNC` (like `GENERATOR`, but the body starts at once through `stepAsync`), `AWAIT` (= `YIELD`).
+  `Promises` (`src/vm/promises.ts`) follows the spec's jobs exactly; the differential tests compare the order of
+  callbacks with Node (`tests/helpers/node-reference.ts` and the psc test now use `microtaskMode: 'afterEvaluate'`).
+  Job queue: `enqueueJob` / `settle()` / background drain via `queueMicrotask`; `VMOptions.reportError` (the
+  interpreter passes `stderr`); `toThrow()` exposes the exception → script value conversion for natives.
+  `ModuleVM.settle()` is called by the registry after a graph is evaluated.
+- **Stdlib**: `src/stdlib/promise.ts` (final class `Promise`, prototype methods, statics on the class's own
+  properties), `AggregateError` in `errors.ts`. `print` formats promises; `AccessContext.promises` is new.
+- **Interop**: thenables → script promises (identity kept, round trips give the host promise back); script promises
+  → host `Promise`s (`Proxies.promise`).
+- **psc**: native `async` / `await` (`await` has unary precedence). Differences in §11.4.
+
+Tests: programs `async/{ordering,promises,functions,interleaving,pscript-specific,unhandled-rejection,…}`,
+`tests/unit/interop/promises.test.ts`, `tests/unit/parser/generators.test.ts` (async syntax),
+`tests/unit/transpiler/emitter.test.ts`.
 
 ## L3 — Generators (D42)
 

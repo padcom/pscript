@@ -55,6 +55,8 @@ import {
 } from '@/runtime/values'
 import { defineClass, superMember } from './classes'
 import { Coroutine, GeneratorReturn, type CoroutineHost } from './coroutines'
+import { Promises, type PromiseHost } from './promises'
+import type { PromiseObject } from '@/runtime/promises'
 import { defineInterface } from './interfaces'
 import { checkPattern, iteratorRest, objectRest } from './patterns'
 import type { Frame, Handler } from './frame'
@@ -68,6 +70,8 @@ export interface VMOptions {
   maxSteps: number
   /** maximum depth of nested calls */
   maxCallDepth: number
+  /** receives errors of jobs run outside `execute()` (unhandled rejections); default: rethrown to the host */
+  reportError?: (error: unknown) => void
 }
 
 function location(proto: FunctionProto, offset: number): [number, number] {
@@ -286,7 +290,7 @@ function finishedStep(mode: ResumeMode, value: Value, stack: () => ScriptStackFr
   return { value: mode === 'return' ? value : null, done: true }
 }
 
-export class VM implements AccessContext, CoroutineHost {
+export class VM implements AccessContext, CoroutineHost, PromiseHost {
   readonly stack: Value[] = []
   readonly frames: Frame[] = []
   readonly globals: Globals
@@ -300,15 +304,25 @@ export class VM implements AccessContext, CoroutineHost {
   readonly interop: Interop
   /** the context host code acts in: no home class (§5.8.1) */
   readonly hostContext: AccessContext
+  /** promises and their jobs (D43) */
+  readonly promises: Promises
+  /** the job (microtask) queue: promise reactions and `await` continuations */
+  private jobs: (() => void)[] = []
+  /** running jobs: calls from them share one step budget */
+  private draining = false
+  /** a host microtask will drain the queue */
+  private drainScheduled = false
 
   constructor(readonly realm: Realm, readonly options: VMOptions) {
     this.globals = new Globals(realm)
     this.interop = new Interop(this)
+    this.promises = new Promises(this)
     this.hostContext = {
       realm,
       homeClass: null,
       callFunction: (fn, thisValue, args) => this.callFunction(fn, thisValue, args),
       captureStack: () => this.captureStack(),
+      promises: this.promises,
     }
   }
 
@@ -372,10 +386,15 @@ export class VM implements AccessContext, CoroutineHost {
   }
 
   private callClosure(fn: Closure, thisValue: Value, args: Value[]): Value {
-    if (this.frames.length === 0) this.steps = 0 // a call from the host starts a new step budget (D14)
+    this.startStepBudget()
     this.enterClosure(fn, args, thisValue)
 
     return this.runNested()
+  }
+
+  // A call or resumption from the host starts a new step budget (D14); jobs share the budget of their drain.
+  private startStepBudget() {
+    if (this.frames.length === 0 && !this.draining) this.steps = 0
   }
 
   private runNested(): Value {
@@ -530,13 +549,111 @@ export class VM implements AccessContext, CoroutineHost {
     this.frames.push(this.newFrame(main, env, null))
 
     try {
-      return this.run(1)
+      const value = this.run(1)
+
+      this.frames.length = 0
+      this.stack.length = 0
+      this.settleJobs()
+
+      return value
     } catch (e) {
       throw this.uncaught(e)
     } finally {
       this.frames.length = 0
       this.stack.length = 0
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Jobs (D43, §5.6.10): run when the script stack is empty — at the end of `execute()` and of a module graph's
+  // evaluation, or in a host microtask when a job is queued from outside (a host promise settled, a host call).
+
+  /**
+   * Queues a job.
+   *
+   * @param job the job
+   */
+  enqueueJob(job: () => void) {
+    this.jobs.push(job)
+
+    if (this.drainScheduled) return
+    this.drainScheduled = true
+    globalThis.queueMicrotask(() => this.drainInBackground())
+  }
+
+  /**
+   * Runs the queued jobs (and those they queue) to completion; an unhandled rejection left after that is thrown as an
+   * uncaught error (§5.9). Used after a module graph has been evaluated.
+   */
+  settle() {
+    try {
+      this.settleJobs()
+    } catch (e) {
+      throw this.uncaught(e)
+    } finally {
+      this.frames.length = 0
+      this.stack.length = 0
+    }
+  }
+
+  private settleJobs() {
+    this.drainJobs()
+
+    const [unhandled] = this.promises.takeUnhandled()
+    if (unhandled) throw this.unhandledRejection(unhandled)
+  }
+
+  private unhandledRejection({ result, frames }: PromiseObject): ScriptThrow {
+    return new ScriptThrow(result, frames)
+  }
+
+  private drainJobs() {
+    const limited = this.options.maxSteps !== Infinity
+
+    this.draining = true
+
+    try {
+      for (let i = 0; i < this.jobs.length; i++) this.runJob(i, limited)
+    } finally {
+      this.jobs = []
+      this.draining = false
+    }
+  }
+
+  private runJob(index: number, limited: boolean) {
+    if (limited && this.steps > this.options.maxSteps) throw rangeError('Execution step limit exceeded')
+    this.jobs[index]()
+  }
+
+  // Jobs queued while no script runs: drained in a host microtask, with a new step budget.
+  private drainInBackground() {
+    this.drainScheduled = false
+
+    if (this.frames.length > 0 || this.jobs.length === 0) return
+
+    this.steps = 0
+
+    try {
+      this.settle()
+    } catch (e) {
+      this.reportError(e)
+    }
+  }
+
+  private reportError(error: unknown) {
+    if (!this.options.reportError) throw error
+    this.options.reportError(error)
+  }
+
+  /**
+   * The script exception an exception caught by native code stands for: a thrown value, or the error object of a
+   * runtime error. Internal errors are rethrown.
+   *
+   * @param error the exception
+   * @returns the script exception
+   */
+  toThrow(error: unknown): ScriptThrow {
+    return this.asThrow(error)
   }
 
   // An exception that left the script: report it to the host (§5.9).
@@ -873,6 +990,50 @@ export class VM implements AccessContext, CoroutineHost {
     return new GeneratorObject(this.realm.GeneratorPrototype, coroutine)
   }
 
+  // ---------------------------------------------------------------------------
+  // Async functions (D43, §5.6.10)
+
+  // ASYNC: the body runs now, until its first `await`; the call returns the function's promise.
+  private startAsync(frame: Frame): PromiseObject {
+    const coroutine = new Coroutine(this, frame)
+    const promise = this.promises.create()
+
+    frame.coroutine = coroutine
+    this.suspend(frame)
+    coroutine.state = 'suspended-start'
+    this.stepAsync(coroutine, promise, 'next', null)
+
+    return promise
+  }
+
+  // Runs the body until it awaits (it continues in a job once the awaited promise settles) or ends (the promise is
+  // resolved with the result, or rejected with the exception).
+  private stepAsync(coroutine: Coroutine, promise: PromiseObject, mode: ResumeMode, value: Value) {
+    let step: IteratorStep
+
+    try {
+      step = this.resumeCoroutine(coroutine, mode, value)
+    } catch (e) {
+      const { value: reason, frames } = this.asThrow(e)
+
+      this.promises.reject(promise, reason, frames)
+
+      return
+    }
+
+    if (step.done) this.promises.resolve(promise, step.value)
+    else this.awaitValue(coroutine, promise, step.value)
+  }
+
+  // `await v`: PerformPromiseThen on PromiseResolve(v) — one job when v is a settled promise, as in JS.
+  private awaitValue(coroutine: Coroutine, promise: PromiseObject, awaited: Value) {
+    this.promises.react(
+      this.promises.promiseResolve(awaited),
+      result => this.stepAsync(coroutine, promise, 'next', result),
+      reason => this.stepAsync(coroutine, promise, 'throw', reason),
+    )
+  }
+
   // Saves the frame's operand-stack values and takes the frame off the frame stack.
   private suspend(frame: Frame) {
     const coroutine = frame.coroutine as Coroutine
@@ -894,7 +1055,7 @@ export class VM implements AccessContext, CoroutineHost {
   resumeCoroutine(coroutine: Coroutine, mode: ResumeMode, value: Value): IteratorStep {
     if (isFinished(coroutine, mode)) return finishedStep(mode, value, () => this.captureStack())
 
-    if (this.frames.length === 0) this.steps = 0 // resumed by the host: a new step budget (D14)
+    this.startStepBudget()
     const depth = this.enterCoroutine(coroutine)
 
     try {
@@ -1388,8 +1549,20 @@ export class VM implements AccessContext, CoroutineHost {
           stack.push(generator)
           break
         }
+        case Op.ASYNC: {
+          frame.ip = ip
+          const promise = this.startAsync(frame)
+
+          if (this.frames.length < entryDepth) return promise
+          frame = this.frames[this.frames.length - 1];
+          ({ code, constants } = frame.proto)
+          ip = frame.ip
+          stack.push(promise)
+          break
+        }
         // a coroutine's frame always runs as the entry frame of its own loop (resumeCoroutine), so suspending it
         // ends this loop
+        case Op.AWAIT:
         case Op.YIELD:
           a = stack.pop()
           frame.ip = ip

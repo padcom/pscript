@@ -36,8 +36,8 @@ interface Token {
   endsDo?: boolean
   /** the `:` of a `case` / `default` clause: a statement starts after it */
   endsCase?: boolean
-  /** a `*` where a class member or an object-literal key starts: a generator method's name follows (D42) */
-  generatorStar?: boolean
+  /** a `*` or `async` where a class member or an object-literal key starts: a method's name follows (D42, D43) */
+  startsMethod?: boolean
   /** a `}` that closes a block */
   closesBlock?: boolean
   /** a `}` that closes a block statement or a function declaration's body: no `;` needed after it */
@@ -107,7 +107,8 @@ const EMIT_HOOKS: Record<string, (filter: TokenFilter, token: Token) => void> = 
   'CASE': filter => filter.caseStart(),
   'DEFAULT': filter => filter.caseStart(),
   '?': filter => filter.caseTernary(),
-  '*': (filter, token) => filter.markGeneratorStar(token),
+  '*': (filter, token) => filter.markMethodStart(token),
+  'ASYNC': (filter, token) => filter.asyncStart(token),
   ':': (filter, token) => filter.caseColon(token),
   'WHILE': (filter, token) => filter.whileStart(token),
 }
@@ -352,13 +353,27 @@ export class TokenFilter {
     return this.memberName() || this.generatorMethodName()
   }
 
-  // `*of() {}`, `static *delete() {}`: a keyword after a member-start `*` and before `(` is the method's name.
+  // `*of() {}`, `async delete() {}`: a keyword after a member-start `*` / `async` and before `(` is the method's name.
   private generatorMethodName(): boolean {
-    return Boolean(this.prev?.generatorStar) && this.peek(0).name === '('
+    return Boolean(this.prev?.startsMethod) && this.peek(0).name === '('
   }
 
-  markGeneratorStar(token: Token) {
-    token.generatorStar = this.inMemberPosition() || (this.top() === '{object}' && this.afterKeyPreceder())
+  markMethodStart(token: Token) {
+    token.startsMethod = this.inMemberPosition() || (this.top() === '{object}' && this.afterKeyPreceder())
+  }
+
+  // `async function` at the start of a statement is a declaration; async generators are not supported (D43).
+  asyncStart(token: Token) {
+    const next = this.peek(0)
+
+    if (next.afterNewline) this.state.fail("Line terminator not permitted after 'async'", next.loc)
+    if (this.startsAsyncGenerator(next)) this.state.fail('async generators are not supported', token.loc)
+    token.startsStatement = this.atStatementStart()
+    this.markMethodStart(token)
+  }
+
+  private startsAsyncGenerator(next: Token): boolean {
+    return next.name === '*' || (next.name === 'FUNCTION' && this.peek(1).name === '*')
   }
 
   private inKeyPosition(): boolean {
@@ -524,7 +539,11 @@ export class TokenFilter {
   }
 
   functionStart(token: Token) {
-    if (this.atStatementStart()) this.declarationStart(token)
+    if (this.atStatementStart() || this.afterStatementAsync()) this.declarationStart(token)
+  }
+
+  private afterStatementAsync(): boolean {
+    return this.prev?.name === 'ASYNC' && Boolean(this.prev.startsStatement)
   }
 
   doStart() {

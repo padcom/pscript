@@ -33,7 +33,8 @@ JavaScript hard to reason about:
 - modules with named imports and exports, live bindings and an in-memory or custom loader;
 - `delete` works on plain objects only (class instances and arrays keep their shape);
 - generators work as in JavaScript (missing values are `null` there too);
-- no `var`, spread, `async` or `with`.
+- `async`/`await` and promises with the same callback order as JavaScript;
+- no `var`, spread or `with`.
 
 The full language reference, including a list of differences from JavaScript, is in
 [`docs/LANGUAGE.md`](docs/LANGUAGE.md).

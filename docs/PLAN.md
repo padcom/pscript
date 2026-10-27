@@ -100,6 +100,7 @@ Each feature in this document has one of these tags:
 | R29 | Destructuring: object and array patterns (nested, defaults, rest) in parameters, declarations, `for…of`, `catch` and assignments; object patterns in parameters are strict named parameters (D40) | 4.4.14 |
 | R30 | `do … while`, `switch`, `void` and `delete` (D41) | 4.4.15 |
 | R31 | Generators: `function*`, generator methods, `yield`, `yield*`, `next`/`return`/`throw` (D42) | 4.4.16 |
+| R32 | `async`/`await` and `Promise` (D43) | 4.4.17 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -125,11 +126,11 @@ Rest parameters and spread (`...`), optional chaining `?.`, computed keys `{ [k]
 
 `var`, ~~generators~~ (done, D42), **default exports and default imports** (`export default`, `import x from`), `export * from`, `export * as ns from`, `import.meta`, regular-expression literals, labels, `with`, `eval`, symbols, BigInt, **tagged templates and `String.raw`** (D34, excluded for good), Unicode identifiers (ASCII only in v1).
 
-Planned for v2 (§1.7): `async`/`await`, an asynchronous module loader, top-level `await`, dynamic `import()`.
+Planned for v2 (§1.7): ~~`async`/`await`~~ (done, D43), an asynchronous module loader, top-level `await`, dynamic `import()`, async generators and `for await`.
 
 ### 1.7 v2 roadmap and constraints on v1 (D19)
 
-v2 adds `async` functions, `await`, Promises, an asynchronous `ModuleLoader`, top-level `await` in modules, and probably dynamic `import()`. v1 does not implement any of it, but must keep these doors open:
+v2 adds ~~`async` functions, `await`, Promises~~ (done early: D43, §4.4.17), an asynchronous `ModuleLoader`, top-level `await` in modules, and probably dynamic `import()`. v1 does not implement any of it, but must keep these doors open:
 
 - **Suspendable execution.** Script-to-script calls must never recurse on the host JS stack (already required by §5.6.2). All frame state (operand stack slice, ip, environments, handlers, completion records) lives in heap objects, so a frame can later be suspended at an `await` and resumed from a microtask.
 - **Re-entrancy is the exception.** Native→script callbacks (`Array.prototype.map`, getters called from natives, host calls through proxies) use the re-entrant `callFunction`. In v2, `await` inside such a nested run is only allowed when the async function itself was called from the script (the usual case). The VM design must keep "nested run loop" an explicit, detectable state (`vm.nestingDepth`).
@@ -206,6 +207,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D40 | Destructuring and named parameters | **JavaScript destructuring, with strict named parameters**: object and array patterns everywhere a binding or assignment target is allowed. An object pattern inside a *parameter* rejects an argument object that has properties the pattern does not name (unless the pattern has `...rest`): at compile time for object literals passed to a known callee, otherwise at runtime. Details in §4.4.14 | yes |
 | D41 | `do … while`, `switch`, `void`, `delete` | **As in JavaScript, with two PScript rules**: `switch` compares with `==`, which is strict (D1), so it behaves like JS's `===` matching; `delete` removes own properties of **plain objects** (and host objects) only: on class instances, arrays, functions, classes, namespaces, frozen objects and primitives it is a `TypeError` (JS would leave a hole in an array or silently fail), and `delete x` / `delete 1` are `SyntaxError`s. `void x` gives `undefined`. Details in §4.4.15 | minor (delete errors) |
 | D42 | Generators | **JavaScript generators**: `function*`, `*method()` (classes and object literals, static too), `yield`, `yield*`, generator objects with `next`, `return` and `throw`, iterable by `for…of`, array patterns and `Array.from`; leaving a `for…of` early (`break`, `return`, an exception) or destructuring closes the generator (its `finally` blocks run), as in JS. **"No value" is `null` (D37)**: a bare `yield` yields `null`, `next()` without an argument makes the paused `yield` give `null`, a finished generator gives `{ value: null, done: true }`. No async generators. Generator objects print as `[Generator]`. Details in §4.4.16 | minor (null instead of undefined) |
+| D43 | `async` / `await` and Promises | **JavaScript semantics, including the order of callbacks**: `async` functions, arrows and methods, `await` (only inside async functions: no top-level `await` yet, no async generators or `for await`), and a built-in **final** class `Promise` with `then`/`catch`/`finally`, `resolve`, `reject`, `all`, `allSettled`, `race`, `any` and `withResolvers` (plus `AggregateError`). Jobs (microtasks) run when the script stack is empty: **`run()` drains them before it returns**, so script-only async code completes synchronously; jobs queued later (a host promise settled) run in a host microtask. An unhandled rejection left after `run()`'s drain is thrown like an uncaught exception. **Only `Promise` instances are adopted** (an object with a `then` method is a plain value; host thenables are converted at the boundary). "No value" is `null` (D37). Details in §4.4.17 | minor (thenables, null, final `Promise`) |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -347,13 +349,13 @@ A small local Vite plugin that turns `import parser from './pscript.jison'` into
 
 - `IDENT`: `[A-Za-z_$][A-Za-z0-9_$]*`. `$` is an ordinary identifier character with no special meaning (D30).
 - `#` is not a valid character: `SyntaxError: Unexpected '#'. Use the 'private' modifier for private members`.
-- Keywords (reserved): `let const function return if else for of while break continue class extends new this super true false null undefined typeof instanceof in throw try catch finally static import export public protected private interface implements do switch case default delete void yield` (`do`…`void` since D41, `yield` since D42).
+- Keywords (reserved): `let const function return if else for of while break continue class extends new this super true false null undefined typeof instanceof in throw try catch finally static import export public protected private interface implements do switch case default delete void yield async await` (`do`…`void` since D41, `yield` since D42, `async` and `await` since D43).
 - **Contextual keywords** (ordinary identifiers everywhere else; the token filter turns them into keyword tokens only in the positions below, §4.2.5):
   - `get`, `set`: in a class member-name or object-literal key position when followed by another member name → `GET` / `SET`. A method *named* `get` (`get() {}`) stays an identifier.
   - `as`: inside an import/export specifier list, or right after `import *` → `AS`.
   - `override`, `final`: in a class member-name position when followed by another modifier, `get`/`set`, or a member name → `OVERRIDE` / `FINAL`. `final` directly before `class` (at statement start, after `export`, or in expression position) → `FINAL`. Elsewhere both are ordinary identifiers (`let final = 1` works).
   - `from`: after the closing `}` of an import/export specifier list, or after `import * as IDENT` → `FROM`.
-- Reserved for the future (always a `SyntaxError` as an identifier): `var async await enum package abstract`.
+- Reserved for the future (always a `SyntaxError` as an identifier): `var enum package abstract`.
 - Keywords are allowed as **property names** after `.` and as object-literal or class-member keys. The token filter rewrites them to `IDENT` in those positions (§4.2.4).
 
 #### 4.1.3 Literals: booleans, null, undefined
@@ -700,7 +702,7 @@ As in JS. Falsy values: `false`, `0`, `-0`, `NaN`, `''`, `null`, `undefined`. Ev
 | 9 | `+ -` | left |
 | 10 | `* / %` | left |
 | 11 | `**` | right |
-| 12 | prefix `! - + typeof void delete ++ --` | right |
+| 12 | prefix `! - + typeof void delete await ++ --` | right |
 | 13 | postfix `++ --` | — |
 | 14 | `new`, call, `.`, `[]` | left |
 
@@ -1033,6 +1035,50 @@ class Tree {
 **Host interop** (§5.8.1): a script generator reaches the host as a JS iterator (`next`/`return`/`throw`, `Symbol.iterator`); host generators and other host iterables work in `for…of` and `yield*`.
 
 **Not supported**: async generators and `for await` (§4.4.17).
+
+#### 4.4.17 `async` / `await` and Promises (D43)
+
+```js
+async function loadAll(ids) {
+  const users = await Promise.all(ids.map(id => fetchUser(id)))   // fetchUser: a host function returning a promise
+  return users.filter(user => user.active)
+}
+
+const delay = value => new Promise(resolve => resolve(value))
+
+class Repository {
+  async find(id) {
+    try {
+      return await this.load(id)
+    } catch (e) {
+      return null
+    } finally {
+      this.release()
+    }
+  }
+}
+
+loadAll([1, 2]).then(users => print(users.length))
+```
+
+**Syntax**: `async function` (declarations and expressions), `async` arrows (`async x => …`, `async (a, b) => …`), `async` methods in classes (also `static async`) and object literals. `async` and `await` are keywords (D43); `async()` and `{ async: 1 }` still work as names. No line break is allowed after `async`. `await x` is a prefix operator (unary precedence: `await a + await b`) allowed only directly in an async function body — not in its parameters, in nested non-async functions, or at the top level of scripts and modules (`SyntaxError: 'await' is only valid in async functions`; top-level `await` comes with the asynchronous module loader of v2). Async generators (`async function*`, `async *m()`), `for await` and async constructors, getters and setters are `SyntaxError`s.
+
+**Promises** (`Promise` is a built-in **final** class: `instanceof Promise` works, it cannot be extended, instances are closed, D36):
+
+- `new Promise(executor)` calls `executor(resolve, reject)` synchronously (it receives the arguments it declares, §4.6.4); an exception it throws rejects the promise. `resolve` / `reject` work once; a missing argument is `null` (D37).
+- `then(onFulfilled?, onRejected?)`, `catch(onRejected)`, `finally(onFinally)` as in JS (non-callable handlers pass the value or reason on; `finally` callbacks get no arguments and keep the original outcome unless they throw or return a rejected promise).
+- Statics: `Promise.resolve(v)` (a promise is returned as is), `Promise.reject(r)`, `all`, `allSettled` (`{ status, value }` / `{ status, reason }` objects), `race`, `any` (rejects with an `AggregateError` whose `errors` lists the reasons), `withResolvers()` (`{ promise, resolve, reject }`). The combinators take any iterable (arrays, generators, host iterables); a non-iterable rejects the result with a `TypeError`.
+- **Resolution** adopts the state of a PScript promise (one extra job, as JS's thenable job) and fulfills with anything else. **An object with a `then` method is not a thenable** (PScript objects are closed and `then` is not special); host promises and host thenables are converted to PScript promises at the boundary (§5.8.1). Resolving a promise with itself rejects it with a `TypeError`.
+- `print(p)` shows `Promise(<pending>)`, `Promise(value)` or `Promise(<rejected> reason)`; `String(p)` is `[object Promise]`.
+
+**Async functions** return a promise. The body runs synchronously until its first `await`; `await v` suspends it until `Promise.resolve(v)` settles and then resumes with the value, or throws the reason at the `await` (so `try`/`catch`/`finally` work). Returning a value resolves the function's promise (adopting a returned promise), an exception rejects it. A body without `return` resolves with `null` (D37). Arrows keep the enclosing `this`.
+
+**Jobs and ordering**: reactions and `await` continuations are jobs (microtasks) queued in the order JavaScript queues them (PerformPromiseThen, reaction jobs, the extra job for adopting a promise, one job for `await` of a settled promise), so the output of a program matches Node's line for line. Jobs run when no script code is on the stack:
+
+- **`run()` / `runModule()` / `importModule()` drain the queue before returning** (for modules: after the whole graph has been evaluated, as in JS), including jobs queued by jobs. Script-only async code therefore finishes inside `run()`; a completion value that is a still-pending promise reaches the host as a JS `Promise` (§5.8.1) to `await`.
+- Jobs queued while nothing runs (a host promise settled, a host call into a script function) are drained in a host microtask (`queueMicrotask`).
+- `maxSteps` (D14) covers a drain as a whole: an endless async loop ends with the step-limit `RangeError`.
+- **Unhandled rejections**: a rejected promise without handlers when a drain ends is an error. After `run()`'s drain it is thrown to the host as the uncaught exception (`PScriptRuntimeError`, like a `throw` at the top level); after a background drain it goes to `stderr` (`InterpreterOptions.stderr`).
 
 ### 4.5 Classes, access control and interfaces (R12, R24)
 
@@ -1441,7 +1487,8 @@ The stdlib is implemented as native functions registered as read-only globals. A
 - `Array.isArray`.
 - `globalThis`: read-only namespace object exposing every global by name (stdlib and host), used to name a global explicitly inside classes (D33). It reflects host globals added later. Assigning through it → `TypeError`.
 - `JSON.stringify(value, null?, indent?)` (SHOULD; required by the differential tests). `JSON.parse` (COULD).
-- Errors (D3): `Error`, `TypeError`, `RangeError`, `ReferenceError`, `SyntaxError`, `AccessError`. These are the stdlib's only classes (D25): constructable, extendable (`class MyErr extends Error {}`), with `name`, `message` and `stack`. Calling them without `new` → `TypeError` (unlike JS).
+- `Promise` (D43, §4.4.17): a final built-in class.
+- Errors (D3): `Error`, `TypeError`, `RangeError`, `ReferenceError`, `SyntaxError`, `AccessError`, `AggregateError` (D43: `new AggregateError(errors, message)`, with `errors`). These and `Promise` are the stdlib's only classes (D25): constructable, extendable (`class MyErr extends Error {}`), with `name`, `message` and `stack`. Calling them without `new` → `TypeError` (unlike JS).
 - `String`, `Number` and `Boolean` are plain conversion functions; `Object`, `Array`, `Math` and `JSON` are namespaces of static functions. None of them is a class (§4.5.5).
 
 #### 4.6.2 `print` formatting (D18)
@@ -1777,7 +1824,7 @@ export interface MemberExpression extends NodeBase {
 }
 ```
 
-D42 adds `YieldExpression { argument: Expression | null, delegate }` and `generator` / `async` flags on every function node (ESTree; arrows have `generator: false`). D41 adds `DoWhileStatement { body, test }`, `SwitchStatement { discriminant, cases: SwitchCase[] }`, `SwitchCase { test: Expression | null, consequent: Statement[] }` and the unary operators `'void'` and `'delete'` (ESTree shapes).
+D43 adds `AwaitExpression { argument }` and sets `async` on functions. D42 adds `YieldExpression { argument: Expression | null, delegate }` and `generator` / `async` flags on every function node (ESTree; arrows have `generator: false`). D41 adds `DoWhileStatement { body, test }`, `SwitchStatement { discriminant, cases: SwitchCase[] }`, `SwitchCase { test: Expression | null, consequent: Statement[] }` and the unary operators `'void'` and `'delete'` (ESTree shapes).
 
 COULD extensions (`SpreadElement`, `ChainExpression`, `SequenceExpression`) must be additive.
 
@@ -1929,6 +1976,8 @@ export interface ModuleRecord {
 | `DELETE_INDEX` | — | obj key → bool | `delete obj[key]` (D41) |
 | `GENERATOR` | — | → | generator prologue (D42), after the parameters are bound: the frame becomes a suspended coroutine and the call returns a generator object |
 | `YIELD` | — | v → sent | suspends the generator with v; resuming pushes the value sent by `next()` (or throws / returns there) |
+| `ASYNC` | — | → | async prologue (D43), after the parameters are bound: the frame becomes a coroutine, the body runs until its first `await`, and the call returns the function's promise |
+| `AWAIT` | — | v → result | suspends the async function until `PromiseResolve(v)` settles; resumes with the value or throws the reason |
 | `YIELD_DELEGATE` | — | iter sent → iter \| result | one step of `yield*`: forwards the resumption mode to the delegate; when the delegate is not done, suspends with its value and runs again on resumption |
 | `ITER_CLOSE` | — | iter → | pops a value; closes it if it is a generator iterator that is not done (`break`, array patterns) |
 | `CLOSE_ITERS` | — | v → v | `return` inside `for…of`: closes the iterators on the frame's stack below the returned value |
@@ -2063,6 +2112,13 @@ This is the "flattened method table" from the D28 discussion: a VMT keyed by nam
 - `yield*` keeps the delegate iterator on the stack. `YIELD_DELEGATE` steps it with the mode of the last resumption (`co.mode`, valid only while `co.delegating`); while the delegate is not done it suspends with `ip` pointing at itself.
 - Iterators on the operand stack belong to `for…of` loops. Unwinding (`enterHandler`, popping a frame) closes the ones it drops, ignoring errors from the cleanup; `break` uses `ITER_CLOSE` instead of `POP`; `return` emits `CLOSE_ITERS` when the function has stack items.
 - The step budget (D14) covers resumptions; a resumption from the host (empty frame stack) starts a new budget. Resumptions count toward `maxCallDepth`.
+
+#### 5.6.10 Async functions and jobs (D43)
+
+- An async function's frame is a coroutine too (§5.6.9). Its `ASYNC` prologue suspends the frame, creates the function's promise and resumes the coroutine at once in a nested loop; `AWAIT` suspends like `YIELD`. The VM's `stepAsync` drives it: a suspension subscribes an internal reaction (no derived promise) to `PromiseResolve(awaited)` whose jobs resume the coroutine with `next` or `throw`; completion resolves the promise, an exception rejects it.
+- `src/vm/promises.ts` implements the state machine (`PromiseObject` in `src/runtime/promises.ts`): `resolve` (self-resolution → TypeError; a PScript promise is adopted through one job; anything else fulfills), `reject`, `performThen` (a derived promise), `react` (internal callbacks), reaction jobs (script handlers through `callBack`, D38), `resolvingFunctions`, and the unhandled-rejection set. Natives reach it through `AccessContext.promises`.
+- The job queue lives in the VM: `enqueueJob` appends and schedules one host microtask (`queueMicrotask`); `execute()` and the module registry call `settle()` (drain, then throw the oldest unhandled rejection as an uncaught error). A background drain reports errors through `VMOptions.reportError` (the interpreter's `stderr`). While draining, calls from jobs do not reset the step budget.
+- Interop: a script promise becomes a host `Promise` that follows it (rejections as `PScriptRuntimeError`); a host thenable becomes a script promise whose callbacks (host microtasks) resolve it, and a round trip gives back the original host promise.
 
 ### 5.7 Runtime value model (WP-D, contract in P0)
 
@@ -3296,6 +3352,8 @@ Programs that rely on these behave differently when compiled with `psc` (P5):
   imported ones); at runtime a destructured parameter ignores unknown keys, and a parameter pattern's default also
   applies when `undefined` is passed;
 - runtime errors are native JS errors (`AccessError` does not exist; access violations on `#x` are `TypeError`s);
+- promises (D43) are native: any object with a `then` method is adopted, `Promise` can be extended, unhandled
+  rejections follow the host's rules; `resolve()` / `async` functions without `return` give `undefined`;
 - generators (D42): JS gives `undefined` where PScript gives `null` (`next()` without an argument, finished steps,
   falling off the end); a bare `yield` is printed as `yield null`;
 - `delete` (D41) goes through a helper that allows plain objects only (by prototype: `Object.prototype` or `null`), so

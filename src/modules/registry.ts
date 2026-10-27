@@ -23,6 +23,8 @@ import type {
 export interface ModuleVM {
   /** runs a linked module's body */
   evaluateModule(record: ModuleRecord): void
+  /** runs the queued jobs once the module graph has been evaluated (D43) */
+  settle(): void
   /** creates a hoisted function of a module */
   moduleFunction(record: ModuleRecord, proto: FunctionProto): Closure
   /** host values for host modules */
@@ -89,9 +91,11 @@ export class ModuleRegistry {
     return this.run(existing ?? this.create(id, compileModule(source, id)))
   }
 
+  // Jobs run after the whole graph, as in JS (a module's promise callbacks run after its importers' bodies).
   private run(record: LinkedRecord): LinkedRecord {
     this.link(record)
     this.evaluate(record)
+    this.vm.settle()
 
     return record
   }

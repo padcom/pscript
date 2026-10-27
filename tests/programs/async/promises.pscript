@@ -1,0 +1,82 @@
+// new Promise, then / catch / finally and the static helpers
+const log = []
+const done = []
+
+const delayed = new Promise((resolve, reject) => {
+  log.push('executor runs synchronously')
+  resolve('first value')
+  resolve('ignored: a promise settles once')
+  reject(new Error('ignored too'))
+})
+log.push('after constructor')
+
+delayed
+  .then(value => {
+    log.push('then: ' + value)
+    return value.length
+  })
+  .then(length => log.push('chained: ' + length))
+
+// an exception in the executor rejects the promise
+new Promise(() => { throw new TypeError('bad executor') })
+  .catch(e => log.push('executor threw ' + e.name + ': ' + e.message))
+
+// a handler's exception rejects the derived promise; catch recovers
+Promise.resolve(1)
+  .then(() => { throw new RangeError('in handler') })
+  .then(() => log.push('skipped'))
+  .catch(e => {
+    log.push('recovered from ' + e.message)
+    return 'recovered'
+  })
+  .then(value => log.push('continues with ' + value))
+
+// missing handlers pass values and reasons through
+Promise.reject(new Error('passes through'))
+  .then(value => log.push('not called ' + value))
+  .catch(e => log.push('caught later: ' + e.message))
+
+// finally sees nothing and passes the value on, unless it throws
+Promise.resolve('kept')
+  .finally(() => log.push('finally (fulfilled)'))
+  .then(value => log.push('after finally: ' + value))
+Promise.reject(new Error('still rejected'))
+  .finally(() => log.push('finally (rejected)'))
+  .catch(e => log.push('after finally: ' + e.message))
+Promise.resolve('replaced')
+  .finally(() => { throw new Error('finally failed') })
+  .catch(e => log.push(e.message))
+
+// resolving with a promise adopts its state
+const outer = new Promise(resolve => resolve(Promise.resolve('adopted')))
+outer.then(value => log.push('outer: ' + value))
+Promise.resolve(outer).then(value => log.push('Promise.resolve keeps a promise: ' + (Promise.resolve(outer) == outer)))
+
+// combinators
+Promise.all([Promise.resolve(1), 2, new Promise(resolve => resolve(3))])
+  .then(values => log.push('all: ' + values.join(',')))
+Promise.all([]).then(values => log.push('all of none: ' + values.length))
+Promise.all([Promise.resolve(1), Promise.reject(new Error('one failed'))])
+  .catch(e => log.push('all rejected: ' + e.message))
+Promise.allSettled([Promise.resolve('ok'), Promise.reject(new Error('no'))]).then(results => {
+  log.push('allSettled: ' + results.map(r => r.status + '=' + (r.status == 'fulfilled' ? r.value : r.reason.message)).join(' '))
+})
+Promise.race([new Promise(() => {}), Promise.resolve('winner')]).then(value => log.push('race: ' + value))
+Promise.any([Promise.reject(new Error('a')), Promise.resolve('b')]).then(value => log.push('any: ' + value))
+Promise.any([Promise.reject(new Error('x')), Promise.reject(new Error('y'))]).catch(e => {
+  log.push('any rejected: ' + (e instanceof AggregateError) + ' ' + e.errors.map(err => err.message).join(','))
+})
+Promise.all(42).catch(e => log.push('not iterable: ' + e.name))
+
+const { promise, resolve } = Promise.withResolvers()
+promise.then(value => log.push('withResolvers: ' + value))
+resolve('resolved from outside')
+
+// a promise resolved with itself is rejected
+const self = new Promise(resolve => done.push(resolve))
+done[0](self)
+self.catch(e => log.push('self resolution: ' + e.name))
+
+print(typeof delayed, delayed instanceof Promise, String(delayed))
+Promise.resolve().then(() => null).then(() => null).then(() => null).then(() => null).then(() => null)
+  .then(() => print(log.join('\n')))

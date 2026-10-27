@@ -29,6 +29,7 @@ const PSCRIPT_ONLY_DIFFERENCES: Record<string, string> = {
   'access/protected.pscript': '`protected` is not checked at runtime',
   'accessors/printing.pscript': '`print` formatting (D18)',
   'arrays/pscript-specific.pscript': 'array reads out of range and holes (§4.4.7)',
+  'async/pscript-specific.pscript': 'native promises: thenables are adopted, `Promise` can be extended, `undefined` values',
   'callbacks/callback-arity.pscript': 'stdlib callbacks receive every argument; functions return `undefined`',
   'classes/closed-instances.pscript': 'closed instances and sealed classes are not enforced at runtime',
   'classes/to-string.pscript': 'the default `toString()` of instances (D35)',
@@ -52,7 +53,7 @@ function runTranspiled(code: string): NodeResult {
   const print = (...args: unknown[]) => { output.push(args.map(String).join(' ')) }
 
   try {
-    runInNewContext(`'use strict';\n${code}`, { console: { log: print } })
+    runInNewContext(`'use strict';\n${code}`, { console: { log: print } }, { microtaskMode: 'afterEvaluate' })
 
     return { output }
   } catch (error) {

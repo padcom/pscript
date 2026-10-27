@@ -4,7 +4,7 @@ import type { ClassTemplate } from '@/compiler/function-proto'
 import type { ScriptStackFrame } from '@/errors'
 import { errorToString, toString } from '@/runtime/operators'
 import { defineGlobal } from '@/runtime/realm'
-import { Class, Object as ScriptObject, type AccessContext, type Realm, type Value } from '@/runtime/values'
+import { Array as ScriptArray, Class, Object as ScriptObject, type AccessContext, type Realm, type Value } from '@/runtime/values'
 import { defineMethods, method } from './native'
 
 export const ERROR_CLASSES = ['TypeError', 'RangeError', 'ReferenceError', 'SyntaxError'] as const
@@ -67,6 +67,25 @@ function errorClass(realm: Realm, name: string, superClass: Class | null, protot
   return cls
 }
 
+// `new AggregateError(errors, message)`: what `Promise.any` rejects with when every promise rejected (D43).
+function aggregateErrorClass(realm: Realm, base: Class) {
+  const prototype = new ScriptObject(realm.ErrorPrototype)
+  const cls = errorClass(realm, 'AggregateError', base, prototype)
+
+  cls.length = 2
+  prototype.props.set('errors', null)
+  cls.native = {
+    construct: (ctx, target, [errors, message]) => {
+      const error = createError(ctx, target, message)
+      const items = errors instanceof ScriptArray ? errors.items.slice() : []
+
+      error.props.set('errors', new ScriptArray(realm.ArrayPrototype, items))
+
+      return error
+    },
+  }
+}
+
 /**
  * Installs `Error` and its subclasses.
  *
@@ -86,4 +105,5 @@ export function installErrors(realm: Realm) {
 
   // AccessError is a TypeError (§4.5.2)
   errorClass(realm, 'AccessError', typeErrorClass, new ScriptObject(typeErrorClass.prototype))
+  aggregateErrorClass(realm, base)
 }

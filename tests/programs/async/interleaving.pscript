@@ -1,0 +1,15 @@
+// two async functions take turns at each await
+const log = []
+
+async function worker(name, steps) {
+  for (let i = 1; i <= steps; i++) {
+    log.push(name + ' step ' + i)
+    await null
+  }
+  log.push(name + ' done')
+}
+
+const a = worker('a', 3)
+const b = worker('b', 2)
+log.push('both started')
+Promise.all([a, b]).then(() => print(log.join('\n')))

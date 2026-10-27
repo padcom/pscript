@@ -1,0 +1,107 @@
+// async functions, arrows and methods; await in loops, try / catch / finally
+const log = []
+
+function delay(value) {
+  return new Promise(resolve => resolve(value))
+}
+
+async function sum(values) {
+  let total = 0
+  for (const value of values) total += await delay(value)
+  return total
+}
+
+async function parallel() {
+  const [a, b] = await Promise.all([sum([1, 2]), sum([3, 4])])
+  return a + b
+}
+
+async function guarded(fail) {
+  try {
+    log.push('guarded start ' + fail)
+    if (fail) await Promise.reject(new Error('failed'))
+    return 'ok'
+  } catch (e) {
+    log.push('guarded caught ' + e.message)
+    return 'recovered'
+  } finally {
+    log.push('guarded finally ' + fail)
+  }
+}
+
+// an async function returns a promise even when it never awaits
+const immediate = async () => 'immediate'
+print(immediate() instanceof Promise)
+
+// await works on plain values and on rejected promises (as an exception)
+async function plain() {
+  const x = await 5
+  return x * 2
+}
+
+// recursion
+async function countdown(n) {
+  if (n == 0) return 'liftoff'
+  log.push('countdown ' + n)
+  return countdown(n - 1)
+}
+
+class Account {
+  balance = 0
+  async deposit(amount) {
+    await null
+    this.balance += amount
+    return this.balance
+  }
+  static async open(initial) {
+    const account = new Account()
+    await account.deposit(initial)
+    return account
+  }
+}
+
+// arrows keep the method's this
+class Counter {
+  count = 0
+  incrementLater() {
+    return (async () => {
+      await null
+      this.count++
+      return this.count
+    })()
+  }
+}
+
+const shop = {
+  items: ['a', 'b'],
+  async describe() {
+    const count = await this.items.length
+    return 'items: ' + count
+  },
+}
+
+async function main() {
+  log.push('sum ' + await sum([1, 2, 3]))
+  log.push('parallel ' + await parallel())
+  log.push('guarded ' + await guarded(false))
+  log.push('guarded ' + await guarded(true))
+  log.push('plain ' + await plain())
+  log.push(await countdown(3))
+  const account = await Account.open(10)
+  log.push('balance ' + await account.deposit(5))
+  const counter = new Counter()
+  await counter.incrementLater()
+  log.push('counter ' + await counter.incrementLater())
+  log.push(await shop.describe())
+  try {
+    await (async () => { throw new TypeError('async arrow failed') })()
+  } catch (e) {
+    log.push('caught ' + e.name + ': ' + e.message)
+  }
+  return 'main done'
+}
+
+main().then(result => {
+  log.push(result)
+  print(log.join('\n'))
+})

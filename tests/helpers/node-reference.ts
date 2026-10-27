@@ -80,7 +80,10 @@ export function runInNode(source: string): NodeResult {
   const print = (...args: unknown[]) => { output.push(args.map(String).join(' ')) }
 
   try {
-    runInNewContext(`'use strict';\n${rewriteEquality(source)}`, { print, console: { log: print } })
+    // microtasks run before runInNewContext returns, as PScript drains its jobs before run() returns (D43)
+    const code = `'use strict';\n${rewriteEquality(source)}`
+
+    runInNewContext(code, { print, console: { log: print } }, { microtaskMode: 'afterEvaluate' })
 
     return { output }
   } catch (error) {

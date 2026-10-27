@@ -44,6 +44,8 @@ export const KEYWORDS = [
   'delete',
   'void',
   'yield',
+  'async',
+  'await',
 ] as const
 
 export type Keyword = typeof KEYWORDS[number]
@@ -56,8 +58,6 @@ export type ContextualKeyword = typeof CONTEXTUAL_KEYWORDS[number]
 /** Words reserved for the future: always a `SyntaxError` as an identifier. */
 export const FUTURE_RESERVED_WORDS = [
   'var',
-  'async',
-  'await',
   'enum',
   'package',
   'abstract',

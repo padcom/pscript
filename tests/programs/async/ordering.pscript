@@ -1,0 +1,39 @@
+// Callbacks and await continuations run in the same order as in JavaScript (D43)
+const log = []
+const p = new Promise(resolve => { log.push('executor'); resolve(1) })
+p.then(v => log.push('then ' + v))
+log.push('sync')
+async function f(x) {
+  log.push('f start ' + x)
+  const y = await x
+  log.push('f after await ' + y)
+  return y * 2
+}
+f(21).then(v => log.push('f result ' + v))
+Promise.resolve().then(() => log.push('tick1')).then(() => log.push('tick2')).then(() => log.push('tick3'))
+const arrow = async n => (await n) + 1
+arrow(1).then(v => log.push('arrow ' + v))
+async function failing() { throw new Error('nope') }
+failing().catch(e => log.push('caught ' + e.message))
+async function tryAwait() {
+  try { await Promise.reject(new Error('rejected')) } catch (e) { log.push('try caught ' + e.message) } finally { log.push('finally') }
+}
+tryAwait()
+Promise.all([1, Promise.resolve(2), f(3)]).then(vs => log.push('all ' + vs.join(',')))
+Promise.allSettled([Promise.reject(1), 2]).then(rs => log.push('settled ' + JSON.stringify(rs)))
+Promise.race([new Promise(() => {}), Promise.resolve('fast')]).then(v => log.push('race ' + v))
+Promise.any([Promise.reject(1), Promise.reject(2)]).catch(e => log.push('any ' + e.name + ' ' + e.errors.join(',')))
+Promise.resolve('fin').finally(() => log.push('finally cb')).then(v => log.push('after finally ' + v))
+class Api {
+  constructor(base) { this.base = base }
+  base
+  async get(path) { await null; return this.base + path }
+  static async create() { return new Api('http://x') }
+}
+Api.create().then(api => api.get('/y')).then(v => log.push('api ' + v))
+const o = { async m() { return 'obj' } }
+o.m().then(v => log.push(v))
+async function seq() {
+  for (const x of [1, 2]) log.push('seq ' + await x)
+}
+seq().then(() => print(log.join('\n')))

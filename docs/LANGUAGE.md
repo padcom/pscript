@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D42).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D43).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -13,6 +13,7 @@ document describes the language as implemented; the design rationale is in `docs
 - [Objects and arrays](#objects-and-arrays)
 - [Destructuring](#destructuring)
 - [Generators](#generators)
+- [Async functions and promises](#async-functions-and-promises)
 - [Classes](#classes)
 - [Interfaces](#interfaces)
 - [Exceptions](#exceptions)
@@ -34,7 +35,7 @@ document describes the language as implemented; the design rationale is in `docs
   ends a statement when the line could end there and the next line cannot continue it. A line starting with `(` or
   `[` starts a new statement (no accidental calls or indexing of the previous line); a line starting with `.`, an
   operator, `,`, `?`, `:` or `=>` continues the previous one.
-- Reserved for the future (always errors as names): `var`, `async`, `await`, `enum`, `package`, `abstract`.
+- Reserved for the future (always errors as names): `var`, `enum`, `package`, `abstract`.
 - `get`, `set`, `as`, `from`, `final` and `override` are keywords only where they have a meaning; elsewhere they are
   ordinary names. Keywords may be used as property names (`o.class`, `{ if: 1 }`).
 
@@ -190,6 +191,36 @@ class Tree {
 - A class field followed by a `*method()` on the next line needs a `;` (as in JavaScript).
 - Async generators and `for await` are not supported.
 
+## Async functions and promises
+
+```js
+async function loadAll(ids) {
+  const users = await Promise.all(ids.map(id => fetchUser(id)))
+  return users.filter(user => user.active)
+}
+
+const later = value => new Promise(resolve => resolve(value))
+
+loadAll([1, 2])
+  .then(users => print(users.length))
+  .catch(e => print('failed:', e.message))
+```
+
+- `async function`, `async` arrows and `async` methods (also `static`) return promises; `await` pauses until a
+  promise settles, giving its value or throwing its reason (so `try`/`catch`/`finally` work). `await` is only allowed
+  inside async functions — there is no top-level `await` yet. Async generators and `for await` are not supported.
+- `Promise` works as in JavaScript: `new Promise((resolve, reject) => …)`, `then`, `catch`, `finally`,
+  `Promise.resolve`, `reject`, `all`, `allSettled`, `race`, `any` (with `AggregateError`) and `withResolvers`.
+  Callbacks run in the same order as in JavaScript.
+- Callbacks run when no other script code runs. `run()` runs them before it returns, so async code that only waits
+  for other script code is finished when `run()` returns; code waiting for the host continues when the host's promise
+  settles.
+- A rejected promise that nobody handles is an error: `run()` throws it like an uncaught exception (later ones go to
+  `stderr`).
+- Differences: only real promises are adopted — an object with a `then` method is just a value; `Promise` cannot be
+  extended; missing values are `null` (`resolve()`, an async function without `return`); `print(p)` shows
+  `Promise(<pending>)`, `Promise(value)` or `Promise(<rejected> reason)`.
+
 ## Classes
 
 ```js
@@ -286,7 +317,8 @@ import './setup'
 ## Standard library
 
 - Globals: `print`, `console.log`/`console.error`, `globalThis`, `String`, `Number`, `Boolean`, `parseInt`,
-  `parseFloat`, `isNaN`, `isFinite`, `NaN`, `Infinity`, `Math`, `JSON`, `Object`, `Array` and the error classes.
+  `parseFloat`, `isNaN`, `isFinite`, `NaN`, `Infinity`, `Math`, `JSON`, `Object`, `Array`, `Promise` and the error
+  classes (including `AggregateError`).
 - `Object.keys`, `values`, `entries`, `assign`, `freeze`; `obj.hasOwnProperty(k)`, `toString()`.
 - Arrays: `push`, `pop`, `shift`, `unshift`, `slice`, `splice`, `concat`, `join`, `reverse`, `at`, `indexOf`,
   `lastIndexOf`, `includes`, `flat`, `fill`, `sort`, `map`, `filter`, `reduce`, `reduceRight`, `forEach`, `find`,
@@ -310,6 +342,8 @@ Values cross the boundary by reference and identity is kept in both directions.
   real object. Host exceptions become script errors (`cause` holds the original).
 - Script functions, classes, arrays and objects given to the host are live proxies. The host has no home class, so
   private and protected members stay inaccessible; undeclared members of class instances read as `undefined`.
+- Promises cross as promises: a script promise is a JS `Promise` for the host (rejections arrive as
+  `PScriptRuntimeError`), and host promises can be awaited by scripts. Script generators are JS iterators for the host.
 - The keys `constructor`, `prototype`, `__proto__` and the legacy accessor helpers are blocked on host objects.
   **Interop is not a security sandbox**: a script can do anything the host values it receives allow.
 
@@ -335,7 +369,8 @@ Values cross the boundary by reference and identity is kept in both directions.
 | Bitwise operators, spread, optional chaining, computed keys | Not available (yet) |
 | Tagged templates | Not available |
 | Generators give `undefined` for missing values | Generators give `null` (`yield`, `next()`, finished steps) |
-| `async`/`await`, Promises | Not available |
+| Any object with a `then` method is a thenable | Only promises are adopted; `Promise` is final |
+| Top-level `await`, async generators, `for await` | Not available (yet) |
 | Symbols, BigInt, getters on the global object | Not available |
 | Default exports, `export *`, dynamic `import()` | Named exports only |
 | Integer-like keys are listed first | Insertion order for all keys |

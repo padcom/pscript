@@ -3,6 +3,7 @@
 // (WeakMap caches) and round trips unwrap.
 import { builtinTemplate } from '@/stdlib/errors'
 import { hostProxy, type ProxyHost } from './host-proxies'
+import type { PromiseOps } from './promises'
 import { typeError } from './script-error'
 import {
   Class,
@@ -56,6 +57,12 @@ function checkPassable(value: unknown): object {
   if (typeof value === 'object' || typeof value === 'function') return value as object
 
   throw new TypeError(`A ${typeof value} cannot be passed to a script`)
+}
+
+function isThenable(value: object): value is PromiseLike<unknown> {
+  if (value instanceof globalThis.Promise) return true
+
+  return typeof value === 'object' && typeof (value as { then?: unknown }).then === 'function'
 }
 
 // Round trips unwrap: host wrappers give back the host value they wrap.
@@ -117,11 +124,36 @@ export class Interop implements HostAccess {
 
   private wrap(value: object): Value {
     const { realm } = this.ctx
+    if (isThenable(value)) return this.adoptHostPromise(value)
     if (typeof value !== 'function') return new HostObject(realm.ObjectPrototype, value, this)
 
     const fn = value as (...args: unknown[]) => unknown
 
     return isHostClass(fn) ? this.hostClass(fn) : new HostFunction(realm.FunctionPrototype, fn.name, fn.length, fn)
+  }
+
+  // A host promise (any thenable) becomes a script promise that follows it (D43): its callbacks run in a host
+  // microtask and queue the script's jobs.
+  private adoptHostPromise(thenable: PromiseLike<unknown>): Value {
+    const promises = this.ctx.promises as PromiseOps
+    const promise = promises.create()
+
+    this.proxies.set(promise, thenable) // round trips give back the host promise
+
+    const reject = (error: unknown) => {
+      const { value, frames } = promises.thrown(this.host.fromHost(error))
+
+      promises.reject(promise, value, frames)
+    }
+
+    try {
+      // eslint-disable-next-line promise/catch-or-return, promise/prefer-await-to-then -- subscribing to a host promise
+      thenable.then(value => promises.resolve(promise, this.toScript(value)), reject)
+    } catch (e) {
+      reject(e)
+    }
+
+    return promise
   }
 
   // A host class: `new` constructs the host object; a script subclass's instances keep it as their `hostTarget`.

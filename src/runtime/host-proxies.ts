@@ -3,6 +3,8 @@
 // arrays over arrays (live `items`), other objects over plain objects (reads and writes go through the runtime with
 // no home class, so private and protected members stay inaccessible), generators over JS iterators (D42).
 import { GeneratorObject, type ResumeMode } from './generators'
+import { PromiseObject, type PromiseOps } from './promises'
+import { ScriptThrow } from './script-error'
 import { publicProps } from './members'
 import { instanceOf } from './operators'
 import { getProperty, hasPropertyIn, setProperty } from './properties'
@@ -168,6 +170,17 @@ class Proxies {
     }
   }
 
+  // A real host promise that follows the script promise (D43); a rejection arrives as a PScriptRuntimeError.
+  promise(promise: PromiseObject): object {
+    const promises = this.host.hostContext.promises as PromiseOps
+
+    return new globalThis.Promise((resolve, reject) => {
+      promises.react(promise, value => resolve(this.convert.toHost(value)), (reason, frames) => {
+        reject(this.host.toHostError(new ScriptThrow(reason, frames)))
+      })
+    })
+  }
+
   object(object: ScriptObject): object {
     return new Proxy({}, {
       get: (_, key) => (typeof key === 'symbol' ? undefined : this.read(object, key)),
@@ -210,6 +223,7 @@ class Proxies {
 
 function objectProxy(proxies: Proxies, value: ScriptObject): object {
   if (value instanceof GeneratorObject) return proxies.generator(value)
+  if (value instanceof PromiseObject) return proxies.promise(value)
 
   return value instanceof ScriptArray ? proxies.array(value) : proxies.object(value)
 }

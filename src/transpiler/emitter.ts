@@ -187,6 +187,7 @@ const EXPRESSIONS: { [K in Expression['type']]?: Printer<Extract<Expression, { t
   ThisExpression: e => e.thisText(),
   ClassExpression: (e, node) => e.classText(node),
   YieldExpression: (e, node) => e.yieldText(node),
+  AwaitExpression: (e, node) => `await ${e.expression(node.argument, Precedence.Unary)}`,
 }
 
 /** Unary operators not printed as `<operator><operand>` with the `- -x` guard. */
@@ -218,13 +219,15 @@ const STATEMENTS: { [K in Statement['type']]?: Printer<Extract<Statement, { type
   InterfaceDeclaration: (e, node) => e.interfaceText(node),
 }
 
-function functionKeyword({ generator }: FunctionDeclaration | FunctionExpression): string {
-  return generator ? 'function*' : 'function'
+function functionKeyword({ generator, async }: FunctionDeclaration | FunctionExpression): string {
+  return `${async ? 'async ' : ''}function${generator ? '*' : ''}`
 }
 
-// `*` before a generator method's name (D42).
+// `*` before a generator method's name (D42), `async ` before an async method's (D43).
 function generatorStar(value: Expression): string {
-  return (value as FunctionExpression).generator ? '*' : ''
+  const { generator, async } = value as FunctionExpression
+
+  return `${async ? 'async ' : ''}${generator ? '*' : ''}`
 }
 
 function nameOf({ id }: ClassNode): string {
@@ -696,6 +699,10 @@ export class Emitter {
     return `${functionKeyword(node)}${name}${this.functionRest(node, { kind: 'function' }, isExpression ? node.id : null)}`
   }
 
+  private arrowParams(params: Pattern[]): string {
+    return params.length === 1 && params[0].type === 'Identifier' ? params[0].name : `(${this.params(params)})`
+  }
+
   // `(params) { body }`; a named function expression's name is visible in its body. A member whose nested functions
   // use implicit members starts by saving `this`.
   private functionRest(node: FunctionDeclaration | FunctionExpression, frame: Frame, ownName: Identifier | null = null): string {
@@ -756,8 +763,8 @@ export class Emitter {
     return text === name || text.startsWith(`${name} = `) ? text : `${name}: ${text}`
   }
 
-  arrow({ params, body, expression }: ArrowFunctionExpression): string {
-    const head = params.length === 1 && params[0].type === 'Identifier' ? params[0].name : `(${this.params(params)})`
+  arrow({ params, body, expression, async }: ArrowFunctionExpression): string {
+    const head = `${async ? 'async ' : ''}${this.arrowParams(params)}`
     const arrowBody = () => this.functionBody(params, body as BlockStatement)
 
     if (!expression) return `${head} => ${this.framed({ kind: 'arrow' }, arrowBody)}`

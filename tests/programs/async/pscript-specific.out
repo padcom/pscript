@@ -1,0 +1,9 @@
+Promise(<pending>) Promise([1, "a"]) Promise(<rejected> Error: boom)
+TypeError Cannot extend final class 'Promise'
+TypeError Promise has no member 'value'
+TypeError Promise resolver number is not a function
+resolve() gives null
+resolve() in an executor gives null
+thenable kept: true
+zero-parameter handler works
+async function without return gives null
