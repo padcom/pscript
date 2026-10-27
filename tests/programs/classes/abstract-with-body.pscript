@@ -1,0 +1,4 @@
+// @pscript-only: abstract methods have no body (D58)
+abstract class A {
+  abstract m() {}
+}

@@ -159,6 +159,8 @@ export interface MemberEntry {
   owner: Class
   /** `final` member (D28) */
   final: boolean
+  /** abstract member (D58), or the abstract halves of an accessor: a concrete class must implement it */
+  abstract?: boolean | ('get' | 'set')[]
   /** methods */
   fn?: Closure
   /** accessors */
@@ -197,6 +199,8 @@ export class Class extends Function {
   /** transitive: own `implements`, their ancestors, and the superclass's set */
   interfaces = new Set<Interface>()
   final = false
+  /** `abstract class` (D58): cannot be instantiated */
+  abstract = false
   ctor: Closure | null = null
   fieldInit: Closure | null = null
   /** built-in classes (Error family): native construct */

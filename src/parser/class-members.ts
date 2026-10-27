@@ -36,8 +36,8 @@ interface MethodMember {
   key: MemberKey
   /** formal parameters */
   params: Pattern[]
-  /** body */
-  body: BlockStatement
+  /** body; null for an abstract member (D58) */
+  body: BlockStatement | null
   /** location */
   loc: JisonLoc
   /** `*method()` (D42) */
@@ -73,7 +73,7 @@ class ModifierError extends Error {
   }
 }
 
-const ORDER: Record<string, number> = { public: 0, protected: 0, private: 0, static: 1, final: 2, override: 3 }
+const ORDER: Record<string, number> = { public: 0, protected: 0, private: 0, static: 1, final: 2, abstract: 2, override: 3 }
 
 /**
  * Applied modifiers of a member.
@@ -87,6 +87,8 @@ interface Flags {
   final: boolean
   /** `override` */
   override: boolean
+  /** `abstract` (D58) */
+  abstract: boolean
 }
 
 function flags(modifiers: Modifier[], fail: Fail): Flags {
@@ -100,7 +102,42 @@ function flags(modifiers: Modifier[], fail: Fail): Flags {
   const names = new Set(modifiers.map(modifier => modifier.name))
   const access = (['private', 'protected'] as const).find(name => names.has(name)) ?? 'public'
 
-  return { access, isStatic: names.has('static'), final: names.has('final'), override: names.has('override') }
+  const has = (name: string) => names.has(name)
+
+  return { access, isStatic: has('static'), final: has('final'), override: has('override'), abstract: has('abstract') }
+}
+
+/** A member's problem by its kind (field or method with or without a body) and whether it is abstract (D58). */
+const BODY_PROBLEMS: Record<string, string> = {
+  'field abstract': 'Fields cannot be abstract',
+  'body abstract': 'Abstract methods cannot have a body',
+  'no-body concrete': 'Only abstract methods can omit their body',
+}
+
+function shape(member: RawMember): string {
+  if (member.kind === 'field') return 'field'
+
+  return member.body ? 'body' : 'no-body'
+}
+
+function bodyProblem(member: RawMember, abstract: boolean): string | null {
+  return BODY_PROBLEMS[`${shape(member)} ${abstract ? 'abstract' : 'concrete'}`] ?? null
+}
+
+// An abstract member is not static or private (D58).
+function modifierProblem({ abstract, isStatic, access }: Flags): string | null {
+  if (!abstract) return null
+
+  return isStatic || access === 'private' ? 'Abstract members cannot be static or private' : null
+}
+
+function abstractProblem(member: RawMember, applied: Flags): string | null {
+  return bodyProblem(member, applied.abstract) ?? modifierProblem(applied)
+}
+
+function checkAbstract(member: RawMember, applied: Flags, fail: Fail) {
+  const problem = abstractProblem(member, applied)
+  if (problem) fail(problem, member.loc)
 }
 
 // `[Symbol.iterator]` names methods only (D57).
@@ -147,8 +184,10 @@ function field(member: FieldMember, { access, isStatic, final, override }: Flags
   return { type: 'PropertyDefinition', key, computed: false, value, static: isStatic, access, override, final, loc }
 }
 
+// An abstract member's function has an empty body (D58); it is never called.
 function functionValue(member: MethodMember, loc: SourceLocation): FunctionExpression {
-  const { params, body, generator = false, async = false } = member
+  const { params, generator = false, async = false } = member
+  const body = member.body ?? { type: 'BlockStatement', body: [], loc }
 
   return { type: 'FunctionExpression', id: null, params, body, generator, async, loc }
 }
@@ -156,7 +195,7 @@ function functionValue(member: MethodMember, loc: SourceLocation): FunctionExpre
 function method(member: Exclude<RawMember, { kind: 'field' }>, applied: Flags, modifiers: Modifier[]): MethodDefinition {
   const constructor = isConstructor(member, applied)
   const loc = toLoc(member.loc)
-  const { access, isStatic, final, override } = applied
+  const { access, isStatic, final, override, abstract } = applied
 
   if (constructor && modifiers.length > 0) throw new ModifierError('Constructors cannot have modifiers', member.loc)
 
@@ -164,6 +203,7 @@ function method(member: Exclude<RawMember, { kind: 'field' }>, applied: Flags, m
     type: 'MethodDefinition',
     key: member.key,
     computed: member.key.type === 'MemberExpression',
+    abstract,
     kind: constructor ? 'constructor' : member.kind,
     static: isStatic,
     value: functionValue(member, loc),
@@ -187,6 +227,7 @@ export function classMember(modifiers: Modifier[], member: RawMember, fail: Fail
 
   checkPrivate(applied, member.loc, fail)
   checkSymbolName(member, fail)
+  checkAbstract(member, applied, fail)
 
   try {
     return member.kind === 'field' ? field(member, applied, fail) : method(member, applied, modifiers)

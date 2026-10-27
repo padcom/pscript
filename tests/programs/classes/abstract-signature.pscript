@@ -1,0 +1,7 @@
+// @pscript-only: an implementation keeps the abstract member's signature (D38, D58)
+abstract class A {
+  abstract m(x);
+}
+class B extends A {
+  m(x, y) { return x }
+}

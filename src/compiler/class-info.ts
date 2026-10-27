@@ -19,6 +19,8 @@ export interface ClassInfo {
   visible: boolean
   /** names of private members (instance or static), resolved first inside the class (§4.5.3) */
   privates: Set<string>
+  /** `abstract class` (D58): `new` is an error */
+  abstract: boolean
 }
 
 /** Inherited by every class instance from Object.prototype. */
@@ -66,7 +68,9 @@ export function classInfoOf(node: ClassNode, name: string, superClass: ClassInfo
   const instance = memberNames(node, false)
   const statics = memberNames(node, true)
 
-  return { name, instance, statics, superClass: superClass ?? null, visible, privates: privateNames(node) }
+  const { abstract } = node
+
+  return { name, instance, statics, superClass: superClass ?? null, visible, privates: privateNames(node), abstract }
 }
 
 function declares(info: ClassInfo, name: string, isStatic: boolean): boolean {

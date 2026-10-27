@@ -1305,6 +1305,7 @@ class Compiler {
       instanceFieldInit: this.initializerProto(fields.filter(f => !f.static), 'fieldInit', context(false)),
       staticInit: this.initializerProto(fields.filter(f => f.static), 'staticInit', context(true)),
       isFinal: node.final,
+      isAbstract: node.abstract,
       methods: methods.filter(m => m.kind !== 'constructor').map(method => this.methodTemplate(method, context(method.static))),
       memberRefs,
       fields: fields.map(fieldTemplate),
@@ -1333,6 +1334,7 @@ class Compiler {
       protoIndex: this.out.constant(proto),
       override: node.override,
       final: node.final,
+      abstract: node.abstract,
       loc: node.loc,
     }
   }
@@ -2049,12 +2051,20 @@ class Compiler {
   }
 
   newExpression(node: NewExpression) {
+    this.checkConcrete(node.callee)
     this.expression(node.callee)
 
     const argc = this.arguments(node.arguments)
 
     this.out.mark(node.loc)
     this.out.emit(Op.NEW, argc)
+  }
+
+  // `new A()` of an abstract class declared in scope is an early error (D58); others fail at runtime.
+  private checkConcrete(callee: Expression) {
+    const info = callee.type === 'Identifier' ? this.classNamed(callee.name) : undefined
+
+    if (info?.abstract) throw this.error(`Cannot create an instance of abstract class '${info.name}'`, callee.loc)
   }
 
   // ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D57).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D58).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -35,8 +35,8 @@ document describes the language as implemented; the design rationale is in `docs
   ends a statement when the line could end there and the next line cannot continue it. A line starting with `(` or
   `[` starts a new statement (no accidental calls or indexing of the previous line); a line starting with `.`, an
   operator, `,`, `?`, `:` or `=>` continues the previous one.
-- Reserved for the future (always errors as names): `var`, `enum`, `package`, `abstract`.
-- `get`, `set`, `as`, `from`, `final` and `override` are keywords only where they have a meaning; elsewhere they are
+- Reserved for the future (always errors as names): `var`, `enum`, `package`.
+- `get`, `set`, `as`, `from`, `final`, `override` and `abstract` are keywords only where they have a meaning; elsewhere they are
   ordinary names. Keywords may be used as property names (`o.class`, `{ if: 1 }`).
 
 ## Values and types
@@ -301,6 +301,9 @@ final class Dog extends Animal {
 - `instanceof` checks the class chain (and interfaces). `print(instance)` shows `ClassName(field = value, …)` unless
   the class defines `toString()`.
 - Built-in error classes can be extended: `class HttpError extends Error { override name = 'HttpError' }`.
+- **Abstract classes:** `abstract class Shape { abstract area(); abstract get sides(); … }` cannot be instantiated;
+  abstract members have no body (end them with `;`) and every concrete subclass must implement them (no `override`
+  needed), keeping their signatures.
 
 ## Interfaces
 
@@ -412,6 +415,7 @@ Values cross the boundary by reference and identity is kept in both directions.
 | Objects are open bags, also class instances | Class instances and classes are closed and sealed |
 | `#private`, no `protected` | `private` / `protected` / `public` keywords, `AccessError` |
 | Overriding is implicit | `override` required; `final` members and classes |
+| No abstract classes | `abstract class` with `abstract` members (as in TypeScript) |
 | No interfaces | `interface`, `implements`, `instanceof Interface` |
 | `this.` required for members | Members usable without `this.` inside class bodies |
 | ASI quirks (`(`/`[` continue the previous line) | A line starting with `(` or `[` starts a new statement |

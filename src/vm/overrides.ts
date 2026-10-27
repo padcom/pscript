@@ -33,6 +33,8 @@ interface Inherited {
   hasHalf: boolean
   /** methods declared in script: their proto (signature check) */
   proto?: FunctionProto
+  /** an abstract member (D58): implementing it needs no `override` */
+  abstract?: boolean
 }
 
 /**
@@ -67,6 +69,10 @@ function hasHalf(entry: MemberEntry, which: 'get' | 'set' | null): boolean {
   return which === null || entry.kind !== 'accessor' || Boolean(entry[which])
 }
 
+function isAbstractHalf({ abstract }: MemberEntry, which: 'get' | 'set' | null): boolean {
+  return Array.isArray(abstract) ? which !== null && abstract.includes(which) : abstract === true
+}
+
 function fromEntry(entry: MemberEntry, member: Member): Inherited {
   const which = half(member)
   const proto = entry.fn instanceof Closure ? entry.fn.fnProto : undefined
@@ -78,6 +84,7 @@ function fromEntry(entry: MemberEntry, member: Member): Inherited {
     access: halfAccess(entry, which),
     hasHalf: hasHalf(entry, which),
     proto,
+    abstract: isAbstractHalf(entry, which),
   }
 }
 
@@ -160,7 +167,7 @@ type Check = (member: Member, inherited: Inherited) => string | null
 
 const CHECKS: Check[] = [
   (member, { final, kind, owner }) => final ? `Cannot override final ${kind} '${member.key}' of class '${owner}'` : null,
-  (member, inherited) => member.override || !inherited.hasHalf
+  (member, inherited) => member.override || !inherited.hasHalf || inherited.abstract
     ? null
     : `'${member.key}' overrides '${inherited.owner}.${member.key}' and must be marked 'override'`,
   (member, { kind }) => {

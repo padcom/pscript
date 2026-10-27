@@ -126,6 +126,8 @@ export interface ClassHead {
   id: Identifier | null
   /** `final class` */
   final: boolean
+  /** `abstract class` (D58) */
+  abstract?: boolean
 }
 
 /**
@@ -271,10 +273,10 @@ export const builders = {
     return { type: 'ChainExpression', expression, loc: toLoc(loc) }
   },
 
-  classNode(type: ClassNode['type'], { id, final }: ClassHead, tail: ClassTail, loc: JisonLoc): ClassNode {
+  classNode(type: ClassNode['type'], { id, final, abstract = false }: ClassHead, tail: ClassTail, loc: JisonLoc): ClassNode {
     const { superClass, body } = tail
 
-    return { type, id, superClass, body, final, implements: tail.implements, loc: toLoc(loc) } as ClassNode
+    return { type, id, superClass, body, final, abstract, implements: tail.implements, loc: toLoc(loc) } as ClassNode
   },
 
   classBody(body: ClassBody['body'], loc: JisonLoc): ClassBody {

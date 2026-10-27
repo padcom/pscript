@@ -1,0 +1,4 @@
+// @pscript-only: abstract members are not static (D58)
+abstract class A {
+  static abstract m();
+}

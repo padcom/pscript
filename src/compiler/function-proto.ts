@@ -55,6 +55,8 @@ export interface ClassMethodTemplate {
   override: boolean
   /** `final` modifier */
   final: boolean
+  /** `abstract` member (D58): implemented by concrete subclasses */
+  abstract?: boolean
   /** source location */
   loc: SourceLocation
 }
@@ -123,6 +125,8 @@ export interface ClassTemplate {
   staticInit: FunctionProto | null
   /** `final class` */
   isFinal: boolean
+  /** `abstract class` (D58) */
+  isAbstract?: boolean
   /** methods and accessors */
   methods: ClassMethodTemplate[]
   /** unproven member references, checked at class-definition time */

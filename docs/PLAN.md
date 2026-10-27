@@ -115,6 +115,7 @@ Each feature in this document has one of these tags:
 | R44 | The comma operator (D55) | 4.4.3 |
 | R45 | `for (k in object)` (D56) | 4.4.8 |
 | R46 | User-defined iterables: `Symbol.iterator` / `Symbol.asyncIterator` (D57) | 4.4.21 |
+| R47 | Abstract classes and members (D58) | 4.5.10 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -134,7 +135,7 @@ Each feature in this document has one of these tags:
 
 ### 1.5 COULD (Phase 3+)
 
-~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), ~~the comma operator in `for` headers~~ (done, D55: everywhere), ~~`do … while`, `switch`~~ (done, D41), ~~`for … in`~~ (done, D56), ~~bitwise operators, hex/binary/octal literals~~ (done, D50), ~~destructuring~~ (done, D40), ~~user-defined iterables~~ (done, D57), abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, ~~Map/Set~~ (done, D49), a CLI/REPL, a disassembler CLI, source maps for errors.
+~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), ~~the comma operator in `for` headers~~ (done, D55: everywhere), ~~`do … while`, `switch`~~ (done, D41), ~~`for … in`~~ (done, D56), ~~bitwise operators, hex/binary/octal literals~~ (done, D50), ~~destructuring~~ (done, D40), ~~user-defined iterables~~ (done, D57), ~~abstract classes~~ (done, D58), a structural `x implements I` operator (D32), `private constructor`, ~~Map/Set~~ (done, D49), a CLI/REPL, a disassembler CLI, source maps for errors.
 
 ### 1.6 WON'T (v1)
 
@@ -236,6 +237,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D55 | The comma operator | **As in JavaScript**, everywhere an expression is allowed (not only in `for` headers): `a, b` evaluates `a`, then `b`, and gives `b`. Arguments, array elements and declarators keep using `,` as a separator, so a sequence there needs parentheses. ESTree `SequenceExpression` (flat; a parenthesized sequence stays one element). Details in §4.4.3 | no |
 | D56 | `for … in` | **As in JavaScript for PScript's objects** (which have no prototype chains of their own, no symbols and no non-enumerable data properties): the own enumerable public keys — plain objects (including own accessors), the fields of class instances (not methods or class accessors), namespace exports, host objects' own keys —, the indices of arrays and strings as strings, nothing for `null`, `undefined` and other primitives. Keys are snapshotted when the loop starts; a key deleted before it is reached is skipped. Order: insertion order (integer-like keys are not moved first, §4.4.6). As in JS, `in` directly in a `for` initialiser needs parentheses (`for (let a = ('x' in o); …)`), which PScript accepted before. Details in §4.4.8 | minor (key order) |
 | D57 | User-defined iterables | **JavaScript's protocol with two well-known symbols**: `Symbol.iterator` and `Symbol.asyncIterator` exist (`typeof` is `'symbol'`; there is no `Symbol()` and no other symbol). Objects and classes define `[Symbol.iterator]() {}` (also `*[Symbol.iterator]`, `async *[Symbol.asyncIterator]`); in classes these are the only bracketed member names, so classes stay sealed (D29) and the name is known at compile time; only methods can have them. `for…of`, spread, array destructuring, `yield*`, `Array.from`, `new Map/Set`, `Promise.all` … call `[Symbol.iterator]()` and drive the returned `{ next(), return() }` object (`return()` when left early); `for await` tries `[Symbol.asyncIterator]()` first. Built-ins have them too (arrays, strings, maps, sets, generators). Symbol-named properties are stored under internal keys that no enumeration lists (`Object.keys`, `JSON.stringify`, `for…in`, `print`); `Symbol.iterator in o` works. The host sees real `Symbol.iterator` values and iterable proxies. Details in §4.4.21 | minor (only two symbols) |
+| D58 | Abstract classes | **TypeScript/Java style**: `abstract class` (declarations and expressions) cannot be instantiated (`new` of the class itself is a `TypeError`; a `SyntaxError` when the class is declared in scope); subclasses can. `abstract m(a, b);`, `abstract get x();`, `abstract set x(v);` declare members without a body, only in abstract classes, never `static`, `private` or `final`; a method without a body that is not abstract is a `SyntaxError`. A concrete subclass must implement every inherited abstract member (checked when it is defined, like interfaces: `TypeError: Class 'B' must implement abstract method 'A.m'`), keeping its signature (D38); implementing needs no `override`. `super.m()` of an abstract member is a `TypeError`. Details in §4.5.10 | no (new) |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -381,9 +383,9 @@ A small local Vite plugin that turns `import parser from './pscript.jison'` into
 - **Contextual keywords** (ordinary identifiers everywhere else; the token filter turns them into keyword tokens only in the positions below, §4.2.5):
   - `get`, `set`: in a class member-name or object-literal key position when followed by another member name → `GET` / `SET`. A method *named* `get` (`get() {}`) stays an identifier.
   - `as`: inside an import/export specifier list, or right after `import *` → `AS`.
-  - `override`, `final`: in a class member-name position when followed by another modifier, `get`/`set`, or a member name → `OVERRIDE` / `FINAL`. `final` directly before `class` (at statement start, after `export`, or in expression position) → `FINAL`. Elsewhere both are ordinary identifiers (`let final = 1` works).
+  - `override`, `final`, `abstract` (D58): in a class member-name position when followed by another modifier, `get`/`set`, or a member name → `OVERRIDE` / `FINAL` / `ABSTRACT`. `final` or `abstract` directly before `class` (at statement start, after `export`, or in expression position) → `FINAL` / `ABSTRACT`. Elsewhere they are ordinary identifiers (`let final = 1` works).
   - `from`: after the closing `}` of an import/export specifier list, or after `import * as IDENT` → `FROM`.
-- Reserved for the future (always a `SyntaxError` as an identifier): `var enum package abstract`.
+- Reserved for the future (always a `SyntaxError` as an identifier): `var enum package` (`abstract` became a contextual keyword with D58).
 - Keywords are allowed as **property names** after `.` and as object-literal or class-member keys. The token filter rewrites them to `IDENT` in those positions (§4.2.4).
 
 #### 4.1.3 Literals: booleans, null, undefined
@@ -1500,7 +1502,7 @@ print(c instanceof Shape, c instanceof Comparable)   // true true
 - Implementing an interface member does **not** need `override`. (If the member also overrides a superclass member, `override` is required as usual.)
 - A subclass inherits its superclass's interfaces: `class D extends C {}` is an instance of everything `C` implements.
 - Host classes cannot implement interfaces. Script classes extending host classes can, and host-inherited public members count.
-- **No abstract classes in v1**: a class that declares `implements` must implement everything. COULD: `abstract class` with `abstract` members (the word is already reserved).
+- A class that declares `implements` must implement everything, also an abstract one (it declares the members `abstract`, §4.5.10).
 
 **Checking at runtime (D32).** `instanceof` is extended to interfaces (nominal, §4.5.5). Every class stores the transitive set of interfaces it implements, so the check is O(1). COULD (structural check): a separate operator `x implements I` that returns `true` for *any* value that currently has all the members of `I` (object literals and host objects included), without needing an `implements` clause. It is listed as COULD because it introduces a second, weaker notion of "implements"; `implements` is already a reserved word, so adding it later does not break programs.
 
@@ -1603,6 +1605,38 @@ print(bag.size)         // → undefined
 - **Host side** (§5.8.1): reading an undeclared member through a class-instance proxy returns `undefined` (JS conventions, e.g. `JSON.stringify` probing `toJSON`); writing one throws `TypeError`.
 - Built-in classes declare their members (`Error`: `name`, `message`, `stack`, `cause`).
 - This replaces D29's earlier allowance of "new own data properties on instances": class instances never gain properties.
+
+#### 4.5.10 Abstract classes (D58)
+
+```js
+abstract class Shape {
+  name
+  constructor(name) { this.name = name }
+  abstract area();
+  abstract get sides();
+  describe() { return `${name}: ${area()} (${sides} sides)` }   // implicit members (D33) reach the implementations
+}
+
+class Square extends Shape {
+  size
+  constructor(size) {
+    super('square')
+    this.size = size
+  }
+  area() { return size * size }   // implementing an abstract member needs no `override`
+  get sides() { return 4 }
+}
+
+new Square(3).describe()           // 'square: 9 (4 sides)'
+// new Shape('x')                  // SyntaxError: Cannot create an instance of abstract class 'Shape'
+```
+
+- `abstract` is a contextual keyword (§4.1.2): before `class` and as a member modifier (order: access, `static`, `final` / `abstract`, `override`).
+- **Abstract classes** cannot be instantiated: `new A()` is a `SyntaxError` when `A` is a class declared in scope (like the arity checks, §4.4.13), otherwise a `TypeError` at runtime. Subclasses (concrete or abstract) are constructed normally and run the abstract class's constructor and field initialisers. An abstract class may not be `final`.
+- **Abstract members** are methods and accessor halves without a body, ending in `;`. They are allowed only in abstract classes and cannot be `static` or `private` (a private member is not inherited, so nothing could implement it). Their parameters form the signature implementations keep (D38).
+- **Implementation**: when a concrete class is defined (`CLASS`, §5.6.7), every abstract member it inherits must have an implementation in the chain, else `TypeError: Class 'B' must implement abstract method 'A.m'` (all violations together). Accessors are checked per half. An abstract subclass may leave members unimplemented, or redeclare them. Implementing a member needs no `override` (but allows it); the usual override rules apply otherwise (kind, access, signature, `final`).
+- `super.m()` / `super.x` of an abstract member: `TypeError: Abstract member 'A.m' has no body`.
+- **psc** emits the class without its abstract members and adds `if (new.target === A) throw new TypeError(…)` to its constructor (anonymous abstract class expressions are not guarded); `super.m()` of an abstract member fails with JavaScript's message.
 
 ### 4.6 Standard library (SHOULD)
 

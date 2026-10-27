@@ -51,7 +51,7 @@ export const KEYWORDS = [
 export type Keyword = typeof KEYWORDS[number]
 
 /** Contextual keywords: ordinary identifiers, turned into keyword tokens by the token filter (§4.2.5). */
-export const CONTEXTUAL_KEYWORDS = ['get', 'set', 'as', 'override', 'final', 'from'] as const
+export const CONTEXTUAL_KEYWORDS = ['get', 'set', 'as', 'override', 'final', 'from', 'abstract'] as const
 
 export type ContextualKeyword = typeof CONTEXTUAL_KEYWORDS[number]
 
@@ -60,7 +60,6 @@ export const FUTURE_RESERVED_WORDS = [
   'var',
   'enum',
   'package',
-  'abstract',
 ] as const
 
 export type FutureReservedWord = typeof FUTURE_RESERVED_WORDS[number]

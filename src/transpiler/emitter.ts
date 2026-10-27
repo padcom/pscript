@@ -196,6 +196,13 @@ const EXPRESSIONS: { [K in Expression['type']]?: Printer<Extract<Expression, { t
   SequenceExpression: (e, node) => node.expressions.map(item => e.expression(item, Precedence.Assignment)).join(', '),
 }
 
+// `new` of an abstract class itself fails, as in the interpreter (D58); anonymous classes are not guarded.
+function abstractGuard({ abstract, id }: ClassNode): string | null {
+  if (!abstract || !id) return null
+
+  return `if (new.target === ${id.name}) throw new TypeError("Cannot create an instance of abstract class '${id.name}'");`
+}
+
 /** The words of `for…of`, `for await…of` (D53) and `for…in` (D56). */
 const LOOP_WORDS = { of: ['for', 'of'], await: ['for await', 'of'], in: ['for', 'in'] } as const
 
@@ -1128,8 +1135,11 @@ export class Emitter {
     this.depth++
 
     try {
-      const members = node.body.body.map(member => this.mark(member, this.classMember(member, record, node.superClass !== null)))
-      const lines = [...this.implementsBlock(implemented), ...members, ...inheritedHalves(node, info, this.classNodes)]
+      const derived = node.superClass !== null
+      const concrete = node.body.body.filter(member => !(member.type === 'MethodDefinition' && member.abstract)) // D58
+      const members = concrete.map(member => this.mark(member, this.classMember(member, record, derived, node)))
+      const guard = this.abstractConstructor(node, derived)
+      const lines = [...this.implementsBlock(implemented), ...guard, ...members, ...inheritedHalves(node, info, this.classNodes)]
 
       const inner = lines.map(text => INDENT.repeat(this.depth) + text)
 
@@ -1154,17 +1164,29 @@ export class Emitter {
     return [`static { ${this.helpers.use('interface')}.implement(this, [${implemented.join(', ')}]); }`]
   }
 
-  private classMember(member: MethodDefinition | PropertyDefinition, record: ClassRecord, derived: boolean): string {
+  private classMember(member: MethodDefinition | PropertyDefinition, record: ClassRecord, derived: boolean, node: ClassNode) {
     record.isStatic = member.static
 
     if (member.type === 'PropertyDefinition') return `${staticPrefix(member)}${this.field(member, record)}`
-    if (member.kind === 'constructor') return this.constructorText(member, derived)
+    if (member.kind === 'constructor') return this.constructorText(member, derived, node)
 
     return this.methodText(member, record)
   }
 
-  private constructorText({ value }: MethodDefinition, derived: boolean): string {
-    return `constructor${this.functionRest(value, { kind: derived ? 'derivedConstructor' : 'constructor' })}`
+  private constructorText({ value }: MethodDefinition, derived: boolean, node: ClassNode): string {
+    const text = `constructor${this.functionRest(value, { kind: derived ? 'derivedConstructor' : 'constructor' })}`
+    const guard = abstractGuard(node)
+
+    return guard ? text.replace('{\n', `{\n${INDENT.repeat(this.depth + 1)}${guard}\n`) : text
+  }
+
+  // An abstract class without a constructor gets one that refuses `new` of the class itself (D58).
+  private abstractConstructor(node: ClassNode, derived: boolean): string[] {
+    const guard = abstractGuard(node)
+    const hasConstructor = node.body.body.some(member => member.type === 'MethodDefinition' && member.kind === 'constructor')
+    if (!guard || hasConstructor) return []
+
+    return [derived ? `constructor(...args) { ${guard} super(...args); }` : `constructor() { ${guard} }`]
   }
 
   private methodText(member: MethodDefinition, record: ClassRecord): string {

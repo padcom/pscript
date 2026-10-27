@@ -1,0 +1,8 @@
+// @pscript-only: a concrete subclass implements every abstract member (D58)
+abstract class A {
+  abstract m(x);
+  abstract get v();
+}
+class B extends A {
+  m(x) { return x }
+}

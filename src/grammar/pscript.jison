@@ -286,6 +286,8 @@ ClassDeclaration
     { $$ = yy.classNode('ClassDeclaration', { id: yy.identifier($2, @2), final: false }, $3, @$) }
   | FINAL CLASS_DECLARATION IDENT ClassTail
     { $$ = yy.classNode('ClassDeclaration', { id: yy.identifier($3, @3), final: true }, $4, @$) }
+  | ABSTRACT CLASS_DECLARATION IDENT ClassTail
+    { $$ = yy.classNode('ClassDeclaration', { id: yy.identifier($3, @3), final: false, abstract: true }, $4, @$) }
   ;
 
 ClassExpression
@@ -297,6 +299,10 @@ ClassExpression
     { $$ = yy.classNode('ClassExpression', { id: null, final: true }, $3, @$) }
   | FINAL CLASS IDENT ClassTail
     { $$ = yy.classNode('ClassExpression', { id: yy.identifier($3, @3), final: true }, $4, @$) }
+  | ABSTRACT CLASS ClassTail
+    { $$ = yy.classNode('ClassExpression', { id: null, final: false, abstract: true }, $3, @$) }
+  | ABSTRACT CLASS IDENT ClassTail
+    { $$ = yy.classNode('ClassExpression', { id: yy.identifier($3, @3), final: false, abstract: true }, $4, @$) }
   ;
 
 ClassTail
@@ -461,12 +467,18 @@ MemberModifiers
   ;
 
 MemberModifier
-  : PUBLIC | PROTECTED | PRIVATE | STATIC | FINAL | OVERRIDE
+  : PUBLIC | PROTECTED | PRIVATE | STATIC | FINAL | OVERRIDE | ABSTRACT
   ;
 
 ClassMember
   : ClassMemberName '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
     { $$ = { kind: 'method', key: $1, params: $3, body: yy.block($6, @5), loc: @$ } }
+  | ClassMemberName '(' FormalParameters ')' ';'
+    { $$ = { kind: 'method', key: $1, params: $3, body: null, loc: @$ } }
+  | GET ClassMemberName '(' ')' ';'
+    { $$ = { kind: 'get', key: $2, params: [], body: null, loc: @$ } }
+  | SET ClassMemberName '(' Parameter ')' ';'
+    { $$ = { kind: 'set', key: $2, params: [$4], body: null, loc: @$ } }
   | '*' ClassMemberName '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'
     { $$ = { kind: 'method', key: $2, params: $4, body: yy.block($7, @6), generator: true, loc: @$ } }
   | ASYNC ClassMemberName '(' FormalParameters ')' BLOCK_LBRACE StatementList '}'

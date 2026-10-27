@@ -1,0 +1,41 @@
+// @pscript-only: abstract classes and members (D58)
+abstract class Shape {
+  name
+  constructor(name) { this.name = name }
+  abstract area();
+  abstract get sides();
+  describe() { return `${name}: ${area()} (${sides} sides)` }
+}
+class Square extends Shape {
+  size
+  constructor(size) {
+    super('square')
+    this.size = size
+  }
+  area() { return size * size }
+  get sides() { return 4 }
+}
+print(new Square(3).describe(), new Square(2) instanceof Shape)
+const S = Shape
+try { new S('x') } catch (e) { print(e.name, e.message) }
+abstract class Polygon extends Shape {
+  override describe() { return 'polygon ' + super.describe() }
+}
+class Tri extends Polygon {
+  constructor() { super('tri') }
+  area() { return 0.5 }
+  get sides() { return 3 }
+}
+print(new Tri().describe())
+abstract class Base {
+  abstract name();
+  greet() { return `hello ${name()}` }
+}
+const anonymous = new (class extends Base { name() { return 'anon' } })()
+print(anonymous.greet())
+interface Named { name(); }
+abstract class Partial implements Named {
+  abstract name();
+}
+class Full extends Partial { name() { return 'full' } }
+print(new Full().name(), new Full() instanceof Named)

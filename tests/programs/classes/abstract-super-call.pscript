@@ -1,0 +1,8 @@
+// @pscript-only: an abstract member has no body to call through super (D58)
+abstract class A {
+  abstract m();
+}
+class B extends A {
+  m() { return super.m() }
+}
+new B().m()

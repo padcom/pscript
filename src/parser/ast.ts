@@ -371,6 +371,8 @@ interface ClassBase {
   body: ClassBody
   /** `final class` (D28) */
   final: boolean
+  /** `abstract class` (D58) */
+  abstract: boolean
   /** `implements` list (D31) */
   implements: (Identifier | MemberExpression)[]
 }
@@ -413,6 +415,8 @@ export interface MethodDefinition extends NodeBase {
   key: MemberKey
   /** `[Symbol.iterator]() {}` (D57): the key is the member expression */
   computed: boolean
+  /** `abstract m();` (D58): no body (the value's body is empty) */
+  abstract: boolean
   /** member kind */
   kind: 'constructor' | 'method' | 'get' | 'set'
   /** `static` member */

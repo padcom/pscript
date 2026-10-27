@@ -73,8 +73,11 @@ const CLASS_BODIES = new Set<Bracket | undefined>(['{class}', '{class-statement}
 const KEYWORD_TOKENS = new Set(KEYWORDS.map(keyword => keyword.toUpperCase()))
 
 /** Modifier keywords of class members (§4.5.1); `final` and `override` are contextual. */
-const MODIFIERS = new Set(['PUBLIC', 'PROTECTED', 'PRIVATE', 'STATIC', 'FINAL', 'OVERRIDE'])
-const CONTEXTUAL_MODIFIERS: Record<string, string> = { final: 'FINAL', override: 'OVERRIDE' }
+const MODIFIERS = new Set(['PUBLIC', 'PROTECTED', 'PRIVATE', 'STATIC', 'FINAL', 'OVERRIDE', 'ABSTRACT'])
+const CONTEXTUAL_MODIFIERS: Record<string, string> = { final: 'FINAL', override: 'OVERRIDE', abstract: 'ABSTRACT' }
+
+/** Modifiers that may precede `class` (D28, D58). */
+const CLASS_MODIFIERS = new Set(['FINAL', 'ABSTRACT'])
 
 /** `get` / `set` before a member name on the same line (§4.2.5). */
 const ACCESSOR_KEYWORDS: Record<string, string> = { get: 'GET', set: 'SET' }
@@ -110,6 +113,7 @@ function headerKind(keyword: Token): Bracket {
 const EMIT_HOOKS: Record<string, (filter: TokenFilter, token: Token) => void> = {
   'FUNCTION': (filter, token) => filter.functionStart(token),
   'FINAL': (filter, token) => filter.finalStart(token),
+  'ABSTRACT': (filter, token) => filter.finalStart(token),
   'CLASS': (filter, token) => filter.classStart(token),
   'INTERFACE': filter => filter.interfaceStart(),
   'IMPORT': filter => filter.moduleStart('import'),
@@ -335,7 +339,7 @@ export class TokenFilter {
   }
 
   private isModifier(keyword: string, next: Token): boolean {
-    if (keyword === 'FINAL' && next.name === 'CLASS') return true
+    if (CLASS_MODIFIERS.has(keyword) && next.name === 'CLASS') return true
 
     return this.inMemberPosition() && this.startsMember(next)
   }

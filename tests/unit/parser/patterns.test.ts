@@ -16,6 +16,7 @@ const IGNORED_KEYS = new Set([
   'access',
   'override',
   'final',
+  'abstract',
   'implements',
 ])
 

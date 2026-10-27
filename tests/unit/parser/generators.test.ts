@@ -3,7 +3,7 @@ import { parse as acornParse } from 'acorn'
 import { describe, expect, it } from 'vitest'
 import { parse } from '@/parser/parse'
 
-const IGNORED = new Set(['start', 'end', 'loc', 'range', 'access', 'override', 'final', 'implements'])
+const IGNORED = new Set(['start', 'end', 'loc', 'range', 'access', 'override', 'final', 'abstract', 'implements'])
 
 function normalize(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(normalize)

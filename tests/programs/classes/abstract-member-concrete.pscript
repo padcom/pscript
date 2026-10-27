@@ -1,0 +1,4 @@
+// @pscript-only: abstract members need an abstract class (D58)
+class A {
+  abstract m();
+}

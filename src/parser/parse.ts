@@ -20,7 +20,18 @@ import type {
   UnaryExpression,
   VariableDeclarator,
 } from './ast'
-import { builders, sourceLoc, toLoc, type ForHeader, type FunctionHead, type FunctionType, type JisonLoc } from './ast-builders'
+import {
+  builders,
+  sourceLoc,
+  toLoc,
+  type ClassHead,
+  type ClassNode,
+  type ClassTail,
+  type ForHeader,
+  type FunctionHead,
+  type FunctionType,
+  type JisonLoc,
+} from './ast-builders'
 import { EscapeError, checkNumber } from './literals'
 import { classMember, type Modifier, type RawMember } from './class-members'
 import { WELL_KNOWN_SYMBOLS } from './symbol-keys'
@@ -276,6 +287,13 @@ function classBuilders(errors: SyntaxErrorFactory) {
       if (constructors.length > 1) throw errors.at('A class may only have one constructor', constructors[1].loc)
 
       return builders.classBody(body, loc)
+    },
+    // Abstract members belong to abstract classes (D58).
+    classNode(type: ClassNode['type'], head: ClassHead, tail: ClassTail, loc: JisonLoc) {
+      const member = head.abstract ? undefined : tail.body.body.find(item => item.type === 'MethodDefinition' && item.abstract)
+      if (member) throw errors.at('Abstract members are only allowed in abstract classes', member.loc)
+
+      return builders.classNode(type, head, tail, loc)
     },
   }
 }

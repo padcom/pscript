@@ -1,0 +1,5 @@
+square: 9 (4 sides) true
+TypeError Cannot create an instance of abstract class 'Shape'
+polygon tri: 0.5 (3 sides)
+hello anon
+full true

@@ -7,8 +7,8 @@ import { describe, expect, it } from 'vitest'
 import { parse } from '@/parser/parse'
 
 const root = join(import.meta.dirname, 'programs')
-// positions, PScript's class extensions (access, override, final, implements), and acorn-only flags
-const IGNORED_KEYS = new Set(['start', 'end', 'loc', 'range', 'access', 'override', 'final', 'implements'])
+// positions, PScript's class extensions (access, override, final, abstract, implements), and acorn-only flags
+const IGNORED_KEYS = new Set(['start', 'end', 'loc', 'range', 'access', 'override', 'final', 'abstract', 'implements'])
 
 IGNORED_KEYS.add('directive')
 

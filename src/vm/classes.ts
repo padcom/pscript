@@ -8,6 +8,7 @@ import type {
   FunctionProto,
 } from '@/compiler/function-proto'
 import type { ModuleRecord } from '@/modules/module-record'
+import { displayKey } from '@/parser/symbol-keys'
 import { kindOf } from '@/runtime/operators'
 import { resolveImplicitNames } from './implicit'
 import { checkInterfaces, implementInterfaces } from './interfaces'
@@ -125,6 +126,18 @@ function implicitLength(cls: Class): number {
   return cls.superClass ? cls.superClass.length : 0
 }
 
+function isAbstract({ abstract }: MemberEntry): boolean {
+  return Array.isArray(abstract) ? abstract.length > 0 : abstract === true
+}
+
+// The halves of an accessor still abstract once `method` defines one of them (D58).
+function abstractHalves(existing: MemberEntry | undefined, method: ClassMethodTemplate): ('get' | 'set')[] {
+  const still = Array.isArray(existing?.abstract) ? existing.abstract : []
+  const others = still.filter(half => half !== method.kind)
+
+  return method.abstract ? [...others, method.kind as 'get' | 'set'] : others
+}
+
 function accessorHalves(entry: MemberEntry | undefined): Partial<MemberEntry> {
   if (entry?.kind !== 'accessor') return {}
 
@@ -142,6 +155,7 @@ class ClassBuilder {
     this.cls = new Class(host.realm.FunctionPrototype, template, superClass, prototype)
     this.cls.outerClass = site.homeClass
     this.cls.final = template.isFinal
+    this.cls.abstract = template.isAbstract === true
     this.cls.memberIndex = new Map(superClass?.memberIndex)
     this.cls.staticMemberIndex = new Map(superClass?.staticMemberIndex)
   }
@@ -221,18 +235,32 @@ class ClassBuilder {
   }
 
   private entry(member: ClassMethodTemplate, parts: Partial<MemberEntry> & Pick<MemberEntry, 'kind'>): MemberEntry {
-    return { access: member.access, owner: this.cls, final: member.final, ...parts }
+    return { access: member.access, owner: this.cls, final: member.final, abstract: member.abstract, ...parts }
+  }
+
+  /**
+   * The abstract members a concrete class leaves unimplemented (D58).
+   *
+   * @returns one violation per member
+   */
+  unimplemented(): string[] {
+    const { cls } = this
+    if (cls.abstract) return []
+
+    return [...cls.memberIndex].filter(([, entry]) => isAbstract(entry))
+      .map(([key, entry]) => `Class '${cls.name}' must implement abstract ${entry.kind} '${entry.owner.name}.${displayKey(key)}'`)
   }
 
   // A get/set pair combines into one accessor; an inherited half the class does not redefine stays in effect (§4.5.6).
-  // The halves may differ in access (C# style): each keeps its own.
+  // The halves may differ in access (C# style): each keeps its own. Abstract halves (D58) are tracked per half.
   private accessor(method: ClassMethodTemplate, fn: Closure) {
     const index = this.index(method.isStatic)
-    const halves = accessorHalves(index.get(method.key))
-
+    const current = index.get(method.key)
+    const halves = accessorHalves(current)
     const half = { [method.kind]: fn, [`${method.kind}Access`]: method.access }
+    const abstract = abstractHalves(current, method)
 
-    index.set(method.key, this.entry(method, { kind: 'accessor', ...halves, ...half }))
+    index.set(method.key, { ...this.entry(method, { kind: 'accessor', ...halves, ...half }), abstract })
   }
 
   private index(isStatic: boolean): Map<string, MemberEntry> {
@@ -258,7 +286,7 @@ export function defineClass(host: ClassHost, template: ClassTemplate, heritage: 
   builder.members()
   builder.functions()
   violations.push(...builder.memberRefViolations(), ...resolveImplicitNames(builder.cls, name => host.outerGlobal(name)))
-  violations.push(...implementInterfaces(builder.cls, interfaces))
+  violations.push(...implementInterfaces(builder.cls, interfaces), ...builder.unimplemented())
 
   // All violations of one class definition are reported together (§5.6.7).
   if (violations.length > 0) throw typeError(violations.join('; '))
@@ -293,10 +321,17 @@ function superStatic(realm: Realm, parent: Class | null, key: string): [Value | 
   return memberFound(parent.staticMemberIndex.get(key)) ?? inherited(parent, key)
 }
 
+// `super.m` of an abstract member has nothing to run (D58).
+function concrete(entry: MemberEntry | undefined, key: string): MemberEntry | undefined {
+  if (entry && isAbstract(entry)) throw typeError(`Abstract member '${entry.owner.name}.${displayKey(key)}' has no body`)
+
+  return entry
+}
+
 function superInstance(realm: Realm, parent: Class | null, key: string): [Value | Accessor] | null {
   if (!parent) return inherited(realm.ObjectPrototype, key)
 
-  return memberFound(parent.memberIndex.get(key)) ?? inherited(parent.prototype, key)
+  return memberFound(concrete(parent.memberIndex.get(key), key)) ?? inherited(parent.prototype, key)
 }
 
 /**

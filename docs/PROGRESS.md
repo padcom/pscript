@@ -57,6 +57,23 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L16 | The comma operator (D55) | done (2026-10-27) |
 | L17 | `for … in` (D56) | done (2026-10-27) |
 | L18 | User-defined iterables, `Symbol.iterator` (D57) | done (2026-10-27) |
+| L19 | Abstract classes (D58) | done (2026-10-27) |
+
+## L19 — Abstract classes (D58)
+
+Design in `docs/PLAN.md` D58 (R47), §4.5.10; user docs in `docs/LANGUAGE.md` → Classes.
+
+- **Parser**: `abstract` moved from the reserved words to the contextual modifiers (`ABSTRACT`, like `FINAL`);
+  `ABSTRACT CLASS…` rules; bodiless method / accessor rules; `class-members.ts` checks (table-driven); `classNode`
+  rejects abstract members in concrete classes. AST: `ClassBase.abstract`, `MethodDefinition.abstract` (ignored
+  by the acorn oracles).
+- **Compiler**: `ClassTemplate.isAbstract`, `ClassMethodTemplate.abstract`; `new` of a known abstract class is a
+  `SyntaxError` (`ClassInfo.abstract`).
+- **VM**: `Class.abstract` (refused by `construct`, kept off the fast `NEW` path); `MemberEntry.abstract` (accessor
+  halves tracked separately); `ClassBuilder.unimplemented()`; overrides of abstract members need no `override`;
+  `super` to an abstract member fails.
+- **psc**: drops abstract members, guards constructors with `new.target`.
+- **Tests**: `tests/programs/classes/abstract*.pscript`, `method-without-body.pscript`.
 
 ## L18 — User-defined iterables (D57)
 

@@ -217,8 +217,9 @@ function isScriptRoot({ native, host, superClass }: ClassValue): boolean {
 }
 
 // `new C(...)` of a script class without a superclass, with a constructor (NEW's fast path).
+// (abstract classes take the general path, which refuses them, D58)
 function isBaseScriptClass(value: Value): value is ClassValue & { ctor: Closure } {
-  return value instanceof ClassValue && value.ctor !== null && isScriptRoot(value)
+  return value instanceof ClassValue && value.ctor !== null && !value.abstract && isScriptRoot(value)
 }
 
 // Drops operand stack items down to `height`; popping is cheaper than setting `length` for the few items of a call.
@@ -973,6 +974,7 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
    */
   construct(callee: Value, args: Value[]): Value {
     if (!(callee instanceof ClassValue)) this.notAClass(callee)
+    if (callee.abstract) throw typeError(`Cannot create an instance of abstract class '${callee.name}'`)
 
     return this.constructAs(callee, args, callee)
   }
