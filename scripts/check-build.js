@@ -1,5 +1,6 @@
 // Checks the library build (§6.5, D16): an ES module with type declarations, browser-safe (no CommonJS, no Node
-// built-ins), that loads and runs a script, and a CLI (H5) that runs one. Runs after `vite build` in `npm run build`.
+// built-ins), that loads and runs a script and keeps its names, and a CLI (H5) that runs one. Runs after `vite build`
+// in `npm run build`.
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import process from 'node:process'
@@ -25,6 +26,19 @@ async function runs() {
   return run('1 + 2 * 3') === 7 ? [] : ['dist/index.js does not run scripts']
 }
 
+async function keepsNames() {
+  const { Interpreter, run } = await import('../dist/index.js')
+  const problems = Interpreter.name === 'Interpreter' ? [] : [`Interpreter is named '${Interpreter.name}'`]
+
+  try {
+    run('let = 1')
+  } catch (e) {
+    if (e.name !== 'PScriptSyntaxError') problems.push(`syntax errors are named '${e.name}'`)
+  }
+
+  return problems
+}
+
 function cliRuns() {
   const output = execFileSync(process.execPath, ['bin/pscript.js', '-e', 'print(1 + 2 * 3)'], { encoding: 'utf8' })
 
@@ -33,11 +47,13 @@ function cliRuns() {
 
 const problems = missingFiles()
 
-if (problems.length === 0) problems.push(...forbiddenCode(readFileSync('dist/index.js', 'utf8')), ...await runs(), ...cliRuns())
+if (problems.length === 0) {
+  problems.push(...forbiddenCode(readFileSync('dist/index.js', 'utf8')), ...await runs(), ...await keepsNames(), ...cliRuns())
+}
 
 if (problems.length > 0) {
   console.error(problems.join('\n'))
   process.exit(1)
 }
 
-console.log('build check: ES module, browser-safe, runs scripts; the CLI runs scripts')
+console.log('build check: ES module, browser-safe, runs scripts, keeps names; the CLI runs scripts')

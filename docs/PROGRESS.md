@@ -51,6 +51,10 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 commit message `Release @padcom/pscript@%s`; `preversion` runs `npm run check`, `prepack` builds, and
 `publishConfig.access` is `public`.
 
+The library build is no longer minified: Vite 8 minifies with rolldown, which ignores the shared config's
+`esbuild.minifyIdentifiers: false`, so classes lost their names (`Interpreter.name === 'vl'`, `error.name === 'a'`).
+The error classes now spell out their `name`, and the build check fails when names are lost.
+
 Not done: standalone binaries (N1), tab completion of script names in the REPL.
 
 ## H3 — Performance (second pass)

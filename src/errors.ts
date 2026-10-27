@@ -59,6 +59,8 @@ function formatMessage(name: string, reason: string, details: ErrorDetails) {
 }
 
 export class PScriptError extends Error {
+  // Written out rather than taken from the class: minifiers rename classes.
+  override name = 'PScriptError'
   /** the message without location and excerpt */
   reason: string
   fileName?: string
@@ -69,7 +71,6 @@ export class PScriptError extends Error {
 
   constructor(name: string, reason: string, details: ErrorDetails = {}) {
     super(formatMessage(name, reason, details))
-    this.name = new.target.name
     this.reason = reason
     this.fileName = details.fileName
     this.line = details.line
@@ -79,6 +80,8 @@ export class PScriptError extends Error {
 }
 
 export class PScriptSyntaxError extends PScriptError {
+  override name = 'PScriptSyntaxError'
+
   constructor(reason: string, details: ErrorDetails = {}) {
     super('SyntaxError', reason, details)
   }
@@ -95,6 +98,7 @@ export interface RuntimeErrorLocation extends ErrorDetails {
 }
 
 export class PScriptRuntimeError extends PScriptError {
+  override name = 'PScriptRuntimeError'
   /** innermost frame first */
   scriptStack: ScriptStackFrame[]
 

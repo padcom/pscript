@@ -12,6 +12,9 @@ export default defineConfig(defineLibConfig(pkg, {
     include: ['src'],
   },
   build: {
+    // Unminified, so that classes and functions keep their names (error.name, stack traces); bundlers of the
+    // embedding application minify it anyway.
+    minify: false,
     lib: {
       entry: './src/index.ts',
       formats: ['es'], // D16: ES only, until upstream drops UMD
