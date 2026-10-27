@@ -97,6 +97,7 @@ Each feature in this document has one of these tags:
 | R28 | Strict arity (D38) and `typeof null == 'null'` (D39) | 4.4.13, 4.4.1 |
 | R25 | Implicit member access without `this.`, with the strict ambiguity rule (D33) | 4.5.8 |
 | R22 | Only classes are constructable; `instanceof` works only with classes and class-constructed objects (D25–D27) | 4.5.5 |
+| R29 | Destructuring: object and array patterns (nested, defaults, rest) in parameters, declarations, `for…of`, `catch` and assignments; object patterns in parameters are strict named parameters (D40) | 4.4.14 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -116,7 +117,7 @@ Each feature in this document has one of these tags:
 
 ### 1.5 COULD (Phase 3+)
 
-Rest parameters and spread (`...`), optional chaining `?.`, computed keys `{ [k]: v }`, the comma operator in `for` headers, `do … while`, `switch`, `for … in`, bitwise operators, hex/binary/octal literals, destructuring, user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, Map/Set, a CLI/REPL, a disassembler CLI, source maps for errors.
+Rest parameters and spread (`...`), optional chaining `?.`, computed keys `{ [k]: v }`, the comma operator in `for` headers, `do … while`, `switch`, `for … in`, bitwise operators, hex/binary/octal literals, ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, Map/Set, a CLI/REPL, a disassembler CLI, source maps for errors.
 
 ### 1.6 WON'T (v1)
 
@@ -200,6 +201,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D37 | `null` vs `undefined` | **`undefined` only means "missing property of an object literal"** (or host object). Uninitialised fields, `let x`, missing arguments, bare `return`, `this` in plain calls and "not found" results are `null`; out-of-range array/string indexes throw `RangeError`. Details in §4.4.12 | yes |
 | D38 | Arity | **Strict, as in Java/C#/Delphi**: required parameters must be passed, extra arguments are an error (unless a rest parameter exists), defaults apply only to omitted arguments, required parameters come before optional ones. Checked at compile time when the callee is known, otherwise at class-definition time, link time or runtime. Function declarations become constant bindings; overrides keep their signature. Details in §4.4.13 | yes |
 | D39 | `typeof null` | **`'null'`** (JS gives `'object'`) | yes |
+| D40 | Destructuring and named parameters | **JavaScript destructuring, with strict named parameters**: object and array patterns everywhere a binding or assignment target is allowed. An object pattern inside a *parameter* rejects an argument object that has properties the pattern does not name (unless the pattern has `...rest`): at compile time for object literals passed to a known callee, otherwise at runtime. Details in §4.4.14 | yes |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -924,6 +926,37 @@ log('info')                  // OK: rest may be empty
 - **Callbacks from the standard library**: natives such as `map`, `filter`, `forEach`, `reduce`, `find`, `sort` call a script callback with **as many of their arguments as the callback declares** (`(element)`, `(element, index)` or `(element, index, array)`). A callback that requires more parameters than the native provides → `TypeError`.
 - **Host → script calls** (§5.8.1): the host may pass *more* arguments than declared (extras are dropped, so script functions work as JS event handlers or `Array.prototype.map` callbacks), but missing required arguments → `TypeError`.
 - **Getters** take no arguments and **setters** exactly one, already enforced by the grammar.
+
+#### 4.4.14 Destructuring and named parameters (D40)
+
+```js
+function testme({ x = 1, y = 2 } = {}) { return x + y }
+testme()                  // 3
+testme({ y: 5 })          // 6
+// testme({ z: 1 })       // SyntaxError: Unknown named parameter 'z' of testme({x?, y?}?)
+
+const { name, address: { city = '?' }, ...others } = person
+let [first, second = 0, ...tail] = list
+for (const [key, value] of Object.entries(map)) print(key, value)
+[a, b] = [b, a]
+({ x, y } = point)        // parentheses: a statement starting with `{` is a block
+```
+
+**Where**: patterns are allowed wherever a name is bound or assigned: parameters (functions, arrows, methods, setters), `let`/`const` declarations (a pattern needs an initialiser), `for (let|const <pattern> of …)`, `for (<target> of …)`, `catch (<pattern>)`, and the left side of `=`. In assignments the targets are names, member expressions (`[o.a, o.b] = …`) or nested patterns; in bindings only names and nested patterns.
+
+**Syntax**: object patterns `{ a, b: target, c = default, d: target = default, 'key': target, ...rest }`; array patterns `[target, target = default, ...rest]`. Keys are identifiers (keywords too), strings or numbers; computed keys are not supported. Array patterns have no holes (like array literals); the rest element is a name and comes last. A shorthand `{ a = 1 }` inside an object *literal* is only valid when the literal becomes an assignment pattern.
+
+**Semantics** (as in JavaScript unless noted):
+
+- An object pattern reads each key with the usual property access (so an undeclared member of a class instance is an error, D36; a missing property of a plain object is `undefined`). `...rest` gets a new plain object with the remaining own enumerable public properties.
+- An array pattern iterates the value like `for…of` (arrays, strings, host iterables); a missing element is `undefined`; `...rest` gets a new array with the remaining elements.
+- A default applies when the value read is `undefined` (a missing property or element). Defaults are evaluated left to right, when needed, and may refer to names bound earlier in the same pattern or parameter list.
+- Destructuring `null` or `undefined` → `TypeError` (`Cannot destructure null`).
+- Parameters: a pattern parameter without a default is **required** (D38); `{ … } = {}` makes it optional. As with every parameter default, `= {}` applies only when the argument is omitted (passing `undefined` passes `undefined`, which then cannot be destructured).
+
+**Strict named parameters**: an object pattern that is a parameter, or nested inside one, accepts only the keys it names, unless it has a `...rest` element. Unknown keys of a **plain object** argument are an error: at compile time (`SyntaxError`) when the callee is known (D38's rule) and the argument is an object literal (nested literals are checked against nested patterns), otherwise at runtime (`TypeError`), with the message `Unknown named parameter 'z' of testme({x?, y?}?)` (a nested key is named by its path, `'pos.z'`). Class instances, arrays and host objects are not checked (class instances are closed anyway). Patterns in declarations, `for…of`, `catch` and assignments pick properties like JavaScript and never complain about extra keys.
+
+**Signatures**: patterns appear in signatures as `{x, y?}` / `[a, b?]` (`?` marks a default), e.g. `testme({x?, y?}?)`.
 
 ### 4.5 Classes, access control and interfaces (R12, R24)
 
@@ -1810,6 +1843,10 @@ export interface ModuleRecord {
 | `INTERFACE` | k(template) n | p1…pn → iface | builds an interface from its template and `n` parent interfaces (§4.5.7) |
 | `GET_ITER` | — | iterable → iter | arrays/strings; else TypeError |
 | `ITER_NEXT` | target | iter → iter v \| (pops iter, jumps) | |
+| `ITER_VALUE` | — | iter → iter v | array patterns: the next value, `undefined` when done (D40) |
+| `ITER_REST` | — | iter → arr | array pattern rest: the remaining values (D40) |
+| `CHECK_PATTERN` | k \| -1 | v → v | object patterns: TypeError for null/undefined; with k (JSON `{ keys, path }`), unknown keys of a plain object are a TypeError (strict named parameters, D40) |
+| `OBJECT_REST` | k | v → obj | object pattern rest: a plain object with the own public properties not listed in k (JSON array of keys) (D40) |
 | `THROW` | — | v → | |
 | `TRY` | catchTarget finallyTarget | → | push handler (−1 = none); records stack height and env depth |
 | `END_TRY` | — | → | pop handler |
@@ -3161,6 +3198,9 @@ Programs that rely on these behave differently when compiled with `psc` (P5):
 - a function without `return` returns `undefined`; a dynamic call with the wrong argument count is not an error;
 - `protected` members are reachable through receivers the compiler cannot see (they are plain properties);
 - `print` output follows `console.log`; there are no `maxSteps`/`maxCallDepth` limits;
+- named parameters (D40) are checked only at compile time (object literals passed to known functions, also
+  imported ones); at runtime a destructured parameter ignores unknown keys, and a parameter pattern's default also
+  applies when `undefined` is passed;
 - runtime errors are native JS errors (`AccessError` does not exist; access violations on `#x` are `TypeError`s).
 
 ### 11.5 Testing

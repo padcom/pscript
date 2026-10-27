@@ -1,0 +1,50 @@
+// Destructuring assignment (D40): swaps, object patterns in parentheses, member targets, for-of targets
+let a = 1
+let b = 2
+;[a, b] = [b, a]
+print(a, b)
+
+let x = 0
+let y = 0
+;({ x, y = 7 } = { x: 5 })
+print(x, y)
+
+const point = { x: 0, y: 0 }
+;({ x: point.x, y: point.y } = { x: 3, y: 4 })
+print(point.x, point.y)
+
+const list = [0, 0]
+;[list[0], list[1]] = [8, 9]
+print(list.join(','))
+
+let first
+let rest
+;[first, ...rest] = [1, 2, 3]
+print(first, rest.join(','))
+
+let total = 0
+let key
+let value
+for ([key, value] of [['a', 1], ['b', 2]]) total += value
+print(key, total)
+
+const target = {}
+for ({ n: target.n } of [{ n: 1 }, { n: 2 }]) print(target.n)
+
+let p
+let q
+const result = [p, q] = [10, 20]
+print(p, q, result.join(','))
+
+let nested
+;({ outer: { inner: nested = 'fallback' } } = { outer: {} })
+print(nested)
+
+try {
+  throw new Error('caught')
+} catch ({ message }) {
+  print(message)
+}
+
+for (const [k, v] of Object.entries({ one: 1, two: 2 })) print(k, v)
+for (let { id, label = 'none' } of [{ id: 1 }, { id: 2, label: 'two' }]) print(id, label)

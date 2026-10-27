@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D39).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D40).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -11,6 +11,7 @@ document describes the language as implemented; the design rationale is in `docs
 - [Statements](#statements)
 - [Functions](#functions)
 - [Objects and arrays](#objects-and-arrays)
+- [Destructuring](#destructuring)
 - [Classes](#classes)
 - [Interfaces](#interfaces)
 - [Exceptions](#exceptions)
@@ -101,6 +102,8 @@ const sum = (...xs) => xs.reduce((a, b) => a + b, 0)
 - **Strict arity:** every parameter without a default must be passed, and extra arguments are an error unless the
   function has a rest parameter. Defaults apply only to omitted arguments; required parameters come before optional
   ones. Calls with a known callee are checked at compile time.
+- Parameters can be object and array patterns; object patterns are strict named parameters (see
+  [Destructuring](#destructuring)).
 - Arrow functions capture `this` lexically. A plain function called without a receiver gets `this === null`.
 - Functions are values: they have `name`, `length`, `call`, `apply` and `bind`.
 - The call depth is limited (`maxCallDepth`, default 10 000); exceeding it is a `RangeError`.
@@ -117,6 +120,33 @@ const list = [1, 2, 3]
 - Arrays have integer indices only. Reading an index outside `0 … length-1` (including negative) is a `RangeError`;
   writing past the end fills the gap with `null`. Assigning `length` truncates or extends.
 - Keys are listed in insertion order (integer-like keys are not moved first).
+
+## Destructuring
+
+```js
+function testme({ x = 1, y = 2 } = {}) { return x + y }   // named parameters
+testme()                    // 3
+testme({ y: 5 })            // 6
+// testme({ z: 1 })         // SyntaxError: Unknown named parameter 'z' of testme({x?, y?}?)
+
+const { name, address: { city = '?' }, ...others } = person
+let [first, second = 0, ...tail] = list
+for (const [key, value] of Object.entries(map)) print(key, value)
+;[a, b] = [b, a]
+;({ x, y } = point)
+```
+
+- Object and array patterns work as in JavaScript wherever a name is bound or assigned: parameters, `let`/`const`,
+  `for … of`, `catch`, and the left side of `=`. Patterns nest, take defaults and a final `...rest`. Keys are
+  names, strings or numbers (no computed keys); array patterns have no holes.
+- A default applies when the value is `undefined`: a missing property or a missing array element. Destructuring
+  `null` or `undefined` is a `TypeError`; an array pattern needs an iterable (array, string, host iterable).
+- A pattern reads properties like `o.x`, so an undeclared member of a class instance is an error.
+- **Named parameters are strict.** An object pattern in a parameter (also nested) accepts only the keys it names,
+  unless it has `...rest`: passing a plain object with other keys is an error, at compile time for an object
+  literal passed to a known function, otherwise at runtime. Patterns in declarations, loops and assignments pick
+  the properties they name and ignore the rest, as in JavaScript.
+- A pattern parameter without a default is a required parameter; `= {}` makes it optional (strict arity applies).
 
 ## Classes
 
@@ -249,6 +279,7 @@ Values cross the boundary by reference and identity is kept in both directions.
 | `typeof null === 'object'` | `typeof null == 'null'` |
 | `[] + {}`, `{} < 1`, `[1] * 2` convert objects | `TypeError` (primitives still convert) |
 | Missing arguments are `undefined`, extra ones ignored | Strict arity: both are errors |
+| Destructured parameters ignore extra keys | Object patterns in parameters reject unknown keys (named parameters) |
 | Functions return `undefined` by default | Functions return `null` |
 | `arr[10]`, `arr[-1]` give `undefined` | `RangeError`; writing past the end fills with `null` |
 | Objects are open bags, also class instances | Class instances and classes are closed and sealed |
@@ -258,7 +289,7 @@ Values cross the boundary by reference and identity is kept in both directions.
 | `this.` required for members | Members usable without `this.` inside class bodies |
 | ASI quirks (`(`/`[` continue the previous line) | A line starting with `(` or `[` starts a new statement |
 | `var`, `switch`, `do…while`, labels, `with`, `delete`, `void` | Not available |
-| Bitwise operators, spread, optional chaining, computed keys, destructuring | Not available (yet) |
+| Bitwise operators, spread, optional chaining, computed keys | Not available (yet) |
 | Tagged templates | Not available |
 | Generators, `async`/`await`, Promises | Not available |
 | Symbols, BigInt, getters on the global object | Not available |

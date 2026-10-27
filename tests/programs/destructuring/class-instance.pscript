@@ -1,0 +1,5 @@
+// @pscript-only: a pattern reads members like `o.x`, so an undeclared member of a class instance is an error (D36)
+class Point {
+  x = 1
+}
+const { x, z } = new Point()

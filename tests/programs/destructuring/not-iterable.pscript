@@ -1,0 +1,2 @@
+// An array pattern needs an iterable value (D40)
+const [a, b] = 42

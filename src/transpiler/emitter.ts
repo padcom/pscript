@@ -6,6 +6,8 @@ import type {
   ArrayExpression,
   ArrowFunctionExpression,
   AssignmentExpression,
+  AssignmentPattern,
+  AssignmentProperty,
   BinaryExpression,
   BlockStatement,
   CallExpression,
@@ -29,10 +31,13 @@ import type {
   NewExpression,
   Node,
   ObjectExpression,
+  ObjectPattern,
   Pattern,
+  PatternElement,
   Program,
   Property,
   PropertyDefinition,
+  RestElement,
   ReturnStatement,
   SourceLocation,
   Statement,
@@ -46,7 +51,8 @@ import type {
 } from '@/parser/ast'
 import { classInfoOf, keyName, type ClassInfo } from '@/compiler/class-info'
 import { ambiguityMessage, memberCandidate, type MemberContext } from '@/compiler/implicit-names'
-import { arityError, type Signature } from '@/compiler/signature'
+import { arityError, namedArgumentError, type Signature } from '@/compiler/signature'
+import { boundNames } from '@/parser/patterns'
 import { stdlibGlobalNames } from '@/stdlib'
 import { declaringClass, inheritedHalves, privateKey, staticPrefix, uniquePrivateName, type ClassNode } from './classes'
 import { Helpers } from './helpers'
@@ -218,7 +224,7 @@ function isGlobalPrintAccess({ object, property, computed }: MemberExpression): 
 const DECLARATIONS = new Set<Statement['type']>(['FunctionDeclaration', 'ClassDeclaration', 'InterfaceDeclaration'])
 
 function declaredByStatement(statement: Statement): Identifier[] {
-  if (statement.type === 'VariableDeclaration') return statement.declarations.map(({ id }) => id)
+  if (statement.type === 'VariableDeclaration') return statement.declarations.flatMap(({ id }) => boundNames(id))
 
   const declaration = statement as FunctionDeclaration | ClassDeclaration | InterfaceDeclaration
 
@@ -234,10 +240,22 @@ function declaredBy(statement: Statement | ModuleDeclaration): Identifier[] {
   return declaredByStatement(statement)
 }
 
-function paramName(param: Pattern): Identifier {
-  if (param.type === 'Identifier') return param
+function paramNames(params: Pattern[]): Identifier[] {
+  return params.flatMap(boundNames)
+}
 
-  return param.type === 'AssignmentPattern' ? param.left : param.argument
+type PatternPart = PatternElement | RestElement
+
+/** Prints a part of a pattern; `binding`: the names are being declared (never implicit members). */
+type PatternPrinter<T> = (emitter: Emitter, node: T, binding: boolean) => string
+
+const PATTERNS: { [K in PatternPart['type']]: PatternPrinter<Extract<PatternPart, { type: K }>> } = {
+  Identifier: (e, node, binding) => binding ? node.name : e.identifier(node),
+  MemberExpression: (e, node) => e.member(node),
+  AssignmentPattern: (e, node, binding) => `${e.patternDefault(node, binding)}`,
+  ObjectPattern: (e, node, binding) => e.objectPattern(node, binding),
+  ArrayPattern: (e, node, binding) => `[${node.elements.map(element => e.pattern(element, binding)).join(', ')}]`,
+  RestElement: (e, node, binding) => `...${e.pattern(node.argument, binding)}`,
 }
 
 // The lowest precedences of a binary operator's operands. `**` is right-associative and JavaScript rejects a unary
@@ -545,7 +563,8 @@ export class Emitter {
 
   declaration({ kind, declarations }: VariableDeclaration): string {
     // D37: a `let` without initialiser starts as null
-    const declarators = declarations.map(({ id, init }) => `${id.name} = ${this.optional(init, Precedence.Assignment, 'null')}`)
+    const initial = (init: Expression | null) => this.optional(init, Precedence.Assignment, 'null')
+    const declarators = declarations.map(({ id, init }) => `${this.pattern(id, true)} = ${initial(init)}`)
 
     return `${kind} ${declarators.join(', ')}`
   }
@@ -583,7 +602,7 @@ export class Emitter {
     try {
       if (init.type !== 'VariableDeclaration') return this.expression(init)
 
-      init.declarations.forEach(({ id }) => this.declare(id))
+      init.declarations.flatMap(({ id }) => boundNames(id)).forEach(id => this.declare(id))
 
       return this.declaration(init)
     } finally {
@@ -593,11 +612,12 @@ export class Emitter {
 
   forOfStatement({ left, right, body }: ForOfStatement): string {
     const iterated = this.expression(right, Precedence.Assignment)
-    if (left.type === 'Identifier') return `for (${this.identifier(left)} of ${iterated}) ${this.body(body)}`
+    if (left.type !== 'VariableDeclaration') return `for (${this.pattern(left, false)} of ${iterated}) ${this.body(body)}`
 
     const [{ id }] = left.declarations
+    const declare = () => boundNames(id).forEach(name => this.declare(name))
 
-    return `for (${left.kind} ${id.name} of ${iterated}) ${this.body(body, () => this.declare(id))}`
+    return `for (${left.kind} ${this.pattern(id, true)} of ${iterated}) ${this.body(body, declare)}`
   }
 
   tryStatement({ block, handler, finalizer }: TryStatement): string {
@@ -605,9 +625,9 @@ export class Emitter {
 
     if (handler) {
       const { param, body } = handler
-      const clause = param ? `catch (${param.name})` : 'catch'
+      const clause = param ? `catch (${this.pattern(param, true)})` : 'catch'
 
-      text += ` ${clause} ${this.block(body.body, () => param && this.declare(param))}`
+      text += ` ${clause} ${this.block(body.body, () => param && boundNames(param).forEach(name => this.declare(name)))}`
     }
 
     return finalizer ? `${text} finally ${this.block(finalizer.body)}` : text
@@ -637,18 +657,49 @@ export class Emitter {
   }
 
   private functionBody(params: Pattern[], body: BlockStatement): string {
-    return this.block(body.body, () => params.forEach(param => this.declare(paramName(param))))
+    return this.block(body.body, () => paramNames(params).forEach(name => this.declare(name)))
   }
 
   // Default values are printed before the parameters are declared: they see the outer scope or earlier parameters,
   // which are both locals here.
   private params(params: Pattern[]): string {
-    return params.map(param => {
-      if (param.type === 'Identifier') return param.name
-      if (param.type === 'RestElement') return `...${param.argument.name}`
+    return params.map(param => this.pattern(param, true)).join(', ')
+  }
 
-      return `${param.left.name} = ${this.expression(param.right, Precedence.Assignment)}`
-    }).join(', ')
+  // ---------------------------------------------------------------------------
+  // Patterns (D40): printed as JavaScript destructuring
+
+  /**
+   * Prints a binding or assignment pattern.
+   *
+   * @param node the pattern or one of its parts
+   * @param binding the names are declared here (in an assignment, a name may be an implicit member)
+   * @returns the pattern text
+   */
+  pattern(node: PatternPart, binding: boolean): string {
+    return (PATTERNS[node.type] as PatternPrinter<PatternPart>)(this, node, binding)
+  }
+
+  objectPattern({ properties }: ObjectPattern, binding: boolean): string {
+    if (properties.length === 0) return '{}'
+
+    return `{ ${properties.map(property => this.objectPatternPart(property, binding)).join(', ')} }`
+  }
+
+  private objectPatternPart(property: AssignmentProperty | RestElement, binding: boolean): string {
+    return property.type === 'RestElement' ? this.pattern(property, binding) : this.patternProperty(property, binding)
+  }
+
+  patternDefault({ left, right }: AssignmentPattern, binding: boolean): string {
+    return `${this.pattern(left, binding)} = ${this.expression(right, Precedence.Assignment)}`
+  }
+
+  // `a`, `a = 1`, `key: target`; a shorthand whose name became `this.a` is written out.
+  private patternProperty({ key, value }: AssignmentProperty, binding: boolean): string {
+    const name = key.type === 'Identifier' ? key.name : key.raw
+    const text = this.pattern(value, binding)
+
+    return text === name || text.startsWith(`${name} = `) ? text : `${name}: ${text}`
   }
 
   arrow({ params, body, expression }: ArrowFunctionExpression): string {
@@ -658,7 +709,7 @@ export class Emitter {
     if (!expression) return `${head} => ${this.framed({ kind: 'arrow' }, arrowBody)}`
 
     return this.scoped(() => {
-      params.forEach(param => this.declare(paramName(param)))
+      paramNames(params).forEach(name => this.declare(name))
 
       return `${head} => ${this.wrapAmbiguous(body as Expression, Precedence.Assignment)}`
     })
@@ -836,7 +887,9 @@ export class Emitter {
     const value = this.expression(right, Precedence.Assignment)
     const render = (target: string) => `${target} ${operator} ${value}`
 
-    return left.type === 'MemberExpression' ? this.withMember(left, render) : render(this.expression(left, Precedence.Member))
+    if (left.type === 'MemberExpression') return this.withMember(left, render)
+
+    return render(left.type === 'Identifier' ? this.expression(left, Precedence.Member) : this.pattern(left, false))
   }
 
   conditional({ test, consequent, alternate }: ConditionalExpression): string {
@@ -866,8 +919,13 @@ export class Emitter {
   // Strict arity of imported functions (D38), which the compiler can only check for local functions (P10).
   private checkImportedArity(node: CallExpression) {
     const signature = this.calleeSignature(node.callee)
-    const problem = signature && arityError(signature, node.arguments.length)
+    if (!signature) return
+
+    const problem = arityError(signature, node.arguments.length)
     if (problem) throw this.error(problem, node)
+
+    const named = namedArgumentError(signature, node.arguments)
+    if (named) throw this.error(named.reason, { loc: named.loc } as Node)
   }
 
   // `f(…)` with an imported `f`, or `ns.f(…)` with a namespace import `ns`.

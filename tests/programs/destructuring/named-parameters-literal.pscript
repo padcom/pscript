@@ -1,0 +1,6 @@
+// @pscript-only: an object literal passed to a known function is checked at compile time (D40)
+function testme({ x = 1, y = 2 } = {}) {
+  return x + y
+}
+print('never')
+testme({ x: 1, z: 1 })

@@ -164,12 +164,85 @@ ParameterList
   ;
 
 Parameter
-  : IDENT
-    { $$ = yy.identifier($1, @$) }
-  | IDENT '=' AssignmentExpression
-    { $$ = yy.assignmentPattern(yy.identifier($1, @1), $3, @$) }
+  : BindingTarget
+  | BindingTarget '=' AssignmentExpression
+    { $$ = yy.assignmentPattern($1, $3, @$) }
   | '...' IDENT
     { $$ = yy.restElement(yy.identifier($2, @2), @$) }
+  ;
+
+/* Binding patterns (§4.4.14, D40): names, object and array patterns. Pattern braces are OBJ_LBRACE (§4.2.2). */
+BindingTarget
+  : IDENT
+    { $$ = yy.identifier($1, @$) }
+  | BindingPattern
+  ;
+
+BindingPattern
+  : ObjectBindingPattern
+  | ArrayBindingPattern
+  ;
+
+ObjectBindingPattern
+  : OBJ_LBRACE '}'
+    { $$ = yy.objectPattern([], @$) }
+  | OBJ_LBRACE BindingPropertyList '}'
+    { $$ = yy.objectPattern($2, @$) }
+  | OBJ_LBRACE BindingPropertyList ',' '}'
+    { $$ = yy.objectPattern($2, @$) }
+  | OBJ_LBRACE BindingRest '}'
+    { $$ = yy.objectPattern([$2], @$) }
+  | OBJ_LBRACE BindingPropertyList ',' BindingRest '}'
+    { $$ = yy.objectPattern($2.concat([$4]), @$) }
+  ;
+
+BindingPropertyList
+  : BindingProperty
+    { $$ = [$1] }
+  | BindingPropertyList ',' BindingProperty
+    { $$ = $1.concat([$3]) }
+  ;
+
+BindingProperty
+  : IDENT
+    { $$ = yy.shorthandPatternProperty(yy.identifier($1, @1), null, @$) }
+  | IDENT '=' AssignmentExpression
+    { $$ = yy.shorthandPatternProperty(yy.identifier($1, @1), $3, @$) }
+  | IDENT ':' BindingElement
+    { $$ = yy.patternProperty(yy.identifier($1, @1), $3, @$) }
+  | LiteralPropertyName ':' BindingElement
+    { $$ = yy.patternProperty($1, $3, @$) }
+  ;
+
+BindingElement
+  : BindingTarget
+  | BindingTarget '=' AssignmentExpression
+    { $$ = yy.assignmentPattern($1, $3, @$) }
+  ;
+
+BindingRest
+  : '...' IDENT
+    { $$ = yy.restElement(yy.identifier($2, @2), @$) }
+  ;
+
+ArrayBindingPattern
+  : '[' ']'
+    { $$ = yy.arrayPattern([], @$) }
+  | '[' BindingElementList ']'
+    { $$ = yy.arrayPattern($2, @$) }
+  | '[' BindingElementList ',' ']'
+    { $$ = yy.arrayPattern($2, @$) }
+  | '[' BindingRest ']'
+    { $$ = yy.arrayPattern([$2], @$) }
+  | '[' BindingElementList ',' BindingRest ']'
+    { $$ = yy.arrayPattern($2.concat([$4]), @$) }
+  ;
+
+BindingElementList
+  : BindingElement
+    { $$ = [$1] }
+  | BindingElementList ',' BindingElement
+    { $$ = $1.concat([$3]) }
   ;
 
 /* Classes (§4.5). The token filter marks `class` at the start of a statement as CLASS_DECLARATION,
@@ -406,19 +479,25 @@ TryStatement
   ;
 
 CatchClause
-  : CATCH '(' IDENT ')' Block
-    { $$ = yy.catchClause(yy.identifier($3, @3), $5, @$) }
+  : CATCH '(' BindingTarget ')' Block
+    { $$ = yy.catchClause($3, $5, @$) }
   | CATCH Block
     { $$ = yy.catchClause(null, $2, @$) }
   ;
 
+/* `for (x of …)`, `for (o.x of …)` and `for ([a, b] of …)`: the target is an expression, checked by yy.forOfTarget.
+   A declared name has its own rules: reducing it to a BindingTarget would conflict with Declarator (LALR). */
 ForOfStatement
   : FOR '(' LET IDENT OF AssignmentExpression ')' Statement
     { $$ = yy.forOfStatement(yy.forOfDeclaration('let', yy.identifier($4, @4), @3, @4), $6, $8, @$) }
+  | FOR '(' LET BindingPattern OF AssignmentExpression ')' Statement
+    { $$ = yy.forOfStatement(yy.forOfDeclaration('let', $4, @3, @4), $6, $8, @$) }
   | FOR '(' CONST IDENT OF AssignmentExpression ')' Statement
     { $$ = yy.forOfStatement(yy.forOfDeclaration('const', yy.identifier($4, @4), @3, @4), $6, $8, @$) }
-  | FOR '(' IDENT OF AssignmentExpression ')' Statement
-    { $$ = yy.forOfStatement(yy.identifier($3, @3), $5, $7, @$) }
+  | FOR '(' CONST BindingPattern OF AssignmentExpression ')' Statement
+    { $$ = yy.forOfStatement(yy.forOfDeclaration('const', $4, @3, @4), $6, $8, @$) }
+  | FOR '(' LeftHandSideExpression OF AssignmentExpression ')' Statement
+    { $$ = yy.forOfStatement(yy.forOfTarget($3), $5, $7, @$) }
   ;
 
 ForInit
@@ -458,6 +537,8 @@ Declarator
     { $$ = yy.declarator(yy.identifier($1, @1), null, @$) }
   | IDENT '=' AssignmentExpression
     { $$ = yy.declarator(yy.identifier($1, @1), $3, @$) }
+  | BindingPattern '=' AssignmentExpression
+    { $$ = yy.declarator($1, $3, @$) }
   ;
 
 /* Expressions, lowest to highest precedence (§4.4.3). */
@@ -466,7 +547,7 @@ Expression
   : AssignmentExpression
   ;
 
-/* The target is checked by yy.assignment (Identifier or, later, MemberExpression). */
+/* The target is checked by yy.assignment: a name, a member, or an object/array literal that becomes a pattern (D40). */
 AssignmentExpression
   : ConditionalExpression
   | ArrowFunction
@@ -695,6 +776,10 @@ Property
     { $$ = yy.property($1, $3, false, @$) }
   | LiteralPropertyName MethodTail
     { $$ = yy.property($1, yy.method($2, @2), true, @$) }
+  | IDENT '=' AssignmentExpression
+    { $$ = yy.coverInitializedName(yy.identifier($1, @1), $3, @$) }
+  | '...' IDENT
+    { $$ = yy.coverRest(yy.identifier($2, @2), @$) }
   | GET PropertyKey '(' ')' BLOCK_LBRACE StatementList '}'
     { $$ = yy.accessorProperty('get', $2, yy.method({ params: [], body: yy.block($6, @5) }, @3), @$) }
   | SET PropertyKey '(' Parameter ')' BLOCK_LBRACE StatementList '}'
@@ -719,7 +804,7 @@ LiteralPropertyName
     { $$ = yy.numberLiteral($1, @$) }
   ;
 
-/* Array literals (§4.4.7): no holes, trailing comma allowed. */
+/* Array literals (§4.4.7): no holes, trailing comma allowed. `...x` only in literals that become patterns (D40). */
 ArrayLiteral
   : '[' ']'
     { $$ = yy.array([], @$) }
@@ -730,10 +815,16 @@ ArrayLiteral
   ;
 
 ElementList
-  : AssignmentExpression
+  : Element
     { $$ = [$1] }
-  | ElementList ',' AssignmentExpression
+  | ElementList ',' Element
     { $$ = $1.concat([$3]) }
+  ;
+
+Element
+  : AssignmentExpression
+  | '...' IDENT
+    { $$ = yy.coverRest(yy.identifier($2, @2), @$) }
   ;
 
 /* Template literals (§4.1.8, D34): quasis and substitutions alternate. */

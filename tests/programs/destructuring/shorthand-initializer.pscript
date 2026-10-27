@@ -1,0 +1,2 @@
+// `{ a = 1 }` is only valid in an object literal that becomes a pattern (D40)
+const o = { a = 1 }

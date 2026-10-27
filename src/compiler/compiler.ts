@@ -2,10 +2,13 @@
 import { PScriptSyntaxError, formatExcerpt } from '@/errors'
 import type {
   ArrayExpression,
+  ArrayPattern,
   ArrowFunctionExpression,
   AssignmentExpression,
   AssignmentPattern,
+  AssignmentProperty,
   BinaryExpression,
+  BindingPattern,
   BlockStatement,
   BreakStatement,
   CatchClause,
@@ -32,10 +35,14 @@ import type {
   NewExpression,
   Node,
   ObjectExpression,
+  ObjectPattern,
   Pattern,
+  PatternElement,
+  PatternTarget,
   Program,
   Property,
   PropertyDefinition,
+  RestElement,
   ReturnStatement,
   SourceLocation,
   Statement,
@@ -70,7 +77,8 @@ import type {
 import { GlobalFlags, Op } from './opcodes'
 import { ProtoBuilder } from './proto-builder'
 import { Scope, type Binding, type BindingKind, type Resolution } from './scope'
-import { arityError, signatureOf, type Signature } from './signature'
+import { arityError, namedArgumentError, signatureOf, type Signature } from './signature'
+import { boundNames } from '@/parser/patterns'
 
 /**
  * Options of `compile()`.
@@ -80,10 +88,25 @@ export interface CompileOptions {
   fileName?: string
 }
 
-function paramName(param: Pattern): Identifier {
-  if (param.type === 'Identifier') return param
+// The target of a parameter: its name, or the pattern that destructures it (D40).
+function paramTarget(param: Pattern): PatternTarget {
+  if (param.type === 'RestElement') return param.argument
 
-  return param.type === 'AssignmentPattern' ? param.left : param.argument
+  return param.type === 'AssignmentPattern' ? param.left : param
+}
+
+// A parameter's slot: the parameter's name, or a hidden name holding the argument a pattern destructures (D40).
+function paramSlot(param: Pattern, index: number): Identifier {
+  const target = paramTarget(param)
+
+  return target.type === 'Identifier' ? target : { type: 'Identifier', name: `%param${index}`, loc: param.loc }
+}
+
+// The strict named-parameter check of an object pattern (D40): the keys it accepts and the path of nested patterns.
+function strictKeys(node: ObjectPattern, path: string): string | null {
+  if (node.properties.some(property => property.type === 'RestElement')) return null
+
+  return JSON.stringify({ keys: node.properties.map(property => keyName((property as AssignmentProperty).key)), path })
 }
 
 function fieldTemplate({ key, access, static: isStatic, override, final, loc }: PropertyDefinition): ClassFieldTemplate {
@@ -95,8 +118,8 @@ function isFunction(node: Expression | null): node is FunctionExpression | Arrow
 }
 
 // A `const` bound directly to a function expression has a compile-time signature (D38).
-function constSignature(kind: BindingKind, id: Identifier, init: Expression | null): Signature | undefined {
-  return kind === 'const' && isFunction(init) ? signatureOf(id.name, init.params) : undefined
+function constSignature(kind: BindingKind, id: BindingPattern, init: Expression | null): Signature | undefined {
+  return kind === 'const' && id.type === 'Identifier' && isFunction(init) ? signatureOf(id.name, init.params) : undefined
 }
 
 type AnyFunction = FunctionNode | ArrowFunctionExpression
@@ -130,7 +153,9 @@ function exportedDeclaration(node: TopLevel): TopLevel | null {
 
 // The names an exported declaration binds.
 function declaredNames(declaration: NonNullable<ExportNamedDeclaration['declaration']>): Identifier[] {
-  return declaration.type === 'VariableDeclaration' ? declaration.declarations.map(({ id }) => id) : [declaration.id]
+  if (declaration.type !== 'VariableDeclaration') return [declaration.id]
+
+  return declaration.declarations.flatMap(({ id }) => boundNames(id))
 }
 
 function bindingOf(resolution: Resolution): Binding | undefined {
@@ -215,6 +240,22 @@ interface Reference {
   get: () => void
   /** base value → value */
   set: () => void
+}
+
+/** Binding a pattern: declarations and parameters initialise bindings, assignments store. */
+type BindMode = 'init' | 'assign'
+
+type PatternHandler<T> = (c: Compiler, node: T, mode: BindMode, named: string | null) => void
+
+type PatternPart = PatternElement | RestElement
+
+const PATTERN_TARGETS: { [K in PatternPart['type']]: PatternHandler<Extract<PatternPart, { type: K }>> } = {
+  Identifier: (c, node, mode) => c.bindName(node, mode),
+  MemberExpression: (c, node) => c.bindMember(node),
+  AssignmentPattern: (c, node, mode, named) => c.bindDefault(node, mode, named),
+  ObjectPattern: (c, node, mode, named) => c.bindObject(node, mode, named),
+  ArrayPattern: (c, node, mode, named) => c.bindArray(node, mode, named),
+  RestElement: (c, node, mode) => c.bindName(node.argument, mode),
 }
 
 /** Proto kinds of class members and object-literal accessors. */
@@ -496,7 +537,11 @@ class Compiler {
   }
 
   declareVariables(node: VariableDeclaration, scope: Scope) {
-    for (const { id, init } of node.declarations) this.declareName(scope, id, node.kind, constSignature(node.kind, id, init))
+    for (const { id, init } of node.declarations) {
+      const signature = constSignature(node.kind, id, init)
+
+      for (const name of boundNames(id)) this.declareName(scope, name, node.kind, signature)
+    }
   }
 
   declareName(scope: Scope, id: Identifier, kind: BindingKind, signature?: Signature) {
@@ -743,22 +788,21 @@ class Compiler {
     this.out.patch(done)
   }
 
-  // `let x` / `const x` get a fresh binding per iteration; a bare name is assigned.
-  // The binding is initialised before the body runs, so only a closure in the body needs a fresh environment.
+  // `let x` / `const { a }` get fresh bindings per iteration; other targets are assigned (D40).
+  // The bindings are initialised before the body runs, so only a closure in the body needs a fresh environment.
   private bindIterationValue(left: ForOfStatement['left'], body: Statement): Scope {
     const scope = new Scope(this.scope, 'block')
 
     if (!createsClosure(body)) scope.fold()
 
-    if (left.type === 'Identifier') {
-      this.store(left.name, left.loc)
-      this.out.emitPop()
+    if (left.type !== 'VariableDeclaration') {
+      this.bindTarget(left, 'assign', null)
 
       return scope
     }
     this.declareVariables(left, scope)
     this.enterScope(scope)
-    this.initialize(left.declarations[0].id.name)
+    this.bindTarget(left.declarations[0].id, 'init', null)
 
     return scope
   }
@@ -1190,11 +1234,11 @@ class Compiler {
     const outer = this.scope
     const scope = this.blockScope(body, body.body)
 
-    if (param) this.declareName(scope, param, 'let')
+    if (param) boundNames(param).forEach(name => this.declareName(scope, name, 'let'))
     this.declare(body.body, scope)
     this.enterScope(scope)
 
-    if (param) this.initialize(param.name)
+    if (param) this.bindTarget(param, 'init', null)
     else this.out.emit(Op.POP)
     this.hoistFunctions(body.body)
     this.statements(body.body)
@@ -1220,9 +1264,9 @@ class Compiler {
 
   variableDeclaration(node: VariableDeclaration) {
     for (const { id, init } of node.declarations) {
-      if (init) this.namedExpression(init, id.name)
+      if (init) this.namedExpression(init, id.type === 'Identifier' ? id.name : '')
       else this.out.emit(Op.NULL) // `let x` starts as null (D37)
-      this.initialize(id.name)
+      this.bindTarget(id, 'init', null)
     }
   }
 
@@ -1337,7 +1381,7 @@ class Compiler {
   private plainCall(node: CallExpression) {
     const callee = node.callee as Expression
 
-    this.checkArity(callee, node.arguments.length, node.loc)
+    this.checkArity(callee, node.arguments, node.loc)
 
     const isMethod = this.callee(callee)
 
@@ -1497,6 +1541,11 @@ class Compiler {
 
   assignment(node: AssignmentExpression) {
     const { left, right, operator } = node
+    if (left.type === 'ObjectPattern' || left.type === 'ArrayPattern') {
+      this.patternAssignment(left, right)
+
+      return
+    }
     const reference = this.reference(left, 'write')
     const base = operator.slice(0, -1)
 
@@ -1517,6 +1566,13 @@ class Compiler {
     reference.get()
     this.expression(right)
     this.emitAt(loc, op)
+  }
+
+  // `[a, b] = [b, a]`: the value of the assignment is the right side (D40).
+  private patternAssignment(left: ObjectPattern | ArrayPattern, right: Expression) {
+    this.expression(right)
+    this.out.emit(Op.DUP)
+    this.bindTarget(left, 'assign', null)
   }
 
   // `a ||= b` assigns only when needed (§5.5); when it does not, the target's base values are dropped.
@@ -1567,10 +1623,19 @@ class Compiler {
   }
 
   // Compile-time arity check when the callee is a known function (D38, §4.4.13).
-  private checkArity(callee: Expression, argc: number, loc: SourceLocation) {
+  // … and of the object literals passed to its named parameters (D40).
+  private checkArity(callee: Expression, args: Expression[], loc: SourceLocation) {
     const signature = callee.type === 'Identifier' ? this.knownSignature(callee.name) : undefined
-    const problem = signature && arityError(signature, argc)
+
+    if (signature) this.checkCall(signature, args, loc)
+  }
+
+  private checkCall(signature: Signature, args: Expression[], loc: SourceLocation) {
+    const problem = arityError(signature, args.length)
     if (problem) throw this.error(problem, loc)
+
+    const named = namedArgumentError(signature, args)
+    if (named) throw this.error(named.reason, named.loc)
   }
 
   private knownSignature(name: string): Signature | undefined {
@@ -1677,9 +1742,13 @@ class Compiler {
   }
 
   // Function env layout: parameters (rest last), then the body's top-level declarations.
+  // Names bound by parameter patterns come after the parameters (D40).
   private functionBody({ params, body }: AnyFunction, signature: Signature): FunctionProto {
-    for (const param of params) this.declareName(this.scope, paramName(param), 'let')
-    this.defaults(params)
+    const slots = params.map(paramSlot)
+    const patternNames = params.filter(param => paramTarget(param).type !== 'Identifier').flatMap(boundNames)
+
+    for (const name of [...slots, ...patternNames]) this.declareName(this.scope, name, 'let')
+    this.parameters(params, slots)
 
     if (body.type === 'BlockStatement') this.blockBody(body)
     else this.expressionBody(body)
@@ -1705,20 +1774,120 @@ class Compiler {
     this.out.emit(Op.RETURN)
   }
 
-  // Default values are evaluated at call time, left to right, only for omitted arguments (D38).
-  private defaults(params: Pattern[]) {
-    params.forEach(param => {
-      if (param.type === 'AssignmentPattern') this.defaultValue(param)
+  // Default values are evaluated at call time, left to right, only for omitted arguments (D38); then the parameter's
+  // pattern destructures it, so later defaults see the names it binds (D40).
+  private parameters(params: Pattern[], slots: Identifier[]) {
+    params.forEach((param, i) => {
+      if (param.type === 'AssignmentPattern') this.defaultValue(param, slots[i])
+
+      const target = paramTarget(param)
+
+      if (target.type !== 'Identifier') {
+        this.load(slots[i].name, param.loc)
+        this.bindTarget(target, 'init', '')
+      }
     })
   }
 
-  private defaultValue({ left, right }: AssignmentPattern) {
-    const resolution = this.scope.resolve(left.name) as { slot: number }
+  private defaultValue({ left, right }: AssignmentPattern, slot: Identifier) {
+    const resolution = this.scope.resolve(slot.name) as { slot: number }
     const skip = this.out.emit(Op.JUMP_IF_ARG, resolution.slot, -1) + 2
 
-    this.expression(right)
-    this.initialize(left.name)
+    this.namedExpression(right, left.type === 'Identifier' ? left.name : '')
+    this.initialize(slot.name)
     this.out.patch(skip)
+  }
+
+  // ---------------------------------------------------------------------------
+  // Patterns (D40, §4.4.14): the value is on the stack; binding it consumes it. `named` is the key path of a strict
+  // named parameter ('' for a parameter, `pos.` inside its `pos` property), null where any keys are accepted.
+
+  bindTarget(target: PatternElement | RestElement, mode: BindMode, named: string | null) {
+    (PATTERN_TARGETS[target.type] as PatternHandler<typeof target>)(this, target, mode, named)
+  }
+
+  bindName({ name, loc }: Identifier, mode: BindMode) {
+    if (mode === 'init') {
+      this.initialize(name)
+
+      return
+    }
+    this.store(name, loc)
+    this.out.emitPop()
+  }
+
+  // `[o.x] = …`: the base goes below the value, then SET_PROP / SET_INDEX.
+  bindMember(target: MemberExpression) {
+    const reference = this.reference(target, 'write')
+
+    reference.prepare()
+
+    for (let i = 0; i < reference.baseSize; i++) this.out.emit(reference.baseSize === 1 ? Op.SWAP : Op.ROT3)
+    reference.set()
+    this.out.emitPop()
+  }
+
+  // A default applies when the value is undefined (a missing property or element).
+  bindDefault({ left, right }: AssignmentPattern, mode: BindMode, named: string | null) {
+    this.out.emit(Op.DUP)
+    this.out.emit(Op.UNDEFINED)
+    this.out.emit(Op.EQ)
+    const skip = this.out.emitJump(Op.JUMP_IF_FALSE)
+
+    this.out.emit(Op.POP)
+    this.namedExpression(right, left.type === 'Identifier' ? left.name : '')
+    this.out.patch(skip)
+    this.bindTarget(left, mode, named)
+  }
+
+  bindObject(node: ObjectPattern, mode: BindMode, named: string | null) {
+    const keys: string[] = []
+
+    this.checkPattern(node, named)
+
+    for (const property of node.properties) {
+      if (property.type === 'RestElement') {
+        this.emitAt(property.loc, Op.OBJECT_REST, this.out.constant(JSON.stringify(keys)))
+        this.bindName(property.argument, mode)
+
+        return
+      }
+      keys.push(this.bindProperty(property, mode, named))
+    }
+    this.out.emitPop()
+  }
+
+  private checkPattern(node: ObjectPattern, named: string | null) {
+    const check = named === null ? null : strictKeys(node, named)
+
+    this.emitAt(node.loc, Op.CHECK_PATTERN, check === null ? -1 : this.out.constant(check))
+  }
+
+  // DUP GET_PROP k <bind>: returns the key.
+  private bindProperty({ key, value, loc }: AssignmentProperty, mode: BindMode, named: string | null): string {
+    const name = keyName(key)
+
+    this.out.emit(Op.DUP)
+    this.emitGetProp(loc, name)
+    this.bindTarget(value, mode, named === null ? null : `${named}${name}.`)
+
+    return name
+  }
+
+  bindArray(node: ArrayPattern, mode: BindMode, named: string | null) {
+    this.emitAt(node.loc, Op.GET_ITER)
+
+    for (const [i, element] of node.elements.entries()) {
+      if (element.type === 'RestElement') {
+        this.out.emit(Op.ITER_REST)
+        this.bindName(element.argument, mode)
+
+        return
+      }
+      this.out.emit(Op.ITER_VALUE)
+      this.bindTarget(element, mode, named === null ? null : `${named}${i}.`)
+    }
+    this.out.emitPop()
   }
 
   // ---------------------------------------------------------------------------

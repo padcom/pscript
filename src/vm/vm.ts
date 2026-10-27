@@ -53,6 +53,7 @@ import {
 } from '@/runtime/values'
 import { defineClass, superMember } from './classes'
 import { defineInterface } from './interfaces'
+import { checkPattern, iteratorRest, objectRest } from './patterns'
 import type { Frame, Handler } from './frame'
 import { Globals, type ScriptBinding } from './globals'
 
@@ -1029,6 +1030,20 @@ export class VM implements AccessContext {
           }
           break
         }
+        case Op.ITER_VALUE: {
+          const next = (stack[stack.length - 1] as unknown as ScriptIterator).next()
+
+          stack.push(next === DONE ? undefined : next)
+          break
+        }
+        case Op.ITER_REST: stack.push(iteratorRest(stack.pop() as unknown as ScriptIterator, this.realm)); break
+        case Op.CHECK_PATTERN: {
+          const k = code[ip++]
+
+          checkPattern(stack[stack.length - 1], k < 0 ? null : constants[k] as string, frame.proto.signature ?? frame.proto.name)
+          break
+        }
+        case Op.OBJECT_REST: stack.push(objectRest(this, stack.pop(), constants[code[ip++]] as string)); break
         case Op.DEFINE_GETTER:
           b = stack.pop()
           defineAccessor(stack[stack.length - 1] as ScriptObject, constants[code[ip++]] as string, 'get', b as ScriptFunction)

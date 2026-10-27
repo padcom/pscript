@@ -1,0 +1,10 @@
+Ann 42 Oslo NO a b+c
+default Ann
+1 20 21
+1 2 3 2 4 5
+{"age":42,"address":{"city":"Oslo","zip":"0150"},"tags":["a","b","c"]}
+h i
+undefined
+0150 zero
+4
+1 {"1":2,"2":3} {"0":"a","1":"b"} {}

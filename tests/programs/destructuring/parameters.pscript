@@ -1,0 +1,48 @@
+// Destructuring parameters (D40): object and array patterns, defaults, rest, arrows and methods
+function testme({ x = 1, y = 2 } = {}) {
+  return x + y
+}
+print(testme(), testme({}), testme({ y: 5 }), testme({ x: 10, y: 20 }))
+
+function area({ size: [width, height] }, scale = 1) {
+  return width * height * scale
+}
+print(area({ size: [2, 3] }), area({ size: [2, 3] }, 2))
+
+const sum = ([first, ...others]) => others.reduce((total, n) => total + n, first)
+print(sum([1, 2, 3, 4]))
+
+function describe({ name, ...details }) {
+  return name + ' ' + Object.keys(details).join(',')
+}
+print(describe({ name: 'box', width: 1, height: 2 }))
+
+// later defaults see names bound by earlier patterns
+function later({ a } = { a: 1 }, b = a * 10) {
+  return a + b
+}
+print(later(), later({ a: 2 }), later({ a: 2 }, 3))
+
+const shape = {
+  scale({ factor = 2 } = {}) { return factor * 10 },
+}
+print(shape.scale(), shape.scale({ factor: 3 }))
+
+class Vector {
+  constructor([x, y]) {
+    this.x = x
+    this.y = y
+  }
+  plus({ x, y }) {
+    return new Vector([this.x + x, this.y + y])
+  }
+  x = 0
+  y = 0
+}
+const v = new Vector([1, 2]).plus({ x: 3, y: 4 })
+print(v.x, v.y)
+
+const pairs = [[1, 'one'], [2, 'two']].map(([n, word]) => word + n)
+print(pairs.join(' '))
+
+print(testme.length, area.length, later.length)

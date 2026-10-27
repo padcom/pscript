@@ -1,0 +1,50 @@
+// @pscript-only: strict named parameters (D40): unknown keys of a plain object are errors
+function testme({ x = 1, y = 2 } = {}) {
+  return x + y
+}
+const options = { y: 10 }
+print(testme(options))
+
+function attempt(f) {
+  try {
+    print(f())
+  } catch (e) {
+    print(e.name + ': ' + e.message)
+  }
+}
+const extra = { x: 1, z: 3 }
+attempt(() => testme(extra))
+
+function move({ to: { x, y }, speed = 1 }) {
+  return x + y + speed
+}
+const nested = { to: { x: 1, y: 2, z: 3 } }
+attempt(() => move(nested))
+const fine = { to: { x: 1, y: 2 } }
+attempt(() => move(fine))
+
+// a rest element accepts every key
+function tagged({ id, ...tags }) {
+  return id + ':' + Object.keys(tags).join(',')
+}
+attempt(() => tagged({ id: 7, red: true, big: true }))
+
+// class instances, arrays and patterns outside parameters are not checked
+class Point {
+  x = 1
+  y = 2
+  z = 3
+}
+function onlyX({ x }) {
+  return x
+}
+attempt(() => onlyX(new Point()))
+const { x: picked } = { x: 'picked', other: 'ignored' }
+print(picked)
+
+// a pattern parameter without a default is required (D38)
+attempt(() => {
+  const f = onlyX
+  return f()
+})
+print(testme.length, onlyX.length)

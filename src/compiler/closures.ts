@@ -1,6 +1,7 @@
 // Escape analysis for block environments (§5.5, K9): a block needs an environment of its own only when a
 // closure can capture its bindings (or tell loop iterations apart), or when its slots must start in the TDZ.
 import type { Node, Position } from '@/parser/ast'
+import { boundNames } from '@/parser/patterns'
 
 // Functions, arrows, methods, accessors and classes all capture the environment they are created in.
 const CLOSURE_TYPES = /Function|Class|Method/
@@ -41,8 +42,15 @@ const NON_REFERENCE_KEYS: Record<string, string> = {
   InterfaceDeclaration: 'id',
 }
 
+// A pattern's defaults may refer to names (D40): only a plain declared name is skipped.
+function isPatternDeclarator(node: Record<string, unknown>): boolean {
+  return node.type === 'VariableDeclarator' && (node.id as Node).type !== 'Identifier'
+}
+
 function nonReferenceKey(node: Record<string, unknown>): string | null {
-  return node.computed ? null : NON_REFERENCE_KEYS[node.type as string] ?? null
+  if (node.computed || isPatternDeclarator(node)) return null
+
+  return NON_REFERENCE_KEYS[node.type as string] ?? null
 }
 
 function isEarlyReference(node: Record<string, unknown>, declarations: Declarations): boolean {
@@ -63,7 +71,9 @@ function hasEarlyReference(value: unknown, declarations: Declarations): boolean 
 }
 
 function declaredNames(statement: Node): string[] {
-  if (statement.type === 'VariableDeclaration') return statement.declarations.map(({ id }) => id.name)
+  if (statement.type === 'VariableDeclaration') {
+    return statement.declarations.flatMap(({ id }) => boundNames(id)).map(({ name }) => name)
+  }
 
   return statement.type === 'InterfaceDeclaration' ? [statement.id.name] : []
 }

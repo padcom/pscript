@@ -1,0 +1,1 @@
+destructuring/named-parameters-literal.pscript:6:16 SyntaxError: Unknown named parameter 'z' of testme({x?, y?}?)

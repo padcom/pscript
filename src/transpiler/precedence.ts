@@ -59,7 +59,7 @@ const PRECEDENCES: ByType<Precedence> = {
 const LEFT_CHILDREN: ByType<Expression | null> = {
   BinaryExpression: node => node.left,
   LogicalExpression: node => node.left,
-  AssignmentExpression: node => node.left,
+  AssignmentExpression: node => node.left as Expression, // an object pattern starts with `{` too
   ConditionalExpression: node => node.test,
   CallExpression: node => node.callee.type === 'Super' ? null : node.callee,
   MemberExpression: node => node.object.type === 'Super' ? null : node.object,
@@ -106,5 +106,5 @@ export function leftmost(node: Expression): Expression {
  * @returns true when it starts with `{`, `function` or `class`
  */
 export function startsAmbiguously(node: Expression): boolean {
-  return ['ObjectExpression', 'FunctionExpression', 'ClassExpression'].includes(leftmost(node).type)
+  return ['ObjectExpression', 'ObjectPattern', 'FunctionExpression', 'ClassExpression'].includes(leftmost(node).type)
 }

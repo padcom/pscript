@@ -5,6 +5,7 @@ import type {
   AssignmentExpression,
   AssignmentPattern,
   AssignmentOperator,
+  BindingPattern,
   BinaryOperator,
   BlockStatement,
   BreakStatement,
@@ -31,6 +32,7 @@ import type {
   NewExpression,
   ObjectExpression,
   Pattern,
+  PatternTarget,
   Program,
   Property,
   RestElement,
@@ -166,7 +168,7 @@ export const builders = {
     return { type: 'ArrowFunctionExpression', id: null, params, body, expression, loc: toLoc(loc) }
   },
 
-  assignmentPattern(left: Identifier, right: Expression, loc: JisonLoc): AssignmentPattern {
+  assignmentPattern(left: PatternTarget, right: Expression, loc: JisonLoc): AssignmentPattern {
     return { type: 'AssignmentPattern', left, right, loc: toLoc(loc) }
   },
 
@@ -212,8 +214,8 @@ export const builders = {
     return { type: 'ForOfStatement', left, right, body, await: false, loc: toLoc(loc) }
   },
 
-  // `let x` / `const x` in `for (… of …)`: one declarator without initialiser.
-  forOfDeclaration(kind: 'let' | 'const', id: Identifier, start: JisonLoc, end: JisonLoc): VariableDeclaration {
+  // `let x` / `const { a, b }` in `for (… of …)`: one declarator without initialiser.
+  forOfDeclaration(kind: 'let' | 'const', id: BindingPattern, start: JisonLoc, end: JisonLoc): VariableDeclaration {
     const loc = toLoc({ ...start, last_line: end.last_line, last_column: end.last_column })
 
     return { type: 'VariableDeclaration', kind, declarations: [{ type: 'VariableDeclarator', id, init: null, loc: id.loc }], loc }
@@ -243,7 +245,7 @@ export const builders = {
     return { type: 'TryStatement', block, handler, finalizer, loc: toLoc(loc) } satisfies TryStatement
   },
 
-  catchClause(param: Identifier | null, body: BlockStatement, loc: JisonLoc): CatchClause {
+  catchClause(param: BindingPattern | null, body: BlockStatement, loc: JisonLoc): CatchClause {
     return { type: 'CatchClause', param, body, loc: toLoc(loc) }
   },
 
@@ -255,13 +257,13 @@ export const builders = {
     return { type: 'VariableDeclaration', kind, declarations, loc: toLoc(loc) }
   },
 
-  declarator(id: Identifier, init: Expression | null, loc: JisonLoc): VariableDeclarator {
+  declarator(id: BindingPattern, init: Expression | null, loc: JisonLoc): VariableDeclarator {
     return { type: 'VariableDeclarator', id, init, loc: toLoc(loc) }
   },
 
   assignment(
     operator: AssignmentOperator,
-    left: AssignmentExpression['left'],
+    left: PatternTarget,
     right: Expression,
     loc: JisonLoc,
   ): AssignmentExpression {

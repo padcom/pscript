@@ -39,6 +39,55 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | T3 | psc: modules and CLI | done (2026-10-27) |
 | T4 | psc: whole-program checks | done (2026-10-27) |
 | T5 | psc: source maps | done (2026-10-27) — psc complete |
+| L1 | Destructuring and named parameters (D40) | done (2026-10-27) |
+
+## L1 — Destructuring and named parameters (D40)
+
+Requested: `function testme({ x = 1, y = 2 } = {}) { … }`. Decided with the owner: object **and** array patterns,
+everywhere (parameters, `let`/`const`, `for…of`, `catch`, assignments), nested, with defaults and `...rest`; object
+patterns in **parameters** are strict named parameters (unknown keys are errors at compile time and at runtime).
+Design in `docs/PLAN.md` §4.4.14 (D40, R29), user docs in `docs/LANGUAGE.md` → Destructuring.
+
+- **AST** (`ast.ts`): ESTree `ObjectPattern` (with `Property` nodes, `AssignmentProperty`), `ArrayPattern`,
+  `AssignmentPattern.left` and `RestElement` in patterns. Types: `BindingPattern` (name/object/array),
+  `Pattern` (parameter), `PatternTarget` (+ member expressions in assignments), `PatternElement` (+ defaults).
+  `VariableDeclarator.id`, `CatchClause.param`, `ForOfStatement.left` and `AssignmentExpression.left` widened.
+- **Grammar**: `BindingTarget` / `ObjectBindingPattern` / `ArrayBindingPattern` in parameters, declarators (a
+  pattern needs `=`), `catch` and `for (let|const … of …)`. Pattern braces are already `OBJ_LBRACE` (token filter
+  unchanged). `for (let IDENT of …)` keeps its own rule: reducing IDENT to `BindingTarget` there is an LALR
+  conflict with `Declarator`. `for (<LeftHandSideExpression> of …)` replaces `for (IDENT of …)`.
+- **Assignment patterns** use a cover grammar: object/array literals are parsed as expressions and converted by
+  `PatternBuilder.toTarget` (`src/parser/pattern-builders.ts`) when they are the target of `=` or of `for…of`.
+  `{ a = 1 }` and `...x` are allowed in literals only as cover parts; parts that stay in an expression are reported
+  when the program is complete (`checkCovers`). The parser oracle agrees with acorn on all forms.
+- `src/parser/patterns.ts`: `boundNames()` (names a pattern binds; used by the parser, compiler, psc) and
+  `patternText()` (signatures show keys: `testme({x?, y?}?)`, `f({pos: {x, y}})`, `[a, b?]`).
+- **Compiler**: `bindTarget(target, 'init' | 'assign', named)` consumes the value on the stack: names
+  (`INIT` or `STORE`+`POP`), members (base rotated below the value, then `SET_PROP`/`SET_INDEX`), defaults
+  (`DUP UNDEFINED EQ JUMP_IF_FALSE POP <default>`), object patterns (`CHECK_PATTERN`, then `DUP GET_PROP k <bind>`
+  per key, `OBJECT_REST` or `POP`), array patterns (`GET_ITER`, `ITER_VALUE <bind>` per element, `ITER_REST` or
+  `POP`). A pattern parameter gets a hidden slot `%paramN` (parameters keep the first slots); its names are
+  declared after all parameters and bound right after the parameter's default, so later defaults see them.
+  `named` is the key path for strict named parameters (`''` for a parameter, `pos.` nested; null elsewhere).
+  Pattern assignments leave the right side as the value (`DUP`). Escape analysis treats pattern declarators
+  conservatively (defaults may reference names).
+- **Opcodes** (§5.4, appended after `ITER_NEXT`): `ITER_VALUE`, `ITER_REST`, `CHECK_PATTERN k|-1` (k: JSON
+  `{ keys, path }`, parsed once and cached), `OBJECT_REST k` (JSON array of named keys). Constants stay strings.
+  VM helpers in `src/vm/patterns.ts`; the unknown-key check applies to plain objects only (not class instances,
+  arrays, host objects) and names the running function's signature.
+- **Signatures** (`signature.ts`): pattern parameters count as required unless defaulted; `named` holds the keys
+  of each object-pattern parameter; `namedArgumentError()` checks object literals (also nested) passed to a known
+  callee — used by the compiler's `checkArity` and by psc's imported-function check. Messages are the same at
+  compile time and runtime: `Unknown named parameter 'pos.z' of move({to: {x, y}, speed?})`.
+- **psc**: patterns print as JS destructuring (`Emitter.pattern`); in assignment patterns implicit members become
+  `this.x` (a shorthand is written out: `{ x: this.x }`), names being bound never do. Statements starting with an
+  object pattern get parentheses. Class-check skeletons replace a pattern declarator by one `null` declarator per
+  name. Runtime named-parameter checks are a documented §11.4 difference.
+
+Tests: `tests/unit/parser/patterns.test.ts` (acorn comparisons, errors, helpers),
+`tests/unit/transpiler/patterns.test.ts`, and `tests/programs/destructuring/` (declarations, parameters,
+assignment: Node-compatible and transpiled; named parameters, compile-time literal check, class instance, null,
+non-iterable, shorthand initializer).
 
 ## T5 — psc: source maps
 

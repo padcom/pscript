@@ -123,7 +123,17 @@ export type Expression
     | BinaryExpression | LogicalExpression | AssignmentExpression | ConditionalExpression
     | CallExpression | NewExpression | MemberExpression | ThisExpression | TemplateLiteral
 
-export type Pattern = Identifier | AssignmentPattern | RestElement
+/** What binds names: a name, or an object or array pattern of names (D40). */
+export type BindingPattern = Identifier | ObjectPattern | ArrayPattern
+
+/** A parameter: a binding pattern, with a default, or a rest parameter. */
+export type Pattern = BindingPattern | AssignmentPattern | RestElement
+
+/** What a part of a pattern binds or assigns to (member expressions only in assignment patterns). */
+export type PatternTarget = BindingPattern | MemberExpression
+
+/** An element of an array pattern, or the value of a property of an object pattern. */
+export type PatternElement = PatternTarget | AssignmentPattern
 
 // ---------------------------------------------------------------------------
 // Leaves
@@ -187,8 +197,8 @@ export interface VariableDeclaration extends NodeBase {
 export interface VariableDeclarator extends NodeBase {
   /** node type */
   type: 'VariableDeclarator'
-  /** binding name */
-  id: Identifier
+  /** binding name or pattern (a pattern always has an initialiser) */
+  id: BindingPattern
   /** initialiser, or `null` (binding starts as `null`, D37) */
   init: Expression | null
 }
@@ -240,25 +250,66 @@ export interface ArrowFunctionExpression extends NodeBase {
 }
 
 /**
- * Parameter with a default value: `x = 1`.
+ * A target with a default value: a parameter `x = 1` (used only when the argument is omitted, D38), or `x = 1` in
+ * a pattern (used when the value is `undefined`, D40).
  */
 export interface AssignmentPattern extends NodeBase {
   /** node type */
   type: 'AssignmentPattern'
-  /** parameter name */
-  left: Identifier
-  /** default value, used only when the argument is omitted (D38) */
+  /** the target */
+  left: PatternTarget
+  /** default value */
   right: Expression
 }
 
 /**
- * Rest parameter: `...rest`.
+ * Rest parameter `...rest`, or the rest of an object or array pattern.
  */
 export interface RestElement extends NodeBase {
   /** node type */
   type: 'RestElement'
-  /** parameter name */
+  /** the name */
   argument: Identifier
+}
+
+/**
+ * `{ a, b: c, d = 1, ...rest }` as a binding or assignment target (D40).
+ */
+export interface ObjectPattern extends NodeBase {
+  /** node type */
+  type: 'ObjectPattern'
+  /** the properties; a rest element comes last */
+  properties: (AssignmentProperty | RestElement)[]
+}
+
+/**
+ * `a`, `a = 1`, `key: target` or `key: target = 1` in an object pattern.
+ */
+export interface AssignmentProperty extends NodeBase {
+  /** node type (as in ESTree) */
+  type: 'Property'
+  /** the key read from the value */
+  key: Identifier | Literal
+  /** where the property's value goes */
+  value: PatternElement
+  /** always `init` */
+  kind: 'init'
+  /** never a method */
+  method: false
+  /** `{ a }` / `{ a = 1 }` */
+  shorthand: boolean
+  /** computed keys are not supported */
+  computed: false
+}
+
+/**
+ * `[a, b = 1, ...rest]` as a binding or assignment target (D40).
+ */
+export interface ArrayPattern extends NodeBase {
+  /** node type */
+  type: 'ArrayPattern'
+  /** the elements (no holes); a rest element comes last */
+  elements: (PatternElement | RestElement)[]
 }
 
 // ---------------------------------------------------------------------------
@@ -434,7 +485,7 @@ export interface ForOfStatement extends NodeBase {
   /** node type */
   type: 'ForOfStatement'
   /** loop variable */
-  left: VariableDeclaration | Identifier
+  left: VariableDeclaration | PatternTarget
   /** iterated value */
   right: Expression
   /** loop body */
@@ -506,7 +557,7 @@ export interface CatchClause extends NodeBase {
   /** node type */
   type: 'CatchClause'
   /** caught value binding */
-  param: Identifier | null
+  param: BindingPattern | null
   /** handler body */
   body: BlockStatement
 }
@@ -680,7 +731,7 @@ export interface AssignmentExpression extends NodeBase {
   /** the operator */
   operator: AssignmentOperator
   /** assignment target */
-  left: Identifier | MemberExpression
+  left: PatternTarget
   /** assigned value */
   right: Expression
 }
@@ -745,4 +796,4 @@ export type Node
   = Program | ModuleDeclaration | ImportSpecifier | ImportNamespaceSpecifier | ExportSpecifier
     | Statement | Expression | Pattern | Super | VariableDeclarator
     | ClassBody | MethodDefinition | PropertyDefinition | InterfaceMember
-    | CatchClause | TemplateElement | Property
+    | CatchClause | TemplateElement | Property | AssignmentProperty

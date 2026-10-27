@@ -21,6 +21,8 @@ import type {
 import { builders, sourceLoc, type ForHeader, type FunctionHead, type FunctionType, type JisonLoc } from './ast-builders'
 import { EscapeError, checkNumber } from './literals'
 import { classMember, type Modifier, type RawMember } from './class-members'
+import { PatternBuilder, patternHelpers } from './pattern-builders'
+import { boundNames, patternText } from './patterns'
 import { checkModuleDeclarations, moduleBuilders } from './module-declarations'
 import { interfaceDeclaration, interfaceMember, type RawInterfaceMember } from './interface-members'
 import { TemplateBraces, templateElement } from './templates'
@@ -170,29 +172,29 @@ function controlFlowBuilders(errors: SyntaxErrorFactory) {
   }
 }
 
-function paramName(param: Pattern): Identifier {
-  if (param.type === 'Identifier') return param
+// Required (names and patterns without a default), optional, rest.
+const PARAMETER_ORDER: Partial<Record<Pattern['type'], number>> = { AssignmentPattern: 1, RestElement: 2 }
 
-  return param.type === 'AssignmentPattern' ? param.left : param.argument
+function parameterOrder(param: Pattern): number {
+  return PARAMETER_ORDER[param.type] ?? 0
 }
-
-const PARAMETER_ORDER = { Identifier: 0, AssignmentPattern: 1, RestElement: 2 }
 
 function checkParamOrder(errors: SyntaxErrorFactory, param: Pattern, next: Pattern) {
   if (param.type === 'RestElement') throw errors.at('A rest parameter must be last', next.loc)
-  if (PARAMETER_ORDER[next.type] < PARAMETER_ORDER[param.type]) {
-    throw errors.at(`Required parameter '${paramName(next).name}' cannot follow an optional parameter`, next.loc)
+  if (parameterOrder(next) < parameterOrder(param)) {
+    throw errors.at(`Required parameter '${patternText(next)}' cannot follow an optional parameter`, next.loc)
   }
 }
 
-// Parameter lists (D38): required, then optional, then at most one rest; no duplicates.
+// Parameter lists (D38): required, then optional, then at most one rest; no duplicate names (also in patterns).
 function checkParams(errors: SyntaxErrorFactory, params: Pattern[]): Pattern[] {
   const seen = new Set<string>()
 
   params.forEach((param, i) => {
-    const { name, loc } = paramName(param)
-    if (seen.has(name)) throw errors.at(`Duplicate parameter name '${name}'`, loc)
-    seen.add(name)
+    for (const { name, loc } of boundNames(param)) {
+      if (seen.has(name)) throw errors.at(`Duplicate parameter name '${name}'`, loc)
+      seen.add(name)
+    }
 
     if (i + 1 < params.length) checkParamOrder(errors, param, params[i + 1])
   })
@@ -241,11 +243,19 @@ function classBuilders(errors: SyntaxErrorFactory) {
   }
 }
 
-// Static checks that the grammar leaves to its actions.
-function checkedBuilders(errors: SyntaxErrorFactory) {
+const LITERAL_TARGETS = new Set(['ObjectExpression', 'ArrayExpression'])
+
+// Static checks that the grammar leaves to its actions. Object and array literals assigned to are patterns (D40).
+function checkedBuilders(errors: SyntaxErrorFactory, patterns: PatternBuilder) {
   return {
     assignment(operator: AssignmentOperator, left: Expression, right: Expression, loc: JisonLoc) {
-      return builders.assignment(operator, checkTarget(errors, left, 'assignment'), right, loc)
+      const isPattern = operator === '=' && LITERAL_TARGETS.has(left.type)
+      const target = isPattern ? patterns.toTarget(left, 'assignment') : checkTarget(errors, left, 'assignment')
+
+      return builders.assignment(operator, target, right, loc)
+    },
+    forOfTarget(left: Expression) {
+      return patterns.toTarget(left, 'for-of')
     },
     update(operator: '++' | '--', prefix: boolean, argument: Expression, loc: JisonLoc) {
       return builders.update(operator, prefix, checkTarget(errors, argument, `'${operator}'`), loc)
@@ -258,7 +268,7 @@ function checkedBuilders(errors: SyntaxErrorFactory) {
     },
     variableDeclaration(kind: 'let' | 'const', declarations: VariableDeclarator[], loc: JisonLoc) {
       const missing = kind === 'const' ? declarations.find(d => d.init === null) : undefined
-      if (missing) throw errors.at(`Missing initializer in const declaration '${missing.id.name}'`, missing.loc)
+      if (missing) throw errors.at(`Missing initializer in const declaration '${(missing.id as Identifier).name}'`, missing.loc)
 
       return builders.variableDeclaration(kind, declarations, loc)
     },
@@ -285,9 +295,9 @@ function templateHelpers(errors: SyntaxErrorFactory) {
   }
 }
 
-function createYy(source: string, options: ParseOptions, tokens: TokenState) {
-  const errors = new SyntaxErrorFactory(source, options.fileName)
-  const stringLiteral = (raw: string, loc: JisonLoc): Literal => {
+// String literals with escape errors reported at the escape.
+function stringLiteralBuilder(errors: SyntaxErrorFactory) {
+  return (raw: string, loc: JisonLoc): Literal => {
     try {
       return builders.stringLiteral(raw, loc)
     } catch (e) {
@@ -295,14 +305,21 @@ function createYy(source: string, options: ParseOptions, tokens: TokenState) {
       throw e
     }
   }
+}
+
+function createYy(source: string, options: ParseOptions, tokens: TokenState) {
+  const errors = new SyntaxErrorFactory(source, options.fileName)
+  const stringLiteral = stringLiteralBuilder(errors)
   const modules = moduleBuilders(errors, stringLiteral)
+  const patterns = new PatternBuilder(errors, KEYWORD_SET)
 
   return {
     ...templateHelpers(errors),
     ...builders,
     ...lexerHelpers(errors, tokens),
     ...LINE_HELPERS,
-    ...checkedBuilders(errors),
+    ...patternHelpers(patterns),
+    ...checkedBuilders(errors, patterns),
     ...controlFlowBuilders(errors),
     ...objectBuilders(errors),
     ...classBuilders(errors),
@@ -310,6 +327,7 @@ function createYy(source: string, options: ParseOptions, tokens: TokenState) {
     program(body: Statement[]): Program {
       const program: Program = { type: 'Program', sourceType: options.goal ?? 'script', body, loc: sourceLoc(source) }
 
+      patterns.checkCovers()
       checkModuleDeclarations(errors, program, modules.declarations)
 
       return program

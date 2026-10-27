@@ -25,11 +25,13 @@ JavaScript hard to reason about:
 
 - `==` is strict (there is no `===`) and `typeof null` is `'null'`;
 - functions have strict arity: missing or extra arguments are errors; operators never convert objects;
+- destructuring works as in JavaScript, and object patterns in parameters are strict named parameters
+  (`function f({ x = 1, y = 2 } = {})` rejects `f({ z: 3 })`);
 - reading past the end of an array is an error, class instances are closed (no undeclared members);
 - classes have real access modifiers (`private`, `protected`), `override` and `final`, and interfaces;
 - inside a class body, members can be used without `this.` (with a strict rule against ambiguous names);
 - modules with named imports and exports, live bindings and an in-memory or custom loader;
-- no `var`, `switch`, `delete`, destructuring, generators, `async` or `with`.
+- no `var`, `switch`, `delete`, spread, generators, `async` or `with`.
 
 The full language reference, including a list of differences from JavaScript, is in
 [`docs/LANGUAGE.md`](docs/LANGUAGE.md).

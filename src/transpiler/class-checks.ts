@@ -28,7 +28,9 @@ import type {
   SourceLocation,
   Statement,
   VariableDeclaration,
+  VariableDeclarator,
 } from '@/parser/ast'
+import { boundNames } from '@/parser/patterns'
 import { stdlibGlobalNames } from '@/stdlib'
 
 type ClassNode = ClassDeclaration | ClassExpression
@@ -59,14 +61,12 @@ function withMembers<T extends ClassNode>(node: T, map: (member: Member) => Memb
   return { ...node, body: { ...node.body, body: node.body.body.map(map) } }
 }
 
-function paramName(param: Pattern): Identifier {
-  if (param.type === 'Identifier') return param
-
-  return param.type === 'AssignmentPattern' ? param.left : param.argument
+function paramNames(params: Pattern[]): Identifier[] {
+  return params.flatMap(boundNames)
 }
 
 function declarationIds(statement: Statement): Identifier[] {
-  if (statement.type === 'VariableDeclaration') return statement.declarations.map(({ id }) => id)
+  if (statement.type === 'VariableDeclaration') return statement.declarations.flatMap(({ id }) => boundNames(id))
 
   return 'id' in statement && statement.id ? [statement.id as Identifier] : []
 }
@@ -80,10 +80,10 @@ function declarationsOf(node: Node | null): Identifier[] {
 // Names a node declares in the scope it opens (every declaration anywhere in a block counts).
 const SCOPE_NAMES: Partial<Record<Node['type'], ScopeNames>> = {
   BlockStatement: (node: Extract<Node, { type: 'BlockStatement' }>) => node.body.flatMap(declarationIds),
-  FunctionDeclaration: (node: Extract<Node, { type: 'FunctionDeclaration' }>) => node.params.map(paramName),
-  FunctionExpression: (node: Extract<Node, { type: 'FunctionExpression' }>) => node.params.map(paramName),
-  ArrowFunctionExpression: (node: Extract<Node, { type: 'ArrowFunctionExpression' }>) => node.params.map(paramName),
-  CatchClause: (node: Extract<Node, { type: 'CatchClause' }>) => node.param ? [node.param] : [],
+  FunctionDeclaration: (node: Extract<Node, { type: 'FunctionDeclaration' }>) => paramNames(node.params),
+  FunctionExpression: (node: Extract<Node, { type: 'FunctionExpression' }>) => paramNames(node.params),
+  ArrowFunctionExpression: (node: Extract<Node, { type: 'ArrowFunctionExpression' }>) => paramNames(node.params),
+  CatchClause: (node: Extract<Node, { type: 'CatchClause' }>) => node.param ? boundNames(node.param) : [],
   ForStatement: (node: Extract<Node, { type: 'ForStatement' }>) => declarationsOf(node.init),
   ForOfStatement: (node: Extract<Node, { type: 'ForOfStatement' }>) => declarationsOf(node.left),
 }
@@ -236,17 +236,31 @@ export class Skeleton {
     return node
   }
 
+  // A pattern's names start as null one by one (destructuring null would fail, D40).
   variables(node: VariableDeclaration): VariableDeclaration {
-    const declarations = node.declarations.map(declarator => {
-      const { id, init } = declarator
-      const keep = init?.type === 'ClassExpression' && this.canDefine(init)
+    const declarations = node.declarations.flatMap(declarator => {
+      const { id, loc } = declarator
+      if (id.type === 'Identifier') return [this.declarator(declarator, id, node)]
 
-      this.declare(id, node, keep)
-
-      return { ...declarator, init: keep ? this.defineClass(init) : nullLiteral(declarator.loc) }
+      return boundNames(id).map(name => this.nullDeclarator(name, node, loc))
     })
 
     return { ...node, declarations }
+  }
+
+  private declarator(declarator: VariableDeclarator, id: Identifier, node: VariableDeclaration): VariableDeclarator {
+    const { init, loc } = declarator
+    const keep = init?.type === 'ClassExpression' && this.canDefine(init)
+
+    this.declare(id, node, keep)
+
+    return { ...declarator, init: keep ? this.defineClass(init) : nullLiteral(loc) }
+  }
+
+  private nullDeclarator(id: Identifier, node: VariableDeclaration, loc: SourceLocation): VariableDeclarator {
+    this.declare(id, node)
+
+    return { type: 'VariableDeclarator', id, init: nullLiteral(loc), loc }
   }
 
   definition(node: ClassDeclaration | InterfaceDeclaration): Statement {

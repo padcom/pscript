@@ -1,0 +1,4 @@
+// Destructuring null is a TypeError (D40)
+function f({ a }) { return a }
+print('before')
+f(null)

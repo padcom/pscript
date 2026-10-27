@@ -1,0 +1,35 @@
+// Destructuring declarations (D40): object and array patterns, nesting, defaults, rest
+const person = { name: 'Ann', age: 42, address: { city: 'Oslo', zip: '0150' }, tags: ['a', 'b', 'c'] }
+const { name, age: years, address: { city, country = 'NO' }, tags: [first, ...others] } = person
+print(name, years, city, country, first, others.join('+'))
+
+const { missing = 'default', name: alias = 'unused' } = person
+print(missing, alias)
+
+let [x, y = 20, z = x + y] = [1]
+print(x, y, z)
+
+const [a, [b, c], ...rest] = [1, [2, 3], 4, 5]
+print(a, b, c, rest.length, rest[0], rest[1])
+
+const { name: ignored, ...withoutName } = person
+print(JSON.stringify(withoutName))
+
+const [h, i] = 'hi'
+print(h, i)
+
+const [only] = []
+print(typeof only)
+
+const { 'zip': zipCode, 0: zeroth } = { zip: '0150', 0: 'zero' }
+print(zipCode, zeroth)
+
+const {} = person
+const [] = []
+let { length } = 'four'
+print(length)
+
+const { 0: zero, ...afterZero } = [1, 2, 3]
+const { ...chars } = 'ab'
+const { ...nothing } = 5
+print(zero, JSON.stringify(afterZero), JSON.stringify(chars), JSON.stringify(nothing))

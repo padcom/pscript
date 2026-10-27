@@ -1,0 +1,9 @@
+11
+TypeError: Unknown named parameter 'z' of testme({x?, y?}?)
+TypeError: Unknown named parameter 'to.z' of move({to: {x, y}, speed?})
+4
+7:red,big
+1
+picked
+TypeError: onlyX({x}) expects 1 argument, got 0
+0 1

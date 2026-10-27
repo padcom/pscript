@@ -3,7 +3,16 @@
 import { signatureOf, type Signature } from '@/compiler/signature'
 import { PScriptSyntaxError, formatExcerpt } from '@/errors'
 import { resolveSpecifier } from '@/modules/loader'
-import type { Expression, Literal, ModuleDeclaration, Program, Statement, VariableDeclaration } from '@/parser/ast'
+import type {
+  Expression,
+  Literal,
+  ModuleDeclaration,
+  Program,
+  Statement,
+  VariableDeclaration,
+  VariableDeclarator,
+} from '@/parser/ast'
+import { boundNames } from '@/parser/patterns'
 import { isModuleDeclaration } from './modules'
 
 const EXTENSIONS = ['.pscript', '.psc']
@@ -57,11 +66,15 @@ function isFunction(node: Expression | null): node is Extract<Expression, { para
   return node?.type === 'FunctionExpression' || node?.type === 'ArrowFunctionExpression'
 }
 
+function constSignature({ id, init }: VariableDeclarator): [string, Signature][] {
+  return isFunction(init) && id.type === 'Identifier' ? [[id.name, signatureOf(id.name, init.params)]] : []
+}
+
 // A `const` bound to a function expression has a signature, as in the compiler (D38).
 function constSignatures({ kind, declarations }: VariableDeclaration): [string, Signature][] {
   if (kind !== 'const') return []
 
-  return declarations.flatMap(({ id, init }) => isFunction(init) ? [[id.name, signatureOf(id.name, init.params)]] : [])
+  return declarations.flatMap(constSignature)
 }
 
 function signaturesOf(statement: Statement): [string, Signature][] {
@@ -71,7 +84,9 @@ function signaturesOf(statement: Statement): [string, Signature][] {
 }
 
 function declaredNames(statement: Statement): string[] {
-  if (statement.type === 'VariableDeclaration') return statement.declarations.map(({ id }) => id.name)
+  if (statement.type === 'VariableDeclaration') {
+    return statement.declarations.flatMap(({ id }) => boundNames(id)).map(({ name }) => name)
+  }
 
   return 'id' in statement && statement.id ? [(statement.id as { name: string }).name] : []
 }

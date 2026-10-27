@@ -84,6 +84,10 @@ export enum Op {
   INTERFACE,
   GET_ITER,
   ITER_NEXT,
+  ITER_VALUE,
+  ITER_REST,
+  CHECK_PATTERN,
+  OBJECT_REST,
   THROW,
   TRY,
   END_TRY,
@@ -212,6 +216,10 @@ export const OPCODES: Readonly<Record<Op, OpcodeInfo>> = {
   [Op.INTERFACE]: info('k n', 'p1…pn → iface'), // interface from template and n parents
   [Op.GET_ITER]: info('', 'iterable → iter'), // arrays/strings; else TypeError
   [Op.ITER_NEXT]: info('target', 'iter → iter v | (pops iter, jumps)'),
+  [Op.ITER_VALUE]: info('', 'iter → iter v'), // array patterns: undefined when done (D40)
+  [Op.ITER_REST]: info('', 'iter → arr'), // array pattern rest (D40)
+  [Op.CHECK_PATTERN]: info('k', 'v → v'), // null/undefined TypeError; k (JSON { keys, path }) or -1: strict keys (D40)
+  [Op.OBJECT_REST]: info('k', 'v → obj'), // object pattern rest without the keys in k (JSON array) (D40)
   [Op.THROW]: info('', 'v →'),
   [Op.TRY]: info('catchTarget finallyTarget', '→'), // push handler (-1 = none)
   [Op.END_TRY]: info('', '→'), // pop handler
