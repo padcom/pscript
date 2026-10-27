@@ -1,0 +1,34 @@
+// @pscript-only: implicit member access (D33), §10.20
+const TAX = 0.2
+
+class Cart {
+  private items = []
+  get count() { return items.length }             // this.items
+  add(name, price) {
+    items.push({ name, price })                   // `name` and `price` are parameters (locals win)
+    return count                                  // this.count (getter)
+  }
+  total() { return round(sum() * (1 + TAX)) }     // round and sum are methods; TAX is an outer constant
+  private sum() { return items.reduce((s, item) => s + item.price, 0) }
+  private round(v) { return Math.round(v * 100) / 100 }
+}
+const cart = new Cart()
+cart.add('book', 10)
+cart.add('pen', 2.5)
+print(cart.count, cart.total())         // → 2 15
+
+// The strict rule: a bare name may not mean both a member and an outside definition.
+function format(v) { return '$' + v }
+class Price {
+  value = 1
+  format() { return 'member' }
+  // show() { return format(value) }   // SyntaxError: Ambiguous name 'format' in class 'Price': it is both a member
+  //                                   // and an outer function. Write 'this.format' for the member, or rename the function.
+  show() { return this.format() + ' ' + value }   // explicit: OK
+}
+
+class Logger {
+  print(msg) { globalThis.print('[log] ' + msg) }   // name the global explicitly
+  info(msg) { this.print(msg) }                     // a bare print(msg) here would be ambiguous
+}
+new Logger().info('ready')              // → [log] ready

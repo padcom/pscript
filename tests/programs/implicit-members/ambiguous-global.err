@@ -1,0 +1,1 @@
+implicit-members/ambiguous-global.pscript:4:15 SyntaxError: Ambiguous name 'print' in class 'Logger': it is both a member and a global. Write 'this.print' for the member, or 'globalThis.print' for the global.

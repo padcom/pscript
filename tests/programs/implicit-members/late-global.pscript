@@ -1,0 +1,7 @@
+// @pscript-only: the decision is made when the class is defined (§4.5.8)
+class Settings {
+  limit = 3
+  show() { return limit }
+}
+const settings = new Settings()
+print(settings.show())

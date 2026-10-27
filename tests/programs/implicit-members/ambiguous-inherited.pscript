@@ -1,0 +1,19 @@
+// @pscript-only: the strict rule (§4.5.8), inherited member vs. outer binding: class-definition time
+function attempt(label, f) {
+  try { print(label, f()) } catch (e) { print(label, e.name, e.message) }
+}
+const label = 'outer'
+class Document {
+  label() { return 'member' }
+}
+attempt('inherited', () => class Report extends Document { show() { return label() } })
+function mixin() { return class { size = 1 } }
+function wrap() {
+  const size = 2
+  return class Sized extends mixin() { get() { return size } }
+}
+attempt('lexical, unknown superclass', wrap)
+attempt('not a member', () => class extends mixin() { f() { return Math } })
+function hostLike() { return class { JSON = 1 } }
+attempt('member named like a global', () => class Data extends hostLike() { dump() { return JSON } })
+attempt('only used with this', () => class extends hostLike() { dump() { return this.JSON } })

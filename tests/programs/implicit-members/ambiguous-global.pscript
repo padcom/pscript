@@ -1,0 +1,5 @@
+// @pscript-only: the strict rule (§4.5.8), own member vs. stdlib global: compile time
+class Logger {
+  print(msg) {}
+  info(msg) { print(msg) }
+}

@@ -1,6 +1,6 @@
 // Call frames of the VM (§5.6.1).
 import type { FunctionProto } from '@/compiler/function-proto'
-import type { Class, Closure, Environment, Object as ScriptObject, Value } from '@/runtime/values'
+import type { Class, Closure, Environment, ImplicitReceiver, Object as ScriptObject, Value } from '@/runtime/values'
 
 /**
  * An exception handler pushed by `TRY` (§5.6.5).
@@ -38,6 +38,8 @@ export interface Frame {
   homeClass: Class | null
   /** object whose method this is (`super` lookups) */
   homeObject: ScriptObject | null
+  /** frame of the enclosing method, whose `this` implicit member accesses use (null: this frame, §4.5.8) */
+  implicitFrame: ImplicitReceiver | null
   /** active exception handlers */
   handlers: Handler[]
   /** called through `new` */

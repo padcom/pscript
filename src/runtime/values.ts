@@ -62,9 +62,35 @@ export class Function extends Object {
   }
 }
 
+/**
+ * What a bare name used in a class body means, per context (§4.5.8): a member, an outside definition, or (static
+ * context only) an instance member, which is an error.
+ */
+export type ImplicitKind = 'member' | 'outer' | 'instance-only'
+
+/**
+ * The class-definition resolution of one implicit name.
+ */
+export interface ImplicitEntry {
+  /** in instance code */
+  instance: ImplicitKind
+  /** in static code */
+  static: ImplicitKind
+}
+
+/**
+ * Where implicit member accesses find their receiver: the frame of the enclosing method (§4.5.8).
+ */
+export interface ImplicitReceiver {
+  /** `this` of that frame */
+  thisValue: Value
+}
+
 export class Closure extends Function {
   /** arrows only */
   thisValue?: Value
+  /** frame of the method (constructor, accessor, initialiser) the closure was created in */
+  implicitFrame: ImplicitReceiver | null = null
   homeClass: Class | null = null
   /** for `super` lookups */
   homeObject: Object | null = null
@@ -146,6 +172,8 @@ export class Class extends Function {
   host?: new (...args: any[]) => any
   /** lexically enclosing class (private access from nested classes, §4.5.2) */
   outerClass: Class | null = null
+  /** resolution of `template.implicitNames`, by index (§4.5.8) */
+  implicitTable: ImplicitEntry[] = []
 
   constructor(
     proto: Object | null,

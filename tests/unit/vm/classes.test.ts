@@ -104,3 +104,25 @@ describe('private members', () => {
     expect(() => run('class A { private set s(v) {}\n n() { return this.s } }\nnew A().n()')).toThrow("'s' has only a setter")
   })
 })
+
+describe('implicit member access (§4.5.8)', () => {
+  it('emits implicit instructions only for names that may be members', () => {
+    const visible = protoOps('const x = 1\nclass A { y = 2\n m() { return x + y } }', 'm')
+
+    expect(visible).toContain(Op.LOAD_IMPLICIT)
+    expect(visible.filter(op => op === Op.LOAD_IMPLICIT)).toHaveLength(1)
+    expect(protoOps('class A { m(y) { y = 1; return y } }', 'm')).not.toContain(Op.STORE_IMPLICIT)
+    const hidden = 'function base() { return class {} }\nclass A extends base() { m() { f() } }'
+
+    expect(protoOps(hidden, 'm')).toContain(Op.CALL_IMPLICIT)
+  })
+
+  it('records each implicit name once with its contexts', () => {
+    const template = templateOf('class A { static s = 1\n x = 1\n m() { return x + x }\n static n() { return s } }')
+
+    expect(template.implicitNames.map(({ name, outer, contexts }) => [name, outer, contexts])).toEqual([
+      ['x', 'global', ['instance']],
+      ['s', 'global', ['static']],
+    ])
+  })
+})

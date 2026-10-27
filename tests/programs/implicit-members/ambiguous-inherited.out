@@ -1,0 +1,5 @@
+inherited TypeError Ambiguous name 'label' in class 'Report': it is both a member (inherited from 'Document') and an outer binding. Write 'this.label' for the member, or rename the outer binding. (9:76)
+lexical, unknown superclass TypeError Ambiguous name 'size' in class 'Sized': it is both a member (inherited from 'anonymous') and an outer binding. Write 'this.size' for the member, or rename the outer binding. (13:55)
+not a member [class (anonymous) extends (anonymous)]
+member named like a global TypeError Ambiguous name 'JSON' in class 'Data': it is both a member (inherited from 'anonymous') and a global. Write 'this.JSON' for the member, or 'globalThis.JSON' for the global. (18:93)
+only used with this [class (anonymous) extends (anonymous)]

@@ -1,0 +1,1 @@
+implicit-members/ambiguous-function.pscript:6:19 SyntaxError: Ambiguous name 'format' in class 'Price': it is both a member and an outer function. Write 'this.format' for the member, or rename the outer binding.

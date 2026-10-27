@@ -26,7 +26,28 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M17 | Access modifiers | done (2026-10-27) |
 | M18 | Overriding | done (2026-10-27) |
 | M19 | Interfaces | done (2026-10-27) |
-| M20 | Implicit member access | next |
+| M20 | Implicit member access | done (2026-10-27) |
+| M21 | Modules I | next |
+
+## M20 — Implicit member access
+
+Done: implicit-member programs pass (`tests/programs/implicit-members/`: §10.20, rule matrix incl. §4.5.8's Invoice, compile-time and class-definition-time ambiguities). `npm run check` and `npm run build` green; 843 tests.
+
+What exists:
+
+- Compiler (`src/compiler/implicit-names.ts` + `implicitName`/`implicit` in compiler.ts): the stack of enclosing classes is now `ClassRecord`s (info, the scope around the body, current static context, `implicitNames`). A bare name in a class body that is not a binding declared inside the body is classified: own member (instance members in instance code; static or instance members in static code), member of a visible superclass (privates excluded), provably none (normal load), or unknown (superclass not visible). Own member + outer lexical/script binding or stdlib global → compile-time `SyntaxError` with the §4.5.8 message (`stdlibGlobalNames()` in `src/stdlib/index.ts` lists the stdlib globals from a scratch realm). Otherwise reads/writes/calls emit `LOAD_IMPLICIT i a b`, `STORE_IMPLICIT i a b`, `CALL_IMPLICIT i argc a b` with the fallback `depth slot` (lexical) or `k 0` (script binding / global). `typeof x` follows the same path. Compile-time arity checks are skipped for implicit calls.
+- Class definition (`src/vm/implicit.ts`): `resolveImplicitNames` builds `Class.implicitTable` (`{ instance, static }` → `member` | `outer` | `instance-only`) from the finished member indexes (+ own privates) and reports ambiguities with inherited members or current script bindings/globals (`ClassHost.outerGlobal`), joined with the other class-definition violations.
+- VM: closures remember the frame of the enclosing method (`Closure.implicitFrame`, `Frame.implicitFrame`), so nested `function`s and arrows use the method's `this` (read lazily, so `super()` in derived constructors is respected → `ReferenceError` before it). Static vs instance code is decided by whether that `this` is a class. Member accesses go through `getProperty`/`setProperty` (virtual dispatch, access rules, accessors, `Cannot assign to method`); `instance-only` → `TypeError: Cannot access instance member 'x' from a static context`.
+- `print` of anonymous classes: `[class (anonymous)]` (was `[class ]`).
+
+Deviations / gaps:
+
+- In instance code only instance members are candidates (static members need `ClassName.x`), the spec leaves this open.
+- Inherited members of a *visible* superclass vs. outer bindings are reported at class-definition time (TypeError), like hidden superclasses, rather than at compile time.
+- Built-in prototype members (`toString`, Error's `message`) are not implicit-member candidates.
+- `typeof x` for an implicit name whose fallback is an undeclared global throws ReferenceError instead of giving `'undefined'`.
+- Script-level bindings declared after the class (but before it runs) count as outside definitions at class-definition time, as they exist in the TDZ.
+- The VM "unimplemented opcode" unit test now uses `DEFINE_PROP_INDEX`.
 
 ## M19 — Interfaces
 

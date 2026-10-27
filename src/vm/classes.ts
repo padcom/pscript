@@ -8,6 +8,7 @@ import type {
   FunctionProto,
 } from '@/compiler/function-proto'
 import { kindOf } from '@/runtime/operators'
+import { resolveImplicitNames } from './implicit'
 import { checkInterfaces, implementInterfaces } from './interfaces'
 import { overrideViolations } from './overrides'
 import { typeError } from '@/runtime/script-error'
@@ -33,6 +34,8 @@ export interface ClassHost {
   realm: Realm
   /** calls static initialisers */
   callFunction(fn: Value, thisValue: Value, args: Value[]): Value
+  /** how a script binding or global is described in implicit-name ambiguities, or null when there is none (§4.5.8) */
+  outerGlobal(name: string): string | null
 }
 
 /**
@@ -240,7 +243,8 @@ export function defineClass(host: ClassHost, template: ClassTemplate, heritage: 
 
   builder.members()
   builder.functions()
-  violations.push(...builder.memberRefViolations(), ...implementInterfaces(builder.cls, interfaces))
+  violations.push(...builder.memberRefViolations(), ...resolveImplicitNames(builder.cls, name => host.outerGlobal(name)))
+  violations.push(...implementInterfaces(builder.cls, interfaces))
 
   // All violations of one class definition are reported together (§5.6.7).
   if (violations.length > 0) throw typeError(violations.join('; '))

@@ -1,0 +1,7 @@
+// @pscript-only: the strict rule (§4.5.8), own member vs. outer function: compile time
+function format(v) { return '$' + v }
+class Price {
+  value = 1
+  format() { return 'member' }
+  show() { return format(value) }
+}

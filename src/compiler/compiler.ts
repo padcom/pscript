@@ -47,7 +47,9 @@ import type {
 } from '@/parser/ast'
 import type { FunctionNode } from '@/parser/ast-builders'
 import { parse } from '@/parser/parse'
+import { stdlibGlobalNames } from '@/stdlib'
 import { classInfoOf, hasMember, keyName, type ClassInfo } from './class-info'
+import { ambiguityMessage, implicitIndex, memberCandidate, outerDescription, type ClassRecord } from './implicit-names'
 import { interfaceTemplate } from './interfaces'
 import type {
   ClassFieldTemplate,
@@ -60,7 +62,7 @@ import type {
 } from './function-proto'
 import { GlobalFlags, Op } from './opcodes'
 import { ProtoBuilder } from './proto-builder'
-import { Scope, type Binding, type BindingKind } from './scope'
+import { Scope, type Binding, type BindingKind, type Resolution } from './scope'
 import { arityError, signatureOf, type Signature } from './signature'
 
 /**
@@ -93,6 +95,15 @@ function constSignature(kind: BindingKind, id: Identifier, init: Expression | nu
 type AnyFunction = FunctionNode | ArrowFunctionExpression
 
 type ClassNode = ClassDeclaration | ClassExpression
+
+// Where a bare name that is not a member is found: an enclosing environment, or by name (script bindings, globals).
+function outerKind({ where }: Resolution): 'lexical' | 'global' {
+  return where === 'lexical' ? 'lexical' : 'global'
+}
+
+function bindingOf(resolution: Resolution): Binding | undefined {
+  return resolution.where === 'global' ? undefined : resolution.binding
+}
 
 /** Slot of the completion value in the script's top environment (§4.4.10). */
 const COMPLETION_SLOT = 0
@@ -315,8 +326,8 @@ class Compiler {
   /** compile-time knowledge of class declarations, by binding (§4.5.9) */
   private classInfos = new Map<Binding, ClassInfo>()
 
-  /** classes whose bodies lexically enclose the code being compiled, innermost last (§4.5.3) */
-  private enclosingClasses: ClassInfo[] = []
+  /** classes whose bodies lexically enclose the code being compiled, innermost last (§4.5.3, §4.5.8) */
+  private enclosingClasses: ClassRecord[] = []
 
   constructor(private source: string | undefined, private fileName: string | undefined) {}
 
@@ -394,6 +405,8 @@ class Compiler {
 
     this.out.mark(loc)
 
+    if (this.implicit(Op.LOAD_IMPLICIT, name, loc)) return
+
     if (resolution.where === 'lexical') this.lexical(Op.LOAD, name, resolution)
     else this.out.emit(Op.LOAD_GLOBAL, this.out.constant(name))
   }
@@ -404,8 +417,49 @@ class Compiler {
 
     this.out.mark(loc)
 
+    if (this.implicit(Op.STORE_IMPLICIT, name, loc)) return
+
     if (resolution.where === 'lexical') this.lexical(Op.STORE, name, resolution)
     else this.out.emit(Op.STORE_GLOBAL, this.out.constant(name))
+  }
+
+  // A bare name in a class body that may be a member (§4.5.8): LOAD/STORE/CALL_IMPLICIT i [argc] fallbackA fallbackB.
+  private implicit(op: Op, name: string, loc: SourceLocation, argc?: number): boolean {
+    const index = this.implicitName(name, loc)
+    if (index === null) return false
+
+    const resolution = this.scope.resolve(name)
+    const fallback = resolution.where === 'lexical' ? [resolution.depth, resolution.slot] : [this.out.constant(name), 0]
+
+    this.out.nameNext(name)
+    this.out.emit(op, index, ...(argc === undefined ? [] : [argc]), ...fallback)
+
+    return true
+  }
+
+  // The index of a bare name in the innermost class's implicit names, or null when it is a local binding or
+  // provably not a member. Own member + outside definition is the strict rule's compile-time error.
+  private implicitName(name: string, loc: SourceLocation): number | null {
+    const record = this.enclosingClasses.at(-1)
+
+    return record ? this.implicitIn(record, name, loc) : null
+  }
+
+  private implicitIn(record: ClassRecord, name: string, loc: SourceLocation): number | null {
+    const outside = record.scope.resolve(name)
+    if (bindingOf(this.scope.resolve(name)) !== bindingOf(outside)) return null
+
+    const candidate = memberCandidate(record, name)
+    if (candidate === 'none') return null
+    if (candidate === 'own') this.checkUnambiguous(record, outside, name, loc)
+
+    return implicitIndex(record, name, outerKind(outside), loc)
+  }
+
+  private checkUnambiguous(record: ClassRecord, outside: Resolution, name: string, loc: SourceLocation) {
+    if (outside.where === 'global' && !stdlibGlobalNames().has(name)) return
+
+    throw this.error(ambiguityMessage(record.info.name, name, outerDescription(bindingOf(outside))), loc)
   }
 
   private checkAssignable({ name, kind }: Binding, loc: SourceLocation) {
@@ -736,19 +790,27 @@ class Compiler {
   }
 
   private classTemplate(node: ClassNode, info: ClassInfo): ClassTemplate {
-    this.enclosingClasses.push(info)
+    const record: ClassRecord = { info, scope: this.scope, isStatic: false, implicitNames: [] }
+
+    this.enclosingClasses.push(record)
 
     try {
-      return this.classBody(node, info)
+      return this.classBody(node, record)
     } finally {
       this.enclosingClasses.pop()
     }
   }
 
-  private classBody(node: ClassNode, info: ClassInfo): ClassTemplate {
+  private classBody(node: ClassNode, record: ClassRecord): ClassTemplate {
+    const { info } = record
     const members = node.body.body
     const memberRefs: ClassMemberRef[] = []
-    const context = (isStatic: boolean): ClassContext => ({ info, isStatic, memberRefs })
+    // Called right before each member is compiled: bare names in it are resolved in its (static) context.
+    const context = (isStatic: boolean): ClassContext => {
+      record.isStatic = isStatic
+
+      return { info, isStatic, memberRefs }
+    }
     const methods = members.filter((m): m is MethodDefinition => m.type === 'MethodDefinition')
     const fields = members.filter((m): m is PropertyDefinition => m.type === 'PropertyDefinition')
     const constructorNode = methods.find(method => method.kind === 'constructor')
@@ -764,7 +826,7 @@ class Compiler {
       memberRefs,
       fields: fields.map(fieldTemplate),
       interfaceCount: node.implements.length,
-      implicitNames: [],
+      implicitNames: record.implicitNames,
       bindsName: node.id !== null,
     }
   }
@@ -827,7 +889,7 @@ class Compiler {
 
   // How many classes out from the home class the innermost class declaring `name` private is, or -1 (§5.4).
   private privateDepth(name: string): number {
-    const index = this.enclosingClasses.findLastIndex(info => info.privates.has(name))
+    const index = this.enclosingClasses.findLastIndex(({ info }) => info.privates.has(name))
 
     return index < 0 ? -1 : this.enclosingClasses.length - 1 - index
   }
@@ -1063,8 +1125,11 @@ class Compiler {
   }
 
   // `typeof x` of a name that is not lexical must not throw when it is undeclared.
+  // Bare names that may be class members follow the implicit resolution instead (§4.5.8).
   private isGlobalName(node: Expression): node is Identifier {
-    return node.type === 'Identifier' && node.name !== 'undefined' && this.scope.resolve(node.name).where !== 'lexical'
+    if (node.type !== 'Identifier' || node.name === 'undefined') return false
+
+    return this.scope.resolve(node.name).where !== 'lexical' && this.implicitName(node.name, node.loc) === null
   }
 
   binary(node: BinaryExpression) {
@@ -1100,17 +1165,29 @@ class Compiler {
 
   call(node: CallExpression) {
     const { callee } = node
-    if (callee.type === 'Super') {
-      this.superCall(node)
+    if (callee.type === 'Super') this.superCall(node)
+    else if (!this.implicitCall(node)) this.plainCall(node)
+  }
 
-      return
-    }
+  private plainCall(node: CallExpression) {
+    const callee = node.callee as Expression
+
     this.checkArity(callee, node.arguments.length, node.loc)
 
     const isMethod = this.callee(callee)
 
     for (const argument of node.arguments) this.expression(argument)
     this.emitAt(node.loc, isMethod ? Op.CALL_METHOD : Op.CALL, node.arguments.length)
+  }
+
+  // `m(x)` in a class body where `m` may be a member: <x> CALL_IMPLICIT i 1 fallback (§4.5.8).
+  private implicitCall({ callee, arguments: args, loc }: CallExpression): boolean {
+    if (callee.type !== 'Identifier' || this.implicitName(callee.name, callee.loc) === null) return false
+
+    for (const argument of args) this.expression(argument)
+    this.out.mark(loc)
+
+    return this.implicit(Op.CALL_IMPLICIT, callee.name, callee.loc, args.length)
   }
 
   // Pushes the function (and, for `o.m()`, the receiver below it); returns whether it is a method call.

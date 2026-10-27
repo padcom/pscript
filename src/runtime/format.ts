@@ -16,9 +16,15 @@ import {
 /** Nested containers deeper than this print as `[Object]` / `[Array]`. */
 const MAX_DEPTH = 2
 
+function className({ name }: Class): string {
+  return name || '(anonymous)'
+}
+
 function formatFunction(fn: ScriptFunction): string {
   if (fn instanceof Class) {
-    return fn.superClass ? `[class ${fn.name} extends ${fn.superClass.name}]` : `[class ${fn.name}]`
+    const parent = fn.superClass ? ` extends ${className(fn.superClass)}` : ''
+
+    return `[class ${className(fn)}${parent}]`
   }
 
   return fn.name ? `[Function: ${fn.name}]` : '[Function (anonymous)]'

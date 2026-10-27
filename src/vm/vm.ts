@@ -34,6 +34,7 @@ import {
   Object as ScriptObject,
   UNINITIALIZED,
   type AccessContext,
+  type ImplicitReceiver,
   type NativeClassImpl,
   type Realm,
   type Slot,
@@ -109,10 +110,27 @@ function hostStackOverflow(e: unknown): boolean {
 const NO_THIS = UNINITIALIZED as unknown as Value
 
 // In a derived constructor `this` is uninitialised until `super(...)` returns (§4.5.1).
-function initializedThis(frame: Frame): Value {
+function initializedThis(frame: ImplicitReceiver): Value {
   if (frame.thisValue === NO_THIS) throw referenceError("Must call super constructor before accessing 'this'")
 
   return frame.thisValue
+}
+
+/**
+ * Operands of LOAD/STORE/CALL_IMPLICIT: the implicit name and its fallback (`depth slot` or `k 0`).
+ */
+interface ImplicitOperands {
+  /** index in the home class's `implicitNames` */
+  index: number
+  /** depth, or the name's constant */
+  a: number
+  /** slot, or 0 */
+  b: number
+}
+
+// Static code runs with the class as `this`.
+function contextOf({ thisValue }: ImplicitReceiver): 'static' | 'instance' {
+  return thisValue instanceof ClassValue ? 'static' : 'instance'
 }
 
 function nullish(value: Value): boolean {
@@ -175,6 +193,7 @@ export class VM implements AccessContext {
     frame.closure = closure
     frame.homeClass = closure.homeClass
     frame.homeObject = closure.homeObject
+    frame.implicitFrame = closure.implicitFrame
     this.frames.push(frame)
 
     return frame
@@ -212,6 +231,7 @@ export class VM implements AccessContext {
       thisValue,
       homeClass: null,
       homeObject: null,
+      implicitFrame: null,
       handlers: [],
       isConstruct: false,
       newTarget: null,
@@ -338,6 +358,7 @@ export class VM implements AccessContext {
     const closure = new Closure(this.realm.FunctionPrototype, proto, frame.env, null)
 
     closure.homeClass = frame.homeClass
+    closure.implicitFrame = frame.implicitFrame ?? frame
 
     if (proto.usesThis) closure.thisValue = frame.thisValue
     if (proto.kind === 'arrow') closure.homeObject = frame.homeObject
@@ -425,6 +446,70 @@ export class VM implements AccessContext {
 
     // an accessor runs with the current `this` (§4.5.4)
     return found instanceof Accessor ? (found.get ? this.callFunction(found.get, frame.thisValue, []) : undefined) : found
+  }
+
+  // The receiver and name of an implicit member access, or null when the bare name is an outside definition (§4.5.8).
+  private implicitMember(frame: Frame, index: number): [Value, string] | null {
+    const cls = frame.homeClass as ClassValue
+    const { name } = cls.template.implicitNames[index]
+    const owner = frame.implicitFrame ?? frame
+    const kind = cls.implicitTable[index][contextOf(owner)]
+
+    if (kind === 'instance-only') throw typeError(`Cannot access instance member '${name}' from a static context`)
+
+    return kind === 'member' ? [initializedThis(owner), name] : null
+  }
+
+  // The recorded fallback of an implicit name: an enclosing binding (depth, slot) or a script binding / global.
+  private loadOuter(frame: Frame, { index, a, b }: ImplicitOperands): Value {
+    const { name, outer } = (frame.homeClass as ClassValue).template.implicitNames[index]
+
+    return outer === 'lexical' ? initialized(lookupEnv(frame.env, a).slots[b], frame) : this.globals.load(name)
+  }
+
+  private storeOuter(frame: Frame, { index, a, b }: ImplicitOperands, value: Value) {
+    const { name, outer } = (frame.homeClass as ClassValue).template.implicitNames[index]
+    if (outer === 'global') {
+      this.globals.store(name, value)
+
+      return
+    }
+    const env = lookupEnv(frame.env, a)
+
+    initialized(env.slots[b], frame)
+    env.slots[b] = value
+  }
+
+  private loadImplicit(frame: Frame, operands: ImplicitOperands): Value {
+    const member = this.implicitMember(frame, operands.index)
+
+    return member ? getProperty(this, ...member) : this.loadOuter(frame, operands)
+  }
+
+  private storeImplicit(frame: Frame, operands: ImplicitOperands, value: Value) {
+    const member = this.implicitMember(frame, operands.index)
+
+    if (member) setProperty(this, ...member, value)
+    else this.storeOuter(frame, operands, value)
+  }
+
+  // CALL_IMPLICIT: a member is called as a method of the implicit receiver, an outside definition plainly.
+  private implicitCallee(frame: Frame, operands: ImplicitOperands): [Value, Value] {
+    const member = this.implicitMember(frame, operands.index)
+
+    return member ? [getProperty(this, ...member), member[0]] : [this.loadOuter(frame, operands), null]
+  }
+
+  /**
+   * How a script binding or global is described in implicit-name ambiguities (§4.5.8).
+   *
+   * @param name the name
+   * @returns `an outer binding`, `a global`, or null when the name is neither
+   */
+  outerGlobal(name: string): string | null {
+    if (this.globals.scriptBindings.has(name)) return 'an outer binding'
+
+    return this.realm.globals.has(name) ? 'a global' : null
   }
 
   private notAClass(callee: Value): never {
@@ -659,6 +744,37 @@ export class VM implements AccessContext {
         case Op.DEFINE_PROP:
           this.defineProperty(stack.pop(), stack[stack.length - 1] as ScriptObject, constants[code[ip++]] as string)
           break
+        case Op.LOAD_IMPLICIT: {
+          const operands = { index: code[ip++], a: code[ip++], b: code[ip++] }
+
+          frame.ip = ip
+          stack.push(this.loadImplicit(frame, operands))
+          break
+        }
+        case Op.STORE_IMPLICIT: {
+          const operands = { index: code[ip++], a: code[ip++], b: code[ip++] }
+
+          frame.ip = ip
+          this.storeImplicit(frame, operands, stack[stack.length - 1])
+          break
+        }
+        case Op.CALL_IMPLICIT: {
+          const index = code[ip++]
+          const argc = code[ip++]
+          const operands = { index, a: code[ip++], b: code[ip++] }
+          const args = stack.splice(stack.length - argc, argc)
+
+          frame.ip = ip
+          const [callee, thisValue] = this.implicitCallee(frame, operands)
+
+          if (callee instanceof Closure) {
+            frame = this.enterClosure(callee, args, thisValue)
+            code = frame.proto.code
+            constants = frame.proto.constants
+            ip = 0
+          } else stack.push(this.callFunction(callee, thisValue, args))
+          break
+        }
         case Op.CALL_METHOD: // CALL with the receiver below the function
         case Op.CALL: {
           const isMethod = code[ip - 1] === Op.CALL_METHOD

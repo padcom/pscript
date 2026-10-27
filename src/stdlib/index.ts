@@ -1,4 +1,5 @@
 // Standard library installation (§4.6).
+import { createRealm } from '@/runtime/realm'
 import type { Realm } from '@/runtime/values'
 import { installArray } from './array'
 import { installErrors } from './errors'
@@ -28,4 +29,22 @@ export function installStdlib(realm: Realm, io: Partial<StdlibIO> & Pick<StdlibI
   installMath(realm, io.random ?? Math.random)
   installJson(realm)
   installErrors(realm)
+}
+
+let globalNames: ReadonlySet<string> | null = null
+
+/**
+ * Names of the standard-library globals, for compile-time checks (the implicit-member ambiguity rule, §4.5.8).
+ *
+ * @returns the names
+ */
+export function stdlibGlobalNames(): ReadonlySet<string> {
+  if (!globalNames) {
+    const realm = createRealm()
+
+    installStdlib(realm, { stdout: () => {} })
+    globalNames = new Set(realm.globals.keys())
+  }
+
+  return globalNames
 }

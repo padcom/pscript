@@ -1,0 +1,101 @@
+// @pscript-only: implicit member access rules (§4.5.8)
+function attempt(label, f) {
+  try { print(label, f()) } catch (e) { print(label, e.name, e.message) }
+}
+const VERSION = 2
+
+class Invoice {
+  private items = []
+  total = 0
+  get count() { return items.length }
+  add(item) {
+    items.push(item)
+    total += item.price
+    recalc()
+    return count
+  }
+  protected recalc() { print('v' + VERSION) }
+  static create() { return new Invoice() }
+}
+const invoice = Invoice.create()
+print(invoice.add({ price: 3 }), invoice.add({ price: 4 }), invoice.total)
+
+class Counter {
+  n = 0
+  step = 1
+  doubled = step * 2                       // field initialisers see earlier fields
+  constructor(n) { this.n = n }            // the parameter shadows the member
+  bump() { n++; n += step; return n }
+  later() { return function () { return n }() }   // nested functions use the method's `this`
+  arrow() { return [1, 2].map(x => x + n) }
+  kind() { return typeof n + ' ' + typeof bump + ' ' + typeof Math }
+  reset() { n = 0; return this }
+}
+const counter = new Counter(5)
+print(counter.bump(), counter.later(), counter.arrow(), counter.doubled, counter.kind())
+print(counter.reset().n)
+
+// Calls bind `this` and dispatch virtually
+class Animal {
+  name() { return 'animal' }
+  describe() { return 'I am ' + name() }
+}
+class Dog extends Animal {
+  override name() { return 'dog' }
+}
+print(new Animal().describe(), new Dog().describe())
+
+// Inherited members (also through a superclass the compiler cannot see)
+function makeBase() { return class { base = 'base'; hello() { return 'hello' } } }
+class Child extends makeBase() {
+  greet() { return hello() + ' from ' + base }
+}
+print(new Child().greet())
+
+// Static context
+class Registry {
+  static count = 0
+  static instances = []
+  value = 1
+  static register(x) { count++; instances.push(x); return count }
+  static wrong() { return value }
+}
+print(Registry.register('a'), Registry.register('b'), Registry.instances)
+attempt('instance from static', () => Registry.wrong())
+
+// Derived constructors before super()
+class Base { x = 1 }
+class Derived extends Base {
+  constructor() { print(x); super() }
+}
+attempt('before super', () => new Derived())
+
+// Accessors and methods through bare names
+class Box {
+  private stored = 0
+  get value() { return stored }
+  set value(v) { stored = v * 2 }
+  method() {}
+  update() { value = 5; return value }
+  bad() { method = 1 }
+}
+print(new Box().update())
+attempt('assign method', () => new Box().bad())
+
+// Nested classes only see their own members
+class Outer {
+  secret = 'outer'
+  make() {
+    const secret = 'local'
+    class Inner { read() { return secret } }
+    return new Inner().read()
+  }
+}
+print(new Outer().make())
+
+// Explicit this always means the member; globals are reached through globalThis
+class Logger {
+  print(msg) { globalThis.print('[log] ' + msg) }
+  info(msg) { this.print(msg) }
+}
+new Logger().info('ready')
