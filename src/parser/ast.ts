@@ -122,7 +122,7 @@ export type Expression
     | ArrowFunctionExpression | ClassExpression | UnaryExpression | UpdateExpression
     | BinaryExpression | LogicalExpression | AssignmentExpression | ConditionalExpression
     | CallExpression | NewExpression | MemberExpression | ThisExpression | TemplateLiteral | YieldExpression
-    | AwaitExpression | ChainExpression
+    | AwaitExpression | ChainExpression | ImportExpression
 
 /** What binds names: a name, or an object or array pattern of names (D40). */
 export type BindingPattern = Identifier | ObjectPattern | ArrayPattern
@@ -269,6 +269,18 @@ export interface AssignmentPattern extends NodeBase {
   left: PatternTarget
   /** default value */
   right: Expression
+}
+
+/**
+ * `import(source)` (D52): a promise of the namespace of the module `source` names.
+ */
+export interface ImportExpression extends NodeBase {
+  /** node type */
+  type: 'ImportExpression'
+  /** the specifier */
+  source: Expression
+  /** import attributes are not supported */
+  options: null
 }
 
 /**

@@ -6,7 +6,9 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { rewriteEquality, type NodeResult } from './node-reference'
 
-const RELATIVE_SPECIFIER = /(?<keyword>(?:from|import)\s*)(?<quote>['"])(?<path>\.{1,2}\/[^'"]*?)(?:\.pscript|\.psc)?\k<quote>/g
+// after `from`, `import` and `import(` (D52)
+const RELATIVE_SPECIFIER
+  = /(?<keyword>(?:from|import)\s*\(?\s*)(?<quote>['"])(?<path>\.{1,2}\/[^'"]*?)(?:\.pscript|\.psc)?\k<quote>/g
 
 /**
  * Gives relative module specifiers the `.mjs` extension Node needs.

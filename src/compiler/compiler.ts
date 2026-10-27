@@ -26,6 +26,7 @@ import type {
   FunctionExpression,
   ExportNamedDeclaration,
   Identifier,
+  ImportExpression,
   ModuleDeclaration,
   ImportDeclaration,
   InterfaceDeclaration,
@@ -294,6 +295,7 @@ const EXPRESSIONS: { [K in Expression['type']]?: Handler<Extract<Expression, { t
   YieldExpression: (c, node) => c.yieldExpression(node),
   AwaitExpression: (c, node) => c.awaitExpression(node),
   ChainExpression: (c, node) => c.chain(node),
+  ImportExpression: (c, node) => c.importExpression(node),
 }
 
 /**
@@ -1596,6 +1598,12 @@ class Compiler {
 
     if (node.optional) this.optional(isMethod ? 2 : 1)
     this.emitAt(node.loc, isMethod ? Op.CALL_METHOD : Op.CALL, this.arguments(node.arguments))
+  }
+
+  // `import(specifier)` (D52) → <specifier> IMPORT_DYNAMIC: a promise of the module's namespace.
+  importExpression({ source, loc }: ImportExpression) {
+    this.expression(source)
+    this.emitAt(loc, Op.IMPORT_DYNAMIC)
   }
 
   // `a?.b.c()` (D47): every `?.` in the chain jumps to its end, leaving undefined.

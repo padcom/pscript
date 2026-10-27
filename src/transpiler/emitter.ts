@@ -23,6 +23,7 @@ import type {
   Identifier,
   IfStatement,
   ImportDeclaration,
+  ImportExpression,
   InterfaceDeclaration,
   Literal,
   LogicalExpression,
@@ -190,6 +191,7 @@ const EXPRESSIONS: { [K in Expression['type']]?: Printer<Extract<Expression, { t
   YieldExpression: (e, node) => e.yieldText(node),
   AwaitExpression: (e, node) => `await ${e.expression(node.argument, Precedence.Unary)}`,
   ChainExpression: (e, node) => e.expression(node.expression, Precedence.Member),
+  ImportExpression: (e, node) => e.dynamicImport(node),
 }
 
 /** Unary operators not printed as `<operator><operand>` with the `- -x` guard. */
@@ -1051,6 +1053,13 @@ export class Emitter {
 
   member(node: MemberExpression): string {
     return this.withMember(node, target => target)
+  }
+
+  // `import(specifier)` (D52): a literal specifier is rewritten like a static one; others are passed on unchanged.
+  dynamicImport({ source }: ImportExpression): string {
+    const isLiteral = source.type === 'Literal' && typeof source.value === 'string'
+
+    return `import(${isLiteral ? sourceText(source) : this.expression(source, Precedence.Assignment)})`
   }
 
   // `1.toString()` would read as a number with a fraction.

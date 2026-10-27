@@ -1,0 +1,6 @@
+const loaders = { square: () => import('./square'), circle: () => import('./circle') }
+
+export async function describe(name) {
+  const shape = await loaders[name]()
+  return `${name}: ${Object.keys(shape).join(',')}`
+}

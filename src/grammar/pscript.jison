@@ -834,6 +834,10 @@ MemberExpression
 CallExpression
   : MemberExpression Arguments
     { $$ = yy.call($1, $2, @$) }
+  | IMPORT '(' AssignmentExpression ')'
+    { $$ = yy.importExpression($3, @$) }
+  | IMPORT '(' AssignmentExpression ',' ')'
+    { $$ = yy.importExpression($3, @$) }
   | SUPER Arguments
     { $$ = yy.call(yy.superNode(@1), $2, @$) }
   | CallExpression Arguments

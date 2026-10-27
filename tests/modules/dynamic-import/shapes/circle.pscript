@@ -1,0 +1,2 @@
+print('circle evaluated')
+export function area(r) { return 3 * r * r }

@@ -107,3 +107,45 @@ describe('asynchronous module loaders (D51)', () => {
     expect(() => host.importModule('main')).toThrow('The module loader is asynchronous')
   })
 })
+
+const library = {
+  'lib/math': "print('math')\nexport const pi = 3\nexport function area(r) { return pi * r * r }",
+  'lib/lazy': "import { pi } from './math'\nexport const tau = await Promise.resolve(2 * pi)",
+  'lib/user': "export async function load(name) { return Object.keys(await import('./' + name)).join() }",
+  'broken': "throw new TypeError('broken module')",
+}
+
+describe('import() (D52)', () => {
+  it('gives a promise of the namespace, evaluating the module once', async () => {
+    const output: string[] = []
+    const host = interpreter({ modules: library }, output)
+    const script = "const m = await import('lib/math')\nconst again = await import('./lib/math')\n[m.area(2), m == again]"
+
+    await expect(host.runAsync(script)).resolves.toEqual([12, true])
+    expect(output).toEqual(['math'])
+  })
+
+  it('resolves relative specifiers against the importing module and waits for top-level await', async () => {
+    const host = interpreter({ modules: library })
+
+    await expect(host.runAsync("(await import('lib/lazy')).tau")).resolves.toBe(6)
+    await expect(host.runAsync("await (await import('lib/user')).load('lazy')")).resolves.toBe('tau')
+  })
+})
+
+describe('import() failures (D52)', () => {
+  it('rejects for missing and failing modules', async () => {
+    const host = interpreter({ modules: library })
+    const caught = (specifier: string) => `try { await import('${specifier}') } catch (e) { e.name + ': ' + e.message }`
+
+    await expect(host.runAsync(caught('nope'))).resolves.toBe("Error: Cannot find module 'nope': no module 'nope'")
+    await expect(host.runAsync(caught('broken'))).resolves.toBe('TypeError: broken module')
+  })
+
+  it('is a promise for the synchronous API too', async () => {
+    const result = interpreter({ modules: library }).run("import('lib/math')")
+
+    expect(result).toBeInstanceOf(Promise)
+    await expect(result).resolves.toMatchObject({ pi: 3 })
+  })
+})

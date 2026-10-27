@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D51).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D52).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -338,7 +338,9 @@ import './setup'
 ```
 
 - Named imports and exports only (`import { a, b as c }`, `import * as ns`, `import 'm'`, `export` declarations,
-  `export { a as b }`, `export { a } from 'm'`). Default exports, `export *`, `import()` and `import.meta` are errors.
+  `export { a as b }`, `export { a } from 'm'`). Default exports, `export *` and `import.meta` are errors.
+- `import(specifier)` returns a promise of the module's namespace, as in JavaScript (in scripts too; relative
+  specifiers resolve against the calling module). The module is loaded and evaluated once; failures reject.
 - Imports are live, read-only views of the exporter's bindings. Each module is evaluated once per interpreter;
   dependencies run first (depth-first, in import order). Cycles work as in JavaScript (hoisted functions are
   available early; reading an uninitialised binding is a `ReferenceError`).
@@ -412,9 +414,9 @@ Values cross the boundary by reference and identity is kept in both directions.
 | Generators give `undefined` for missing values | Generators give `null` (`yield`, `next()`, finished steps) |
 | Any object with a `then` method is a thenable | Only promises are adopted; `Promise` is final |
 | Top-level `await` only in modules | In modules and scripts |
-| Async generators, `for await`, dynamic `import()` | Not available (yet) |
+| Async generators, `for await` | Not available (yet) |
 | Symbols, BigInt, getters on the global object | Not available |
-| Default exports, `export *`, dynamic `import()` | Named exports only |
+| Default exports, `export *` | Named exports only |
 | Integer-like keys are listed first | Insertion order for all keys |
 | `map.get(missing)` is `undefined`; `Map`/`Set` can be extended | `null`; `Map` and `Set` are final |
 | `-2 ** 2` is a syntax error | `-2 ** 2` is `-(2 ** 2)` |

@@ -51,6 +51,23 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L10 | `Map` and `Set` (D49) | done (2026-10-27) |
 | L11 | Bitwise operators, `0x` / `0b` / `0o` literals (D50) | done (2026-10-27) |
 | L12 | Top-level `await`, asynchronous loaders and host API (D51) | done (2026-10-27) |
+| L13 | Dynamic `import()` (D52) | done (2026-10-27) |
+
+## L13 — Dynamic `import()` (D52)
+
+Design in `docs/PLAN.md` D52 (R41), §4.7.5; user docs in `docs/LANGUAGE.md` → Modules.
+
+- **Parser**: `IMPORT '(' AssignmentExpression ','? ')'` in `CallExpression` → `ImportExpression` (ESTree, with
+  `options: null`); the token filter no longer rejects `import(` nor treats it as a module clause.
+- **Compiler / VM**: `IMPORT_DYNAMIC` calls `VM.moduleImporter` (set by the interpreter) with the frame's module id;
+  a specifier whose `toString()` throws rejects.
+- **Registry**: `importDynamic` → `dynamicImport` (async: serialized `loadAsync`, link, `evaluate`, then the
+  namespace once the evaluation is done; failures through `rejection()`).
+- **VM**: `fromHost` turns interpreter errors (`PScriptRuntimeError` without a value, `PScriptSyntaxError`) into
+  script errors by name and reason, without the formatted prefix.
+- **psc**: native `import()`, literal specifiers rewritten.
+- **Tests**: `tests/modules/dynamic-import` (also against Node and psc; the Node helper rewrites `import('./x')`),
+  `tests/unit/modules/async-api.test.ts`.
 
 ## L12 — Top-level `await`, asynchronous loaders and host API (D51)
 

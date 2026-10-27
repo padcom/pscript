@@ -81,6 +81,7 @@ export class Interpreter {
 
     this.vm = new VM(this.realm, { maxSteps, maxCallDepth, reportError })
     this.modules = new ModuleRegistry(moduleLoader ?? memoryLoader(modules), this.vm)
+    this.vm.moduleImporter = (specifier, referrer) => this.modules.importDynamic(specifier, referrer)
 
     for (const [name, value] of globalThis.Object.entries(globals)) this.set(name, value)
   }

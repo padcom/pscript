@@ -120,6 +120,53 @@ export class ModuleRegistry {
   }
 
   /**
+   * `import(specifier)` (D52): loads (asynchronously), links and evaluates the module, then fulfills the promise with
+   * its namespace; a failure rejects it. The work starts in a host microtask, when no script code runs.
+   *
+   * @param specifier the specifier
+   * @param referrer id of the importing module, or null in scripts
+   * @returns the promise
+   */
+  importDynamic(specifier: string, referrer: string | null): PromiseObject {
+    const promise = this.vm.promises.create()
+
+    // never rejects: a failure rejects `promise`
+    this.dynamicImport(promise, specifier, referrer)
+
+    return promise
+  }
+
+  private async dynamicImport(promise: PromiseObject, specifier: string, referrer: string | null) {
+    const { promises } = this.vm
+
+    try {
+      const record = await this.serialized(() => this.loadAsync(specifier, referrer))
+
+      this.link(record)
+      this.settleImport(promise, record, this.evaluate(record, new Set()))
+    } catch (e) {
+      const { value, frames } = this.rejection(e)
+
+      promises.reject(promise, value, frames)
+    }
+  }
+
+  // The namespace, once the evaluation (if it waits) has finished.
+  private settleImport(promise: PromiseObject, record: LinkedRecord, evaluation: PromiseObject | null) {
+    const { promises } = this.vm
+    const namespace = this.namespace(record)
+
+    if (!evaluation) {
+      promises.resolve(promise, namespace)
+
+      return
+    }
+    promises.react(evaluation, () => promises.resolve(promise, namespace), (reason, frames) => {
+      promises.reject(promise, reason, frames)
+    })
+  }
+
+  /**
    * Runs an entry module given as source text.
    *
    * @param source module source

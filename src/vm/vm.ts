@@ -190,6 +190,15 @@ function isScriptValueError(error: unknown): error is PScriptRuntimeError {
 /** Host errors with these names become script errors of the same class (§5.8.1). */
 const HOST_ERROR_NAMES = new Set(['TypeError', 'RangeError', 'ReferenceError', 'SyntaxError'])
 
+// The kind and message a host error shows to scripts: an interpreter's own error by its script name and reason (a
+// module that could not be loaded or linked, D52).
+function hostErrorParts(error: Error): [string, string] {
+  if (error instanceof PScriptRuntimeError) return [error.scriptName, error.reason]
+  if (error instanceof PScriptError) return ['SyntaxError', error.reason]
+
+  return [HOST_ERROR_NAMES.has(error.name) ? error.name : 'Error', error.message]
+}
+
 /** A built-in class with its native constructor. */
 type NativeClass = ClassValue & Required<Pick<ClassValue, 'native'>>
 
@@ -242,6 +251,11 @@ function named<T extends ScriptFunction>(fn: T, name: string): T {
   fn.name = name
 
   return fn
+}
+
+// The module `import()` resolves relative specifiers against: the code's own module, none in scripts (D52).
+function referrerOf({ module }: Frame): string | null {
+  return module ? module.id : null
 }
 
 // ARRAY_PUSH: arr v → arr.
@@ -349,6 +363,8 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
   readonly hostContext: AccessContext
   /** promises and their jobs (D43) */
   readonly promises: Promises
+  /** what `import(specifier)` calls (D52): set by the interpreter, which owns the module registry */
+  moduleImporter: ((specifier: string, referrer: string | null) => PromiseObject) | null = null
   /** the job (microtask) queue: promise reactions and `await` continuations */
   private jobs: (() => void)[] = []
   /** running jobs: calls from them share one step budget */
@@ -400,8 +416,7 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
   private hostErrorValue(error: unknown): Value {
     if (!(error instanceof Error)) return this.interop.toScript(error)
 
-    const name = HOST_ERROR_NAMES.has(error.name) ? error.name : 'Error'
-    const object = this.errorObject(name, error.message) as ScriptObject
+    const object = this.errorObject(...hostErrorParts(error)) as ScriptObject
 
     object.props.set('cause', this.interop.toScript(error))
 
@@ -609,6 +624,28 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
       this.frames.length = 0
       this.stack.length = 0
     }
+  }
+
+  // `import(specifier)` (D52): relative specifiers resolve against the module of the code (null in scripts). Errors
+  // (a specifier whose toString() throws) reject the promise, as in JS.
+  private importDynamic(frame: Frame, specifier: Value): PromiseObject {
+    const importer = this.moduleImporter
+    if (!importer) throw typeError('import() is not available here')
+
+    try {
+      return importer(toStringIn(this, specifier), referrerOf(frame))
+    } catch (e) {
+      return this.rejected(e)
+    }
+  }
+
+  private rejected(error: unknown): PromiseObject {
+    const { value, frames } = this.asThrow(error)
+    const promise = this.promises.create()
+
+    this.promises.reject(promise, value, frames)
+
+    return promise
   }
 
   /**
@@ -1538,6 +1575,7 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
           defineAccessor(stack[stack.length - 1] as ScriptObject, a, INDEX_ACCESSORS[code[ip - 1]], named(b as Closure, a))
           break
         case Op.LOAD_IMPORT: stack.push(readImport(frame, code[ip++])); break
+        case Op.IMPORT_DYNAMIC: stack[stack.length - 1] = this.importDynamic(frame, stack[stack.length - 1]); break
         case Op.LOAD_IMPLICIT: {
           const operands = { index: code[ip++], a: code[ip++], b: code[ip++] }
 

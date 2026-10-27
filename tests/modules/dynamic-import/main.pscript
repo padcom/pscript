@@ -1,0 +1,20 @@
+// import() (D52): a promise of the namespace; modules are evaluated once, on first import
+import { describe } from './shapes/describe'
+
+print('main starts')
+const { area } = await import('./shapes/circle')
+print(area(1))
+print(await describe('square'))
+print(await describe('circle'))
+
+const again = await import('./shapes/circle.pscript')
+print(again.area == area)
+
+try {
+  await import('./shapes/failing')
+} catch (e) {
+  print('caught', e.message)
+}
+
+await import('./shapes/square').then(({ side }) => print('then', side))
+print('main ends')

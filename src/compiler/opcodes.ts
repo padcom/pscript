@@ -24,6 +24,7 @@ export enum Op {
   INIT_GLOBAL,
   TYPEOF_GLOBAL,
   LOAD_IMPORT,
+  IMPORT_DYNAMIC,
   PUSH_ENV,
   POP_ENV,
   COPY_ENV,
@@ -184,6 +185,7 @@ export const OPCODES: Readonly<Record<Op, OpcodeInfo>> = {
   [Op.INIT_GLOBAL]: info('k', 'v →'),
   [Op.TYPEOF_GLOBAL]: info('k', '→ s'), // typeof undeclared
   [Op.LOAD_IMPORT]: info('i', '→ v'), // live binding through frame.module.importCells[i]; TDZ check
+  [Op.IMPORT_DYNAMIC]: info('', 'specifier → promise'), // `import(x)` (D52): loads, links and evaluates; the namespace
   [Op.PUSH_ENV]: info('size', '→'), // new block environment
   [Op.POP_ENV]: info('', '→'),
   [Op.COPY_ENV]: info('', '→'), // per-iteration copy of the innermost env (for-let)

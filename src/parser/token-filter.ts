@@ -49,7 +49,6 @@ interface Token {
 /** Module syntax that PScript does not support, keyed by what follows `import` / `export` (§4.7.1). */
 const UNSUPPORTED_IMPORTS: Record<string, string> = {
   'IDENT': "default imports are not supported; use named imports: import { name } from '…'",
-  '(': 'import() is not supported',
   '.': 'import.meta is not supported',
 }
 const UNSUPPORTED_EXPORTS: Record<string, string> = {
@@ -93,6 +92,11 @@ const NAME_TOKENS = new Set(['IDENT', 'STRING', 'NUMBER'])
 
 function isName(name: string): boolean {
   return NAME_TOKENS.has(name) || KEYWORD_TOKENS.has(name)
+}
+
+// `import …` and `export { … }` start clauses with contextual keywords; `import(specifier)` is an expression (D52).
+function isModuleClause(kind: 'import' | 'export', next: Token): boolean {
+  return (kind === 'import' && next.name !== '(') || next.name === '{'
 }
 
 /** Context-dependent renaming when a token is handed to the parser. */
@@ -592,7 +596,7 @@ export class TokenFilter {
     const unsupported = kind === 'import' ? UNSUPPORTED_IMPORTS[next.name] : UNSUPPORTED_EXPORTS[next.text]
 
     if (unsupported) this.state.fail(unsupported, next.loc)
-    this.moduleClause = kind === 'import' || next.name === '{'
+    this.moduleClause = isModuleClause(kind, next)
   }
 
   moduleEnd() {

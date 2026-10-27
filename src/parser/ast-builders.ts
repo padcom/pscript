@@ -30,6 +30,7 @@ import type {
   FunctionDeclaration,
   FunctionExpression,
   Identifier,
+  ImportExpression,
   Literal,
   MemberExpression,
   NewExpression,
@@ -221,6 +222,10 @@ export const builders = {
 
   member(object: Expression, property: Expression, computed: boolean, loc: JisonLoc): MemberExpression {
     return { type: 'MemberExpression', object, property, computed, optional: false, loc: toLoc(loc) }
+  },
+
+  importExpression(source: Expression, loc: JisonLoc): ImportExpression {
+    return { type: 'ImportExpression', source, options: null, loc: toLoc(loc) }
   },
 
   // `[k]: v`, `[k]() {}`, `get [k]() {}` in an object literal (D48).
