@@ -31,7 +31,35 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M22 | Modules II | done (2026-10-27) |
 | M23 | Host interop | done (2026-10-27) |
 | M24 | Limits and polish | done (2026-10-27) |
-| M25 | Docs and benchmark | next |
+| M25 | Docs and benchmark | done (2026-10-27) — v1 complete |
+
+## M25 — Docs and benchmark
+
+Done: `README.md` (usage, embedding API, interop notes incl. "not a security sandbox", layout, link to the language
+reference), `docs/LANGUAGE.md` (user reference derived from §4, with "Differences from JavaScript"), `npm run bench`
+(`bench/run.js`: builds, then runs the §6.5 cases — fib(27), a loop of 1e6, 1e5 object allocations, array
+map/filter — plus classes and string building, in PScript and as plain JavaScript). The examples and claims in both
+documents were checked against the implementation.
+
+Baseline (median of 3 rounds, Node 26, this machine):
+
+```
+case                          pscript ms     js ms   ratio  result
+fib(27)                            95.29      1.11     86x  196418
+loop of 1e6                       130.93      0.94    139x  2999997
+1e5 object allocations             30.70      0.44     69x  99999
+array map/filter                   39.14      1.30     30x  50000
+classes and methods                43.39      0.73     59x  90000
+string building                     5.02      0.08     61x  20000
+```
+
+Notes:
+
+- The docs describe the implementation, including where it differs from earlier drafts of the plan: primitives
+  convert in arithmetic as in JavaScript (only objects are rejected, D5), mixing `??` with `&&`/`||` is accepted,
+  numeric separators and destructuring (in `catch` and `for…of`) are not supported, and the stdlib lacks
+  `Object.fromEntries`, `Object.isFrozen` and `Array.prototype.findLastIndex`.
+- No performance work (H3 fast paths) was done; the baseline is for future comparison.
 
 ## M24 — Limits and polish
 
