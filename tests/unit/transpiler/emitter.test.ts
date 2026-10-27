@@ -14,6 +14,13 @@ describe('psc: spread and optional chaining (D46, D47)', () => {
     ['a?.b.c?.[d]?.(e)', 'a?.b.c?.[d]?.(e);'],
     ['(a?.b).c', '(a?.b).c;'],
     ['x = a?.b ?? c', 'x = a?.b ?? c;'],
+    ['(a | b) & c', '(a | b) & c;'],
+    ['a | b & c ^ d', 'a | b & c ^ d;'],
+    ['(a + b) << c >>> d', 'a + b << c >>> d;'],
+    ['a << (b + c)', 'a << b + c;'],
+    ['(a << b) + c', '(a << b) + c;'],
+    ['x >>>= ~a', 'x >>>= ~a;'],
+    ['x = 0xff | 0b1 | 0o7', 'x = 0xff | 0b1 | 0o7;'],
   ])('%s', (source, expected) => {
     expect(js(`let a, b, c, d, e, f, o, x;\n${source}`).split('\n')[1]).toBe(expected)
   })

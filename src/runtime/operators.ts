@@ -174,18 +174,25 @@ export function add(a: Value, b: Value): Value {
   return globalThis.Number(a) + globalThis.Number(b)
 }
 
-export type ArithmeticOperator = '-' | '*' | '/' | '%' | '**'
+export type ArithmeticOperator = '-' | '*' | '/' | '%' | '**' | '&' | '|' | '^' | '<<' | '>>' | '>>>'
 
+// Bitwise operators (D50) convert to 32-bit integers, as JS's own do.
 const ARITHMETIC: Record<ArithmeticOperator, (a: number, b: number) => number> = {
   '-': (a, b) => a - b,
   '*': (a, b) => a * b,
   '/': (a, b) => a / b,
   '%': (a, b) => a % b,
   '**': (a, b) => a ** b,
+  '&': (a, b) => a & b,
+  '|': (a, b) => a | b,
+  '^': (a, b) => a ^ b,
+  '<<': (a, b) => a << b,
+  '>>': (a, b) => a >> b,
+  '>>>': (a, b) => a >>> b,
 }
 
 /**
- * `- * / % **` on primitives.
+ * `- * / % **` and the bitwise operators on primitives.
  *
  * @param op operator
  * @param a left operand

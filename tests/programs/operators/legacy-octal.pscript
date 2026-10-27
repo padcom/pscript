@@ -1,0 +1,2 @@
+// @pscript-only: legacy octal literals are not allowed
+print(017)

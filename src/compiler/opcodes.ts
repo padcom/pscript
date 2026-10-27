@@ -41,6 +41,13 @@ export enum Op {
   DIV,
   MOD,
   POW,
+  BIT_AND,
+  BIT_OR,
+  BIT_XOR,
+  SHL,
+  SHR,
+  USHR,
+  BIT_NOT,
   EQ,
   NE,
   LT,
@@ -194,6 +201,13 @@ export const OPCODES: Readonly<Record<Op, OpcodeInfo>> = {
   [Op.DIV]: info('', 'a b → r'),
   [Op.MOD]: info('', 'a b → r'),
   [Op.POW]: info('', 'a b → r'),
+  [Op.BIT_AND]: info('', 'a b → r'), // bitwise operators (D50): ToInt32 of primitives; objects → TypeError (D5)
+  [Op.BIT_OR]: info('', 'a b → r'),
+  [Op.BIT_XOR]: info('', 'a b → r'),
+  [Op.SHL]: info('', 'a b → r'),
+  [Op.SHR]: info('', 'a b → r'),
+  [Op.USHR]: info('', 'a b → r'),
+  [Op.BIT_NOT]: info('', 'a → r'),
   [Op.EQ]: info('', 'a b → bool'), // strict, no coercion (D1)
   [Op.NE]: info('', 'a b → bool'), // strict, no coercion (D1)
   [Op.LT]: info('', 'a b → bool'),

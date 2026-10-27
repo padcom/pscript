@@ -1,0 +1,2 @@
+// a binary literal with a wrong digit
+print(0b102)

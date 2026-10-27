@@ -20,6 +20,7 @@ TEMPLATE_TEXT   (?:[^`\\$]|\\[\s\S]|\$(?!\{))*
 "/*"[\s\S]*?"*/"                                return yy.blockComment(yytext)
 "/*"                                            yy.lexError("Unterminated comment", yylloc)
 
+0[xX][0-9a-fA-F]+|0[bB][01]+|0[oO][0-7]+         return yy.numberToken(yytext, yylloc, this._input)
 {NUMBER}                                        return yy.numberToken(yytext, yylloc, this._input)
 
 \"([^"\\\r\n\u2028\u2029]|\\(\r\n|[\s\S]))*\"     return 'STRING'
@@ -41,10 +42,19 @@ TEMPLATE_TEXT   (?:[^`\\$]|\\[\s\S]|\$(?!\{))*
 "..."                                           return '...'
 \?\.(?![0-9])                                   return '?.'
 "=>"                                            return '=>'
+">>>="                                          return '>>>='
+">>>"                                           return '>>>'
+">>="                                           return '>>='
+"<<="                                           return '<<='
+">>"                                            return '>>'
+"<<"                                            return '<<'
 "**="                                           return '**='
 "&&="                                           return '&&='
 "||="                                           return '||='
 "??="                                           return '??='
+"&="                                            return '&='
+"|="                                            return '|='
+"^="                                            return '^='
 "+="                                            return '+='
 "-="                                            return '-='
 "*="                                            return '*='
@@ -80,6 +90,10 @@ TEMPLATE_TEXT   (?:[^`\\$]|\\[\s\S]|\$(?!\{))*
 "<"                                             return '<'
 ">"                                             return '>'
 "!"                                             return '!'
+"&"                                             return '&'
+"|"                                             return '|'
+"^"                                             return '^'
+"~"                                             return '~'
 
 <<EOF>>                                         return 'EOF'
 .                                               yy.lexError("Unexpected character '" + yytext + "'", yylloc)
@@ -630,6 +644,7 @@ YieldExpression
 
 AssignmentOperator
   : '=' | '+=' | '-=' | '*=' | '/=' | '%=' | '**=' | '&&=' | '||=' | '??='
+  | '&=' | '|=' | '^=' | '<<=' | '>>=' | '>>>='
   ;
 
 ConditionalExpression
@@ -652,9 +667,28 @@ OrExpression
   ;
 
 AndExpression
-  : EqualityExpression
-  | AndExpression '&&' EqualityExpression
+  : BitwiseOrExpression
+  | AndExpression '&&' BitwiseOrExpression
     { $$ = yy.logical($2, $1, $3, @$) }
+  ;
+
+/* Bitwise operators (D50) bind tighter than && and looser than ==, as in JS: `a & b == c` is `a & (b == c)`. */
+BitwiseOrExpression
+  : BitwiseXorExpression
+  | BitwiseOrExpression '|' BitwiseXorExpression
+    { $$ = yy.binary($2, $1, $3, @$) }
+  ;
+
+BitwiseXorExpression
+  : BitwiseAndExpression
+  | BitwiseXorExpression '^' BitwiseAndExpression
+    { $$ = yy.binary($2, $1, $3, @$) }
+  ;
+
+BitwiseAndExpression
+  : EqualityExpression
+  | BitwiseAndExpression '&' EqualityExpression
+    { $$ = yy.binary($2, $1, $3, @$) }
   ;
 
 EqualityExpression
@@ -666,19 +700,29 @@ EqualityExpression
   ;
 
 RelationalExpression
-  : AdditiveExpression
-  | RelationalExpression '<' AdditiveExpression
+  : ShiftExpression
+  | RelationalExpression '<' ShiftExpression
     { $$ = yy.binary($2, $1, $3, @$) }
-  | RelationalExpression '<=' AdditiveExpression
+  | RelationalExpression '<=' ShiftExpression
     { $$ = yy.binary($2, $1, $3, @$) }
-  | RelationalExpression '>' AdditiveExpression
+  | RelationalExpression '>' ShiftExpression
     { $$ = yy.binary($2, $1, $3, @$) }
-  | RelationalExpression '>=' AdditiveExpression
+  | RelationalExpression '>=' ShiftExpression
     { $$ = yy.binary($2, $1, $3, @$) }
-  | RelationalExpression INSTANCEOF AdditiveExpression
+  | RelationalExpression INSTANCEOF ShiftExpression
     { $$ = yy.binary('instanceof', $1, $3, @$) }
-  | RelationalExpression IN AdditiveExpression
+  | RelationalExpression IN ShiftExpression
     { $$ = yy.binary('in', $1, $3, @$) }
+  ;
+
+ShiftExpression
+  : AdditiveExpression
+  | ShiftExpression '<<' AdditiveExpression
+    { $$ = yy.binary($2, $1, $3, @$) }
+  | ShiftExpression '>>' AdditiveExpression
+    { $$ = yy.binary($2, $1, $3, @$) }
+  | ShiftExpression '>>>' AdditiveExpression
+    { $$ = yy.binary($2, $1, $3, @$) }
   ;
 
 AdditiveExpression
@@ -707,6 +751,8 @@ UnaryExpression
   | '-' UnaryExpression
     { $$ = yy.unary($1, $2, @$) }
   | '+' UnaryExpression
+    { $$ = yy.unary($1, $2, @$) }
+  | '~' UnaryExpression
     { $$ = yy.unary($1, $2, @$) }
   | TYPEOF UnaryExpression
     { $$ = yy.unary('typeof', $2, @$) }

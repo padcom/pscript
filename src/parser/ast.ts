@@ -724,7 +724,7 @@ export interface UnaryExpression extends NodeBase {
   /** node type */
   type: 'UnaryExpression'
   /** the operator */
-  operator: '!' | '-' | '+' | 'typeof' | 'void' | 'delete'
+  operator: '!' | '-' | '+' | '~' | 'typeof' | 'void' | 'delete'
   /** always prefix */
   prefix: true
   /** the operand */
@@ -767,7 +767,9 @@ export interface UpdateExpression extends NodeBase {
   argument: Identifier | MemberExpression
 }
 
-export type BinaryOperator = '+' | '-' | '*' | '/' | '%' | '**' | '==' | '!=' | '<' | '<=' | '>' | '>=' | 'instanceof' | 'in'
+export type BinaryOperator
+  = '+' | '-' | '*' | '/' | '%' | '**' | '==' | '!=' | '<' | '<=' | '>' | '>=' | 'instanceof' | 'in'
+    | '&' | '|' | '^' | '<<' | '>>' | '>>>'
 
 /**
  * Arithmetic, comparison, `instanceof` and `in`.
@@ -797,7 +799,8 @@ export interface LogicalExpression extends NodeBase {
   right: Expression
 }
 
-export type AssignmentOperator = '=' | '+=' | '-=' | '*=' | '/=' | '%=' | '**=' | '&&=' | '||=' | '??='
+export type AssignmentOperator
+  = '=' | '+=' | '-=' | '*=' | '/=' | '%=' | '**=' | '&&=' | '||=' | '??=' | '&=' | '|=' | '^=' | '<<=' | '>>=' | '>>>='
 
 /**
  * Simple and compound assignment.

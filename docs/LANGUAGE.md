@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D49).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D50).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -91,7 +91,9 @@ Precedence and associativity follow JavaScript, with these rules:
 - Optional chaining `a?.b`, `a?.[k]`, `f?.(x)` works as in JavaScript: when the value before `?.` is `null` or
   `undefined`, the rest of the chain is skipped and the result is `undefined`. In a class body, call an implicit
   member optionally as `this.m?.()`.
-- Not supported: bitwise operators and comma expressions.
+- Bitwise operators `& | ^ ~ << >> >>>` and their compound assignments work as in JavaScript (32-bit integers,
+  JavaScript precedence: `a & b == c` is `a & (b == c)`); like arithmetic, they reject objects.
+- Not supported: comma expressions.
 
 ## Statements
 
@@ -399,7 +401,6 @@ Values cross the boundary by reference and identity is kept in both directions.
 | ASI quirks (`(`/`[` continue the previous line) | A line starting with `(` or `[` starts a new statement |
 | `delete` leaves holes in arrays, ignores frozen objects | `delete` works on plain objects only; elsewhere `TypeError` |
 | `var`, labels, `with`, `for…in` | Not available |
-| Bitwise operators | Not available (yet) |
 | Computed keys in classes and destructuring patterns | Not available (object literals only) |
 | Tagged templates | Not available |
 | Generators give `undefined` for missing values | Generators give `null` (`yield`, `next()`, finished steps) |

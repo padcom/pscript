@@ -1,0 +1,4 @@
+// @pscript-only: bitwise operators do not convert objects (D5)
+try { [1] | 0 } catch (e) { print(e.name, e.message) }
+try { ~{} } catch (e) { print(e.name, e.message) }
+try { let o = {}; o <<= 1 } catch (e) { print(e.name, e.message) }

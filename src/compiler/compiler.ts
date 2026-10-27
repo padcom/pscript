@@ -185,6 +185,12 @@ const ARITHMETIC_OPS: Partial<Record<string, Op>> = {
   '/': Op.DIV,
   '%': Op.MOD,
   '**': Op.POW,
+  '&': Op.BIT_AND,
+  '|': Op.BIT_OR,
+  '^': Op.BIT_XOR,
+  '<<': Op.SHL,
+  '>>': Op.SHR,
+  '>>>': Op.USHR,
 }
 
 const BINARY_OPS: Record<BinaryExpression['operator'], Op> = {
@@ -194,6 +200,12 @@ const BINARY_OPS: Record<BinaryExpression['operator'], Op> = {
   '/': Op.DIV,
   '%': Op.MOD,
   '**': Op.POW,
+  '&': Op.BIT_AND,
+  '|': Op.BIT_OR,
+  '^': Op.BIT_XOR,
+  '<<': Op.SHL,
+  '>>': Op.SHR,
+  '>>>': Op.USHR,
   '==': Op.EQ,
   '!=': Op.NE,
   '<': Op.LT,
@@ -208,6 +220,7 @@ const UNARY_OPS: Record<UnaryExpression['operator'], Op> = {
   '!': Op.NOT,
   '-': Op.NEG,
   '+': Op.POS,
+  '~': Op.BIT_NOT,
   'typeof': Op.TYPEOF,
   'void': Op.POP, // followed by UNDEFINED
   'delete': Op.DELETE_PROP, // see deleteExpression

@@ -47,6 +47,7 @@ const PSCRIPT_ONLY_DIFFERENCES: Record<string, string> = {
   'objects/printing.pscript': '`print` formatting (D18)',
   'optional-chaining/pscript-specific.pscript': 'closed instances are not enforced at runtime; `print` formatting',
   'spread/pscript-specific.pscript': 'spread arguments are not arity- or named-parameter-checked at runtime; JS messages',
+  'operators/bitwise-objects.pscript': 'operators converting objects (D5)',
   'operators/pscript-specific.pscript': 'operators converting objects (D5); `print` formatting',
   'stdlib/pscript-specific.pscript': 'stdlib differences (callback arity, `print` formatting)',
 }

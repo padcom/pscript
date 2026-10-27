@@ -107,6 +107,7 @@ Each feature in this document has one of these tags:
 | R36 | Optional chaining `a?.b`, `a?.[k]`, `f?.(x)` (D47) | 4.4.19 |
 | R37 | Computed keys in object literals: `{ [k]: v, [k]() {}, get [k]() {} }` (D48) | 4.4.6 |
 | R38 | `Map` and `Set` (D49) | 4.6.6 |
+| R39 | Bitwise operators and hexadecimal, binary and octal literals (D50) | 4.1.4, 4.4.3 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -126,7 +127,7 @@ Each feature in this document has one of these tags:
 
 ### 1.5 COULD (Phase 3+)
 
-~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), the comma operator in `for` headers, ~~`do … while`, `switch`~~ (done, D41), `for … in`, bitwise operators, hex/binary/octal literals, ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, ~~Map/Set~~ (done, D49), a CLI/REPL, a disassembler CLI, source maps for errors.
+~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), ~~computed keys `{ [k]: v }`~~ (done, D48), the comma operator in `for` headers, ~~`do … while`, `switch`~~ (done, D41), `for … in`, ~~bitwise operators, hex/binary/octal literals~~ (done, D50), ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, ~~Map/Set~~ (done, D49), a CLI/REPL, a disassembler CLI, source maps for errors.
 
 ### 1.6 WON'T (v1)
 
@@ -220,6 +221,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D47 | Optional chaining | **As in JavaScript**: `a?.b`, `a?.[k]`, `f?.(x)` and `o.m?.(x)`; when the value before `?.` is `null` or `undefined`, the rest of the chain (including its arguments) is skipped and the chain gives **`undefined`** (not `null`, D37: like a missing property, it is JavaScript's "nothing read"). Only the base is tested: an undeclared member of a class instance is still an error (D36). A chain is not an assignment, `++`/`--` or `delete` target. Inside a class body, an optional call of a bare name that may be an implicit member (`m?.()`, D33) is a `SyntaxError` (write `this.m?.()`). `?.` followed by a digit is `?` and a number, as in JS. Details in §4.4.19 | no |
 | D48 | Computed keys | **In object literals, as in JavaScript**: `[k]: v`, `[k]() {}`, `*[k]() {}`, `async [k]() {}`, `get [k]() {}`, `set [k](v) {}`. The key is evaluated before its value and converted like `o[k]` (ToString); later keys replace earlier ones; an anonymous function, arrow, class, method or accessor defined there is named after the key at runtime. **Not in classes** (class members are declared, D29, D36) **nor in destructuring patterns** (`SyntaxError`). Details in §4.4.6 | no |
 | D49 | `Map` and `Set` | **Final built-in classes with the JavaScript interface** (like `Promise`, D43): `new Map(entries?)`, `get`, `set`, `has`, `delete`, `clear`, `forEach`, `keys`, `values`, `entries`, `size`; `new Set(values?)`, `add`, `has`, `delete`, `clear`, `forEach`, `keys`, `values`, `entries`, `size`. Keys compare by SameValueZero (host proxies by their host object); iteration is in insertion order and live. Deviations: **a missing entry is `null`** (D37, like `find`), the classes are final and instances closed (D29, D36), `keys()` / `values()` / `entries()` return generator-like iterator objects (print as `[Generator]`), and the ES2025 set operations (`union`, …) and `Map.groupBy` are not provided. They print as `Map(2) {"a" => 1, …}` / `Set(2) {1, 2}`. Details in §4.6.6 | minor (null for missing entries, final) |
+| D50 | Bitwise operators, `0x` / `0b` / `0o` literals | **As in JavaScript**: `& \| ^ ~ << >> >>>` and `&= \|= ^= <<= >>= >>>=`, with JS precedence (shifts between `+` and `<`; `&`, `^`, `\|` between `==` and `&&`, so `a & b == c` is `a & (b == c)`), converting primitives to 32-bit integers. Object operands are a `TypeError` (D5). Literals `0xFF`, `0b1010`, `0o17` (either case); legacy octal (`017`) and numeric separators stay errors. Details in §4.1.4, §4.4.3 | no |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -389,7 +391,7 @@ Examples: `0`, `42`, `3.14`, `.5`, `5.`, `1e10`, `1E-7`, `6.022e+23`.
 - Numeric value: `Number(text)`.
 - Leading zeros such as `012` → `SyntaxError` (avoids legacy octal). A lone `0` and `0.x` are fine.
 - An identifier character right after a number (`3in`, `1e`) → `SyntaxError`.
-- COULD: `0x`, `0b`, `0o`, numeric separators `1_000`.
+- Hexadecimal `0xFF`, binary `0b1010` and octal `0o17` literals (D50; prefix in either case). A digit the base does not have (`0b2`) is the "identifier right after a number" error. COULD: numeric separators `1_000`.
 
 #### 4.1.5 Strings (R1)
 
@@ -404,14 +406,15 @@ Examples: `0`, `42`, `3.14`, `.5`, `5.`, `1e10`, `1E-7`, `6.022e+23`.
 
 ```
 { } ( ) [ ] ; , . ... ? ?. : =>
-= += -= *= /= %= **= &&= ||= ??=
+= += -= *= /= %= **= &&= ||= ??= &= |= ^= <<= >>= >>>=
 + - * / % ** ++ --
 == != < <= > >=
 ! && || ??
+& | ^ ~ << >> >>>   (bitwise, D50)
 ` ${            (template delimiters, §4.1.8)
 ```
 
-Bitwise operators are COULD. With no regex literals, `/` is always division.
+With no regex literals, `/` is always division.
 
 #### 4.1.7 Token locations
 
@@ -711,17 +714,21 @@ As in JS. Falsy values: `false`, `0`, `-0`, `NaN`, `''`, `null`, `undefined`. Ev
 | Level | Operators | Assoc |
 |---|---|---|
 | 1 | `=>` (arrow) | right |
-| 2 | `= += -= *= /= %= **= &&= \|\|= ??=` | right |
+| 2 | `= += -= *= /= %= **= &&= \|\|= ??= &= \|= ^= <<= >>= >>>=` | right |
 | 3 | `? :` | right |
 | 4 | `??` | left |
 | 5 | `\|\|` | left |
 | 6 | `&&` | left |
+| 6a | `\|` | left |
+| 6b | `^` | left |
+| 6c | `&` | left |
 | 7 | `== !=` | left |
 | 8 | `< <= > >= instanceof in` | left |
+| 8a | `<< >> >>>` | left |
 | 9 | `+ -` | left |
 | 10 | `* / %` | left |
 | 11 | `**` | right |
-| 12 | prefix `! - + typeof void delete await ++ --` | right |
+| 12 | prefix `! - + ~ typeof void delete await ++ --` | right |
 | 13 | postfix `++ --` | — |
 | 14 | `new`, call, `.`, `[]` | left |
 
@@ -733,6 +740,7 @@ Semantics:
   - if either operand is a string, convert both with `ToString` and concatenate (objects use their `toString()` method, see below);
   - else, if both are primitives, `ToNumber` both and add;
   - else (an object, array or function with no string operand) → `TypeError` (D5).
+- Bitwise `& | ^ ~ << >> >>>` (D50): `ToInt32` (`>>>`: `ToUint32`) of primitives as in JS; object operands → `TypeError` (D5).
 - `- * / % **`: `ToNumber` on primitives as in JS (`'3' * 2 == 6`, `null + 1 == 1`, `undefined + 1` is `NaN`). Object operands → `TypeError` (D5).
 - `== !=` (D1, strict like JS `===`): no coercion. Different types → not equal. Numbers: IEEE comparison (`NaN != NaN`, `0 == -0`). Strings: by content. `null == null`, `undefined == undefined`, but `null != undefined`. Objects, arrays and functions: by identity (host proxies compare by the identity of the wrapped object, §5.8.1). `===` and `!==` are not operators: the lexer reports `SyntaxError: '===' is not supported; use '=='` (and likewise for `!==`).
 - `< <= > >=`: both strings → lexicographic comparison by code unit. Otherwise `ToNumber` on both primitives. Object, array or function operand → `TypeError` (D5).
@@ -2010,6 +2018,8 @@ export interface ModuleRecord {
 | `GET_SUPER` | k(name) | → v | lookup on the home object's parent prototype, `this` unaffected |
 | `GET_SUPER_INDEX` | — | key → v | |
 | `ADD` `SUB` `MUL` `DIV` `MOD` `POW` | — | a b → r | `runtime.operators` |
+| `BIT_AND` `BIT_OR` `BIT_XOR` `SHL` `SHR` `USHR` | — | a b → r | bitwise operators (D50) |
+| `BIT_NOT` | — | a → r | `~` (D50) |
 | `EQ` `NE` `LT` `LE` `GT` `GE` | — | a b → bool | EQ/NE strict, no coercion (D1) |
 | `INSTANCEOF` `IN` | — | a b → bool | `INSTANCEOF` accepts classes and interfaces (D32); `IN` applies the access rules (§4.5.2) |
 | `NEG` `POS` `NOT` `TYPEOF` | — | a → r | `POS` = ToNumber |

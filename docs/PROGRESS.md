@@ -49,6 +49,19 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L8 | Optional chaining (D47) | done (2026-10-27) |
 | L9 | Computed keys (D48) | done (2026-10-27) |
 | L10 | `Map` and `Set` (D49) | done (2026-10-27) |
+| L11 | Bitwise operators, `0x` / `0b` / `0o` literals (D50) | done (2026-10-27) |
+
+## L11 — Bitwise operators and `0x` / `0b` / `0o` literals (D50)
+
+Design in `docs/PLAN.md` D50 (R39), §4.1.4, §4.4.3; user docs in `docs/LANGUAGE.md` → Lexical structure, Operators.
+(`LANGUAGE.md` already listed the literals; the lexer now has them.)
+
+- **Lexer / grammar**: the literal rule before `{NUMBER}`; the operators longest first; `BitwiseOr/Xor/And` levels
+  between `&&` and `==`, `ShiftExpression` between relational and additive; `~` prefix. Bitwise operators and their
+  compound forms continue a line (§4.2.1).
+- **Compiler / VM**: `BIT_AND` `BIT_OR` `BIT_XOR` `SHL` `SHR` `USHR` `BIT_NOT`; `arithmetic()` handles them (D5 check).
+- **psc**: precedence levels for the new operators.
+- **Tests**: `tests/programs/operators/bitwise*.pscript`, `legacy-octal`, `bad-binary`; emitter unit tests.
 
 ## L10 — `Map` and `Set` (D49)
 

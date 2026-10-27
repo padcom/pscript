@@ -16,6 +16,7 @@ import {
   toNumber,
   truthy,
   typeOf,
+  type ArithmeticOperator,
 } from '@/runtime/operators'
 import { formatNested } from '@/runtime/format'
 import { DONE, GeneratorIterator, ScriptIterator, getIterator } from '@/runtime/iterators'
@@ -221,6 +222,16 @@ function spreadArgc(stack: Value[], argc: number): number {
   for (const item of items) stack.push(item)
 
   return items.length
+}
+
+/** The operator of each bitwise instruction (D50). */
+const BITWISE: Record<number, ArithmeticOperator> = {
+  [Op.BIT_AND]: '&',
+  [Op.BIT_OR]: '|',
+  [Op.BIT_XOR]: '^',
+  [Op.SHL]: '<<',
+  [Op.SHR]: '>>',
+  [Op.USHR]: '>>>',
 }
 
 /** The accessor half DEFINE_GETTER_INDEX / DEFINE_SETTER_INDEX define (D48). */
@@ -1348,6 +1359,16 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
         case Op.INC: stack[stack.length - 1] = (stack[stack.length - 1] as number) + 1; break
         case Op.DEC: stack[stack.length - 1] = (stack[stack.length - 1] as number) - 1; break
         case Op.NEG: stack[stack.length - 1] = -toNumber(stack[stack.length - 1], '-'); break
+        case Op.BIT_NOT: stack[stack.length - 1] = ~toNumber(stack[stack.length - 1], '~'); break
+        case Op.BIT_AND:
+        case Op.BIT_OR:
+        case Op.BIT_XOR:
+        case Op.SHL:
+        case Op.SHR:
+        case Op.USHR:
+          b = stack.pop()
+          stack[stack.length - 1] = arithmetic(BITWISE[code[ip - 1]], stack[stack.length - 1], b)
+          break
         case Op.POS:
           a = stack[stack.length - 1]
           if (typeof a !== 'number') stack[stack.length - 1] = toNumber(a, '+')

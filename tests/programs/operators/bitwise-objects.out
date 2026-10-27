@@ -1,0 +1,3 @@
+TypeError Cannot apply '|' to array and number
+TypeError Cannot apply '~' to object
+TypeError Cannot apply '<<' to object and number
