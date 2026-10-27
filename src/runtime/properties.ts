@@ -31,9 +31,16 @@ export function propertyKey(key: Value): string {
 
 const INTEGER_KEY = /^-?(?:0|[1-9]\d*)$/
 
+// Integer keys start with a digit or '-': a cheap test before the regular expression (`xs.push` is common).
+function mayBeIndex(key: string): boolean {
+  const first = key.charCodeAt(0)
+
+  return first === 45 || (first >= 48 && first <= 57)
+}
+
 // The integer an index-like key denotes (negative too), or null for other keys.
 function indexOf(key: string): number | null {
-  return INTEGER_KEY.test(key) ? globalThis.Number(key) : null
+  return mayBeIndex(key) && INTEGER_KEY.test(key) ? globalThis.Number(key) : null
 }
 
 // `xs[10]`, `xs[-1]` and `'abc'[5]` are errors, not undefined (D37).

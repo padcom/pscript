@@ -313,6 +313,32 @@ function write(access: MemberAccess, value: Value) {
   writePublic(access, value)
 }
 
+// Whether the home class or a class enclosing it declares a private member `key`: then the full lookup decides.
+function privateInScope(home: Class | null, key: string): boolean {
+  for (let cls = home; cls; cls = cls.outerClass) {
+    if (cls.privateIndex.has(key)) return true
+  }
+
+  return false
+}
+
+function isPlain(entry: MemberEntry, half: 'get' | 'set'): boolean {
+  return entry.kind !== 'accessor' && halfAccess(entry, half) !== 'protected'
+}
+
+// The common case, without a MemberAccess: a field or method of an instance that needs no access check.
+function plainEntry(ctx: AccessContext, object: ScriptObject, key: string, half: 'get' | 'set'): MemberEntry | null {
+  const entry = (object.klass as Class).memberIndex.get(key)
+  if (!entry || !isPlain(entry, half)) return null
+
+  return privateInScope(ctx.homeClass, key) ? null : entry
+}
+
+// A declared field reads null until initialised (D37).
+function fieldOf(object: ScriptObject, key: string): Value {
+  return object.props.has(key) ? object.props.get(key) as Value : null
+}
+
 /**
  * Reads a member of a class instance (§4.5.3).
  *
@@ -322,6 +348,9 @@ function write(access: MemberAccess, value: Value) {
  * @returns the value
  */
 export function getInstanceMember(ctx: AccessContext, object: ScriptObject, key: string): Value {
+  const entry = plainEntry(ctx, object, key, 'get')
+  if (entry) return entry.kind === 'method' ? entry.fn as Value : fieldOf(object, key)
+
   return read(new MemberAccess(ctx, object, key, false))
 }
 
@@ -347,7 +376,13 @@ export function getClassMember(ctx: AccessContext, cls: Class, key: string): Val
  * @param value the new value
  */
 export function setInstanceMember(ctx: AccessContext, object: ScriptObject, key: string, value: Value) {
-  write(new MemberAccess(ctx, object, key, false), value)
+  if (plainEntry(ctx, object, key, 'set')?.kind !== 'field') {
+    write(new MemberAccess(ctx, object, key, false), value)
+
+    return
+  }
+  if (object.frozen) throw typeError(`Cannot assign to read only property '${key}' of object`)
+  object.props.set(key, value)
 }
 
 /**

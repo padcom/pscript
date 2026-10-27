@@ -48,7 +48,7 @@ describe('compiling function names', () => {
 
 describe('member calls (§5.5)', () => {
   it('compiles o.m(x) as <o> DUP GET_PROP m <x> CALL_METHOD 1', () => {
-    expect(ops('o.m(x)').slice(3, 9)).toEqual(['LOAD_GLOBAL', 'DUP', 'GET_PROP', 'LOAD_GLOBAL', 'CALL_METHOD', 'STORE'])
+    expect(ops('o.m(x)').slice(3, 9)).toEqual(['LOAD_GLOBAL', 'DUP', 'GET_PROP', 'LOAD_GLOBAL', 'CALL_METHOD', 'STORE_POP'])
   })
 
   it('compiles o[k](x) with GET_INDEX', () => {

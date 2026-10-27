@@ -32,11 +32,41 @@ export type Resolution
 export class Scope {
   readonly bindings = new Map<string, Binding>()
 
-  constructor(readonly parent: Scope | null, readonly kind: 'script' | 'function' | 'block') {}
+  /**
+   * Slots of this scope's environment: its own bindings and those of the blocks folded into it. The script's top
+   * environment starts with the completion value (its own bindings are script bindings, not slots).
+   */
+  slotCount: number
 
-  // A function always has its top environment; blocks get one only when they declare something (§5.5).
+  /** the scope whose environment holds this block's bindings (a folded block has no environment of its own) */
+  private host: Scope | null = null
+
+  constructor(readonly parent: Scope | null, readonly kind: 'script' | 'function' | 'block') {
+    this.slotCount = kind === 'script' ? 1 : 0
+  }
+
+  // A function always has its top environment; blocks get one only when they declare something and are not
+  // folded (§5.5).
   get hasEnv(): boolean {
-    return this.kind === 'function' || (this.kind === 'block' && this.bindings.size > 0)
+    return this.kind === 'function' || (this.kind === 'block' && this.bindings.size > 0 && !this.host)
+  }
+
+  // The scope whose environment is current here: the nearest one with an environment, or the script.
+  private get envScope(): Scope {
+    return this.hasEnv || !this.parent ? this : this.parent.envScope
+  }
+
+  /**
+   * Puts this block's bindings in the enclosing environment instead of a new one (K9). Only valid when nothing
+   * can tell the difference: no closure captures them and none is used before its declaration (whose stale value
+   * from an earlier iteration would then be read instead of a TDZ error). Call it before declaring anything.
+   */
+  fold() {
+    this.host = (this.parent as Scope).envScope
+  }
+
+  private allocateSlot(): number {
+    return this.host ? this.host.allocateSlot() : this.slotCount++
   }
 
   // Number of environments between this scope and the script's top environment.
@@ -55,7 +85,7 @@ export class Scope {
   declare(name: string, kind: BindingKind, signature?: Signature): Binding | null {
     if (this.bindings.has(name)) return null
 
-    const binding = { name, kind, slot: this.bindings.size, signature }
+    const binding = { name, kind, slot: this.kind === 'script' ? -1 : this.allocateSlot(), signature }
 
     this.bindings.set(name, binding)
 

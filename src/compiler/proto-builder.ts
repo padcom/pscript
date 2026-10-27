@@ -1,7 +1,7 @@
 // Accumulates the code, constants and locations of one FunctionProto (§5.4).
 import type { SourceLocation } from '@/parser/ast'
 import type { FunctionKind, FunctionProto } from './function-proto'
-import type { Op } from './opcodes'
+import { Op, POPPING_FORMS } from './opcodes'
 
 function constantKey(value: unknown): string | null {
   if (typeof value === 'string') return `s:${value}`
@@ -27,6 +27,11 @@ export class ProtoBuilder {
   readonly names: Record<number, string> = {}
   scopeSize = 0
   private constantIndex = new Map<string, number>()
+  private deferred: [number, () => number][] = []
+  /** offset of the last instruction */
+  private last = -1
+  /** the highest jump target patched so far */
+  private lastLabel = -1
 
   constructor(private header: ProtoHeader) {}
 
@@ -41,6 +46,7 @@ export class ProtoBuilder {
     const offset = this.code.length
 
     this.code.push(op, ...operands)
+    this.last = offset
 
     return offset
   }
@@ -63,6 +69,28 @@ export class ProtoBuilder {
    */
   patch(operand: number, target = this.code.length) {
     this.code[operand] = target
+    this.lastLabel = globalThis.Math.max(this.lastLabel, target)
+  }
+
+  /**
+   * Discards the value the last instruction pushed: turns it into its popping form (same length, so no offset
+   * moves) or appends a POP. A jump to the end of the code (where the POP would be) rules the former out.
+   */
+  emitPop() {
+    const popping = POPPING_FORMS[this.code[this.last] as Op]
+
+    if (popping === undefined || this.lastLabel === this.code.length) this.emit(Op.POP)
+    else this.code[this.last] = popping
+  }
+
+  /**
+   * Fills in an operand when the proto is built (e.g. an environment size that grows while its code is compiled).
+   *
+   * @param operand operand position
+   * @param value computes the operand
+   */
+  defer(operand: number, value: () => number) {
+    this.deferred.push([operand, value])
   }
 
   /**
@@ -112,6 +140,8 @@ export class ProtoBuilder {
    * @returns the FunctionProto
    */
   build(): FunctionProto {
+    for (const [operand, value] of this.deferred) this.code[operand] = value()
+
     return {
       ...this.header,
       paramCount: 0,

@@ -24,7 +24,7 @@ function instruction(proto: FunctionProto, offset: number): [string, number] {
   const values = proto.code.slice(offset + 1, offset + 1 + operands.length)
   const constantAt = operands.indexOf('k')
   const comment = constantAt < 0 ? '' : `  ; ${describeConstant(proto.constants[values[constantAt]])}`
-  const text = `${String(offset).padStart(4, '0')}  ${Op[op].padEnd(16)}${values.join(' ')}`.trimEnd()
+  const text = `${String(offset).padStart(4, '0')}  ${`${Op[op]} `.padEnd(16)}${values.join(' ')}`.trimEnd()
 
   return [text + comment, offset + 1 + operands.length]
 }

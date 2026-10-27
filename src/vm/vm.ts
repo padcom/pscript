@@ -1180,6 +1180,27 @@ export class VM implements AccessContext {
           else ip = code[ip]
           break
         case Op.HALT: return stack.pop()
+        case Op.STORE_POP: {
+          const env = lookupEnv(frame.env, code[ip++])
+          const slot = code[ip++]
+
+          initialized(env.slots[slot], frame)
+          env.slots[slot] = stack.pop()
+          break
+        }
+        case Op.STORE_GLOBAL_POP: this.storeGlobal(frame, code[ip++], stack.pop()); break
+        case Op.SET_PROP_POP:
+          b = stack.pop()
+          setProperty(this, stack.pop(), constants[code[ip++]] as string, b)
+          break
+        case Op.INCREMENT: {
+          const env = lookupEnv(frame.env, code[ip++])
+          const slot = code[ip++]
+
+          a = initialized(env.slots[slot], frame)
+          env.slots[slot] = (typeof a === 'number' ? a : toNumber(a, '+')) + code[ip++]
+          break
+        }
         default:
           throw new Error(`Opcode ${Op[code[frame.opStart]]} is not implemented`)
       }

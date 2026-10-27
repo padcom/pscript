@@ -32,7 +32,45 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | M23 | Host interop | done (2026-10-27) |
 | M24 | Limits and polish | done (2026-10-27) |
 | M25 | Docs and benchmark | done (2026-10-27) — v1 complete |
-| H3 | Performance | first pass (2026-10-27) |
+| H3 | Performance | second pass (2026-10-27) |
+
+## H3 — Performance (second pass)
+
+Semantics unchanged: `npm run check` green (963 tests; coverage 97.8% statements, 92.5% branches), plus the
+differential edge-case checks against the M25 build (now also block scopes, TDZ in loops, error locations of `x++`).
+
+```
+case                          pscript ms     js ms   ratio  result
+fib(27)                            42.53      1.09     39x  196418
+loop of 1e6                        39.87      0.95     42x  2999997
+1e5 object allocations             19.30      0.50     39x  99999
+array map/filter                   21.86      1.28     17x  50000
+classes and methods                18.22      0.72     25x  90000
+string building                     2.73      0.08     35x  20000
+```
+
+Typical code outside the benchmark set (1e6 iterations in a function, ms): loop with a `const` in its body 69 → 44,
+nested `if` block 61 → 43, flat loop body 54 → 43; 3e5 method calls 42 → 36; `for…of` over 3e5 items 54 → 42.
+
+What changed:
+
+- **Folded block environments (K9, §5.5)**: a block, `catch`, for-let head or for-of binding without closures, whose
+  bindings are not used before their declaration, takes slots of the enclosing environment instead of its own
+  (`Scope.fold()`, `canFold()` in `src/compiler/closures.ts`). `PUSH_ENV` sizes are filled in when the proto is built
+  (`ProtoBuilder.defer`), since folded blocks grow the environment after its `PUSH_ENV` is emitted.
+- **Superinstructions** (new opcodes after `HALT`, numbering of the others unchanged): `STORE_POP`,
+  `STORE_GLOBAL_POP` and `SET_PROP_POP` (`ProtoBuilder.emitPop` rewrites the store in place, so no offset moves; not
+  when a jump targets the `POP`), and `INCREMENT depth slot ±1` for an unused postfix `x++` / `x--` of a lexical
+  binding (postfix only: it starts where its binding does, so TDZ and type errors keep their locations).
+- **Class members**: public fields and methods of instances are read and written without a `MemberAccess` when no
+  enclosing class declares a private member of the same name (else the full §4.5.3 lookup runs).
+- Index-like keys are recognised by their first character before the regular expression (`xs.push`).
+
+Tried without a measurable effect (reverted): skipping empty `props` maps in prototype lookups, filling `popItems`
+by popping instead of `slice`.
+
+Left for later: inline caches per `GET_PROP` site, running array callbacks and field initialisers without a nested
+dispatch loop, more superinstructions (`DUP GET_PROP CALL_METHOD`, `THIS GET_PROP`).
 
 ## H3 — Performance (first pass)
 

@@ -90,6 +90,11 @@ export enum Op {
   ENTER_FINALLY,
   END_FINALLY,
   HALT,
+  // superinstructions (H3): an instruction and the POP that discards its result, `x++` on a binding
+  STORE_POP,
+  STORE_GLOBAL_POP,
+  SET_PROP_POP,
+  INCREMENT,
 }
 
 /**
@@ -213,4 +218,15 @@ export const OPCODES: Readonly<Record<Op, OpcodeInfo>> = {
   [Op.ENTER_FINALLY]: info('', '→'), // completion-record handling (§5.6.5)
   [Op.END_FINALLY]: info('', '→'), // completion-record handling (§5.6.5)
   [Op.HALT]: info('', 'v →'), // end of script; v is the completion value
+  [Op.STORE_POP]: info('depth slot', 'v →'), // STORE + POP
+  [Op.STORE_GLOBAL_POP]: info('k', 'v →'), // STORE_GLOBAL + POP
+  [Op.SET_PROP_POP]: info('k', 'obj v →'), // SET_PROP + POP
+  [Op.INCREMENT]: info('depth slot delta', '→'), // LOAD POS INC/DEC STORE POP: an unused `x++` / `x--`
+}
+
+/** The form of an instruction that also pops its result (STORE + POP → STORE_POP). */
+export const POPPING_FORMS: Partial<Record<Op, Op>> = {
+  [Op.STORE]: Op.STORE_POP,
+  [Op.STORE_GLOBAL]: Op.STORE_GLOBAL_POP,
+  [Op.SET_PROP]: Op.SET_PROP_POP,
 }

@@ -1,0 +1,5 @@
+// A binding used before its declaration keeps its own environment: the TDZ applies on every entry
+for (let i = 0; i < 2; i++) {
+  if (i == 1) print(value)
+  let value = i
+}

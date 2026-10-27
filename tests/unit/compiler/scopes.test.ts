@@ -12,19 +12,19 @@ describe('compiling variables', () => {
     expect(listing('let a = 1\nconst b = 2').slice(0, 2)).toEqual(['DECLARE_GLOBAL  0 0  ; "a"', 'DECLARE_GLOBAL  1 1  ; "b"'])
   })
 
-  it('gives only blocks with declarations an environment', () => {
-    const code = listing('{ 1 }\n{ let x = 1\n{ x } }')
+  it('gives only blocks with declarations an environment (closures keep them unfolded)', () => {
+    const code = listing('{ 1 }\n{ let x = 1\n{ x }\n() => x }')
 
     expect(code.filter(line => line.startsWith('PUSH_ENV'))).toEqual(['PUSH_ENV        1'])
     expect(code).toContain('LOAD            0 0') // the inner block has no environment of its own
   })
 
   it('stores the completion value through the block environments', () => {
-    expect(listing('{ let x = 1\n x }')).toContain('STORE           1 0')
+    expect(listing('{ let x = 1\n x\n () => x }')).toContain('STORE_POP       1 0')
   })
 
   it('resolves names to (depth, slot)', () => {
-    const code = listing('{ let a = 1, b = 2\n { let c = 3\n a; b; c } }')
+    const code = listing('{ let a = 1, b = 2\n { let c = 3\n a; b; c\n () => c } }')
 
     expect(code).toEqual(expect.arrayContaining(['LOAD            1 0', 'LOAD            1 1', 'LOAD            0 0']))
   })
@@ -37,6 +37,44 @@ describe('compiling variables', () => {
 
   it('compiles logical assignment with a short-circuit jump', () => {
     expect(listing('let a = 1\na ||= 2')).toEqual(expect.arrayContaining(['LOAD_GLOBAL     0  ; "a"', 'OR_JUMP         19']))
+  })
+})
+
+describe('folding block environments (K9)', () => {
+  it('folds a block without closures into the enclosing environment', () => {
+    const code = listing('{ let x = 1\n x }')
+
+    expect(code.filter(line => line.startsWith('PUSH_ENV'))).toEqual([])
+    expect(code).toEqual(expect.arrayContaining(['INIT            0 1', 'LOAD            0 1', 'STORE_POP       0 0']))
+  })
+
+  it('sizes an environment for the blocks folded into it', () => {
+    const code = listing('{ let a = 1\n { let b = 2\n a + b }\n () => a }')
+
+    expect(code).toEqual(expect.arrayContaining(['PUSH_ENV        2', 'LOAD            0 1']))
+  })
+
+  it('folds loop bodies, for-let heads and for-of bindings without closures', () => {
+    const loops = 'for (let i = 0; i < 2; i++) { const d = i\n s += d }\n for (const x of xs) s += x'
+    const code = listing(`function f(xs) { let s = 0\n ${loops}\n return s }`)
+
+    expect(code.filter(line => /PUSH_ENV|POP_ENV|COPY_ENV/.test(line))).toEqual([])
+  })
+})
+
+describe('keeping block environments (K9)', () => {
+  it.each([
+    ['a use before the declaration', '{ x; let x = 1 }'],
+    ['a use in its own initialiser', '{ let x = x }'],
+    ['a closure', '{ let x = 1\n print(() => x) }'],
+  ])('keeps the environment of a block with %s', (_, source) => {
+    expect(listing(source)).toContain('PUSH_ENV        1')
+  })
+
+  it('does not count property names as uses', () => {
+    const code = listing('const o = { x: 1 }\n{ const x = o.x\n const y = { x: 2 } }')
+
+    expect(code.some(line => line.startsWith('PUSH_ENV'))).toBe(false)
   })
 })
 

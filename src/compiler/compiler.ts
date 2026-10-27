@@ -51,7 +51,7 @@ import type {
 import type { FunctionNode } from '@/parser/ast-builders'
 import { parse } from '@/parser/parse'
 import { stdlibGlobalNames } from '@/stdlib'
-import { createsClosure } from './closures'
+import { canFold, createsClosure } from './closures'
 import { classInfoOf, hasMember, keyName, type ClassInfo } from './class-info'
 import { ambiguityMessage, implicitIndex, memberCandidate, outerDescription, type ClassRecord } from './implicit-names'
 import { interfaceTemplate } from './interfaces'
@@ -402,13 +402,13 @@ class Compiler {
     for (const binding of this.scope.bindings.values()) {
       out.emit(Op.DECLARE_GLOBAL, out.constant(binding.name), binding.kind === 'let' ? GlobalFlags.None : GlobalFlags.Const)
     }
-    out.scopeSize = 1
     out.emit(Op.UNDEFINED)
     out.emit(Op.INIT, 0, COMPLETION_SLOT)
     this.hoistFunctions(body)
     this.statements(body)
     out.emit(Op.LOAD, 0, COMPLETION_SLOT)
     out.emit(Op.HALT)
+    out.scopeSize = this.scope.slotCount
 
     return { main: out.build(), source: this.source, fileName: this.fileName }
   }
@@ -428,7 +428,7 @@ class Compiler {
     this.exportLists(body)
     out.emit(Op.UNDEFINED)
     out.emit(Op.HALT)
-    out.scopeSize = this.scope.bindings.size
+    out.scopeSize = this.scope.slotCount
 
     const { requests, imports, localExports, indirectExports } = this.moduleTables
 
@@ -629,7 +629,7 @@ class Compiler {
 
   private expressionStatementTail() {
     this.out.emit(Op.STORE, this.scope.envDepth, COMPLETION_SLOT)
-    this.out.emit(Op.POP)
+    this.out.emitPop()
   }
 
   ifStatement(node: IfStatement) {
@@ -670,17 +670,21 @@ class Compiler {
     const outer = this.scope
     const head = this.forHead(node)
 
-    // without a closure in the loop, no one can tell the iterations' bindings apart: one environment will do
-    this.forLoop(node, head.hasEnv && createsClosure(node))
+    // a head with an environment has closures in the loop (else it is folded): each iteration gets a copy
+    this.forLoop(node, head.hasEnv)
     this.scope = outer
 
     if (head.hasEnv) this.out.emit(Op.POP_ENV)
   }
 
-  private forHead({ init }: ForStatement): Scope {
+  private forHead(node: ForStatement): Scope {
+    const { init } = node
     const head = new Scope(this.scope, 'block')
 
-    if (init?.type === 'VariableDeclaration') this.declareVariables(init, head)
+    if (init?.type === 'VariableDeclaration') {
+      if (canFold(node, [init])) head.fold()
+      this.declareVariables(init, head)
+    }
     this.enterScope(head)
     this.forInit(init)
 
@@ -689,7 +693,8 @@ class Compiler {
 
   // Makes `scope` current, with an environment when it declares something.
   private enterScope(scope: Scope) {
-    if (scope.hasEnv) this.out.emit(Op.PUSH_ENV, scope.bindings.size)
+    // blocks folded into this one add slots later (K9)
+    if (scope.hasEnv) this.out.defer(this.out.emit(Op.PUSH_ENV, 0) + 1, () => scope.slotCount)
     this.scope = scope
   }
 
@@ -719,7 +724,7 @@ class Compiler {
     const top = this.out.code.length
     const done = this.out.emitJump(Op.ITER_NEXT)
     const outer = this.scope
-    const iteration = this.bindIterationValue(node.left)
+    const iteration = this.bindIterationValue(node.left, node.body)
 
     this.fn.stackItems++ // the iterator
     const loop = this.loopBody(node.body)
@@ -739,12 +744,15 @@ class Compiler {
   }
 
   // `let x` / `const x` get a fresh binding per iteration; a bare name is assigned.
-  private bindIterationValue(left: ForOfStatement['left']): Scope {
+  // The binding is initialised before the body runs, so only a closure in the body needs a fresh environment.
+  private bindIterationValue(left: ForOfStatement['left'], body: Statement): Scope {
     const scope = new Scope(this.scope, 'block')
+
+    if (!createsClosure(body)) scope.fold()
 
     if (left.type === 'Identifier') {
       this.store(left.name, left.loc)
-      this.out.emit(Op.POP)
+      this.out.emitPop()
 
       return scope
     }
@@ -765,10 +773,36 @@ class Compiler {
     if (expression) this.discard(expression)
   }
 
-  // An unused `x++` is compiled as `++x`, which does not keep the old value.
+  // An unused `x++` is compiled as `++x`, which does not keep the old value (or as one INCREMENT).
   private discard(expression: Expression) {
+    if (expression.type === 'UpdateExpression' && this.incrementBinding(expression)) return
+
     this.expression(expression.type === 'UpdateExpression' ? { ...expression, prefix: true } : expression)
-    this.out.emit(Op.POP)
+    this.out.emitPop()
+  }
+
+  // An unused `x++` / `x--` of a binding in an environment: INCREMENT depth slot ±1. Only the postfix form, which
+  // starts where its binding does, so that errors keep the location LOAD and POS reported.
+  private incrementBinding({ argument, operator, prefix, loc }: UpdateExpression): boolean {
+    const target = prefix ? null : this.incrementTarget(argument)
+    if (!target) return false
+
+    this.checkAssignable(target.binding, argument.loc)
+    this.out.mark(loc)
+    this.out.nameNext(target.binding.name)
+    this.out.emit(Op.INCREMENT, target.depth, target.slot, operator === '++' ? 1 : -1)
+
+    return true
+  }
+
+  // A lexical binding that is not possibly a class member (§4.5.8); imports are rejected by checkAssignable.
+  private incrementTarget(argument: UpdateExpression['argument']): Extract<Resolution, { where: 'lexical' }> | null {
+    if (argument.type !== 'Identifier') return null
+
+    const resolution = this.scope.resolve(argument.name)
+    if (resolution.where !== 'lexical') return null
+
+    return this.implicitName(argument.name, argument.loc) === null ? resolution : null
   }
 
   private loopBody(body: Statement): Loop {
@@ -988,7 +1022,7 @@ class Compiler {
       for (const field of fields) this.fieldInitializer(field)
       this.out.emit(Op.NULL)
       this.out.emit(Op.RETURN)
-      this.out.scopeSize = this.scope.bindings.size
+      this.out.scopeSize = this.scope.slotCount
 
       return this.out.build()
     } finally {
@@ -1154,7 +1188,7 @@ class Compiler {
   // The exception is on the stack: bind it (in the catch block's scope) or drop it.
   private catchClause({ param, body }: CatchClause) {
     const outer = this.scope
-    const scope = new Scope(outer, 'block')
+    const scope = this.blockScope(body, body.body)
 
     if (param) this.declareName(scope, param, 'let')
     this.declare(body.body, scope)
@@ -1181,7 +1215,7 @@ class Compiler {
     this.block(block)
     this.fn.stackItems--
     this.out.emit(Op.STORE, this.scope.envDepth, COMPLETION_SLOT)
-    this.out.emit(Op.POP)
+    this.out.emitPop()
   }
 
   variableDeclaration(node: VariableDeclaration) {
@@ -1200,9 +1234,18 @@ class Compiler {
     else this.expression(node)
   }
 
+  // A block scope, folded into the enclosing environment when no one can tell (K9).
+  private blockScope(node: Node, statements: Node[]): Scope {
+    const scope = new Scope(this.scope, 'block')
+
+    if (canFold(node, statements)) scope.fold()
+
+    return scope
+  }
+
   block(node: BlockStatement) {
     const outer = this.scope
-    const scope = new Scope(outer, 'block')
+    const scope = this.blockScope(node, node.body)
 
     this.declare(node.body, scope)
     this.enterScope(scope)
@@ -1640,7 +1683,7 @@ class Compiler {
 
     if (body.type === 'BlockStatement') this.blockBody(body)
     else this.expressionBody(body)
-    this.out.scopeSize = this.scope.bindings.size
+    this.out.scopeSize = this.scope.slotCount
 
     const { text, required, optional, hasRest } = signature
     const proto = this.out.build()

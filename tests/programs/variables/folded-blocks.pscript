@@ -1,0 +1,35 @@
+// Blocks without closures share the enclosing environment (K9); each entry still starts fresh
+function sum(n) {
+  let total = 0
+  for (let i = 0; i < n; i++) {
+    const twice = i * 2
+    if (twice % 4 == 0) {
+      let bonus = 1
+      total += twice + bonus
+    } else {
+      let bonus = 0
+      total += bonus
+    }
+  }
+  return total
+}
+print(sum(10))
+const point = { x: 3, y: 4 }
+{
+  const x = point.x
+  const y = point.y
+  print(x * x + y * y)
+}
+let names = []
+for (const name of ['a', 'b']) { const upper = name + name; names.push(upper) }
+print(names.join(','))
+try { throw new Error('boom') } catch (e) { const message = e.message; print(message) }
+let outer = 1
+{ let outer = 2; print(outer) }
+print(outer)
+{
+  let captured = 5
+  { let inner = captured + 1; print(inner) }
+  const read = () => captured
+  print(read())
+}

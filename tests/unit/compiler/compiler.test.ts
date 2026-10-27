@@ -19,10 +19,9 @@ describe('compiler', () => {
       '0014  MUL',
       '0015  ADD',
       '0016  CALL            2',
-      '0018  STORE           0 0',
-      '0021  POP',
-      '0022  LOAD            0 0',
-      '0025  HALT',
+      '0018  STORE_POP       0 0',
+      '0021  LOAD            0 0',
+      '0024  HALT',
     ].join('\n'))
   })
 })

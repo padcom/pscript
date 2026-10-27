@@ -1813,6 +1813,8 @@ export interface ModuleRecord {
 | `END_TRY` | — | → | pop handler |
 | `ENTER_FINALLY` / `END_FINALLY` | — | | completion-record handling (see §5.6.5) |
 | `HALT` | — | v → | end of script; `v` is the completion value |
+| `STORE_POP` / `STORE_GLOBAL_POP` / `SET_PROP_POP` | as `STORE` / `STORE_GLOBAL` / `SET_PROP` | v → / obj v → | superinstructions (H3): the store and the `POP` discarding its result; the compiler rewrites the store in place, unless a jump targets the `POP` |
+| `INCREMENT` | depth slot delta | → | superinstruction (H3): an unused postfix `x++` / `x--` of a lexical binding (`LOAD POS INC/DEC STORE POP`) |
 
 The table is a *contract*, but the compiler and VM agents may jointly propose additions through `docs/contract-changes.md`, such as a fused `LOAD_LOCAL0`, `CALL_PROP`, or a `PUSH_EMPTY` sentinel for "no superclass".
 
@@ -1825,6 +1827,7 @@ The table is a *contract*, but the compiler and VM agents may jointly propose ad
 - **Environments**:
   - Every function has one top environment (params plus top-level body declarations).
   - Each block that declares bindings gets `PUSH_ENV`/`POP_ENV`. Blocks without declarations get no env, an important optimisation.
+  - Folded blocks (H3, K9): a block, `catch`, for-let head or for-of binding whose code creates no closure, and whose bindings are not used before their declaration, has no env of its own: its bindings take extra slots of the enclosing env (whose `PUSH_ENV` size or `scopeSize` grows accordingly). Without a closure nothing can tell the envs apart, and without an early use no stale value from an earlier iteration can be read where the TDZ would throw.
   - Resolution is static: `(depth, slot)`.
 - **Script top level**: declarations become `DECLARE_GLOBAL` script bindings, so that later `run()` calls on the same `Interpreter` see them (REPL behaviour). Inner scopes use environments.
 - **for-let**: init env → loop: test, body, `COPY_ENV`, update. This matches the spec's CreatePerIterationEnvironment closely enough.
@@ -2483,7 +2486,7 @@ The multi-agent plan (§7.1–7.11) and this sequential path produce the same re
 | K17 | Interfaces and access modifiers make many class programs non-JS, shrinking differential coverage | The harness strips access modifiers, `override`, `final` and `implements` clauses; only programs that test violations or use interfaces at runtime are `@pscript-only` |
 | K10 | Module cycles and live bindings are subtle (TDZ across modules, hoisted functions, re-export chains) | Envs created at link time before evaluation; fixture-graph unit tests in WP-F; differential module tests against Node |
 | K11 | Contextual `get`/`set`/`as`/`from` collide with ordinary identifiers | Decided only in the token filter with explicit lookahead rules (§4.2.5); tests for methods/variables named `get`, `set`, `from`, `as` |
-| K9 | Performance of an environment-based closure model | Acceptable for v1. Phase 3 H3 may add slot-local fast paths (escape analysis) without changing semantics |
+| K9 | Performance of an environment-based closure model | Acceptable for v1. H3 folds block environments that no closure can observe into the enclosing one (§5.5) |
 
 ---
 
