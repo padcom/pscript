@@ -39,7 +39,7 @@ TEMPLATE_TEXT   (?:[^`\\$]|\\[\s\S]|\$(?!\{))*
 "!=="                                           yy.lexError("'!==' is not supported; use '!='", yylloc)
 
 "..."                                           return '...'
-"?."                                            return '?.'
+\?\.(?![0-9])                                   return '?.'
 "=>"                                            return '=>'
 "**="                                           return '**='
 "&&="                                           return '&&='
@@ -741,6 +741,34 @@ PostfixExpression
 LeftHandSideExpression
   : MemberExpression
   | CallExpression
+  | OptionalChain
+    { $$ = yy.chain($1, @$) }
+  ;
+
+/* Optional chaining (D47): `a?.b`, `a?.[k]` and `f?.(x)`, continued by `.x`, `[k]` and calls. The whole chain is one
+   ChainExpression (as in ESTree), which short-circuits to undefined. */
+OptionalChain
+  : MemberExpression OptionalLink
+    { $$ = yy.optionalLink($1, $2, @$) }
+  | CallExpression OptionalLink
+    { $$ = yy.optionalLink($1, $2, @$) }
+  | OptionalChain OptionalLink
+    { $$ = yy.optionalLink($1, $2, @$) }
+  | OptionalChain '.' IDENT
+    { $$ = yy.member($1, yy.identifier($3, @3), false, @$) }
+  | OptionalChain '[' Expression ']'
+    { $$ = yy.member($1, $3, true, @$) }
+  | OptionalChain Arguments
+    { $$ = yy.call($1, $2, @$) }
+  ;
+
+OptionalLink
+  : '?.' IDENT
+    { $$ = { property: yy.identifier($2, @2), computed: false } }
+  | '?.' '[' Expression ']'
+    { $$ = { property: $3, computed: true } }
+  | '?.' Arguments
+    { $$ = { arguments: $2 } }
   ;
 
 MemberExpression

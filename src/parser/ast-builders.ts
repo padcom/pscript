@@ -23,6 +23,7 @@ import type {
   ConditionalExpression,
   LogicalExpression,
   CallExpression,
+  ChainExpression,
   EmptyStatement,
   Expression,
   ExpressionStatement,
@@ -56,6 +57,9 @@ import type {
   YieldExpression,
 } from './ast'
 import { cookString } from './literals'
+
+/** What follows a `?.` (D47): a property or an argument list. */
+type OptionalLink = { property: Expression, computed: boolean } | { arguments: CallExpression['arguments'] }
 
 /**
  * A Jison token or rule location (lines 1-based, columns 0-based, end exclusive).
@@ -217,6 +221,19 @@ export const builders = {
 
   member(object: Expression, property: Expression, computed: boolean, loc: JisonLoc): MemberExpression {
     return { type: 'MemberExpression', object, property, computed, optional: false, loc: toLoc(loc) }
+  },
+
+  // `base?.x`, `base?.[k]` or `base?.(args)` (D47).
+  optionalLink(base: Expression, link: OptionalLink, loc: JisonLoc): MemberExpression | CallExpression {
+    const node = 'arguments' in link
+      ? { type: 'CallExpression' as const, callee: base, arguments: link.arguments }
+      : { type: 'MemberExpression' as const, object: base, ...link }
+
+    return { ...node, optional: true, loc: toLoc(loc) }
+  },
+
+  chain(expression: MemberExpression | CallExpression, loc: JisonLoc): ChainExpression {
+    return { type: 'ChainExpression', expression, loc: toLoc(loc) }
   },
 
   classNode(type: ClassNode['type'], { id, final }: ClassHead, tail: ClassTail, loc: JisonLoc): ClassNode {

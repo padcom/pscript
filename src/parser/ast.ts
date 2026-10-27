@@ -122,7 +122,7 @@ export type Expression
     | ArrowFunctionExpression | ClassExpression | UnaryExpression | UpdateExpression
     | BinaryExpression | LogicalExpression | AssignmentExpression | ConditionalExpression
     | CallExpression | NewExpression | MemberExpression | ThisExpression | TemplateLiteral | YieldExpression
-    | AwaitExpression
+    | AwaitExpression | ChainExpression
 
 /** What binds names: a name, or an object or array pattern of names (D40). */
 export type BindingPattern = Identifier | ObjectPattern | ArrayPattern
@@ -837,8 +837,8 @@ export interface CallExpression extends NodeBase {
   callee: Expression | Super
   /** arguments; `...x` spreads an iterable (D46) */
   arguments: (Expression | SpreadElement)[]
-  /** optional calls are not supported */
-  optional: false
+  /** true for `f?.(x)` (D47) */
+  optional: boolean
 }
 
 /**
@@ -865,8 +865,19 @@ export interface MemberExpression extends NodeBase {
   property: Expression | Identifier
   /** true for `o[k]` */
   computed: boolean
-  /** optional chaining is not supported */
-  optional: false
+  /** true for `o?.x` / `o?.[k]` (D47) */
+  optional: boolean
+}
+
+/**
+ * An optional chain `a?.b.c()` (D47): its member expressions and calls short-circuit to `undefined` when the value
+ * before a `?.` is null or undefined.
+ */
+export interface ChainExpression extends NodeBase {
+  /** node type */
+  type: 'ChainExpression'
+  /** the chain */
+  expression: MemberExpression | CallExpression
 }
 
 export type Node

@@ -1,0 +1,9 @@
+// @pscript-only: optional chaining and closed instances (D36), print
+class Point {
+  x = 1
+}
+const p = new Point()
+print(p?.x)
+try { print(p?.y) } catch (e) { print(e.name, e.message) }
+const nothing = null
+print(nothing?.y, [nothing?.a, 1])

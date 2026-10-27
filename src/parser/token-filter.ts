@@ -85,6 +85,9 @@ const MEMBER_PRECEDERS = new Set(['CLASS_LBRACE', ';', '}', 'GET', 'SET', ...MOD
 /** After a member name: a method, a field initialiser, the end of a field. */
 const MEMBER_NAME_FOLLOWERS = new Set(['(', '=', ';', '}'])
 
+// `o.x` and `o?.x` (D47): a keyword after them is a property name (§4.2.4).
+const MEMBER_DOTS = new Set(['.', '?.'])
+
 /** Tokens that can be a member name (keywords become IDENT there). */
 const NAME_TOKENS = new Set(['IDENT', 'STRING', 'NUMBER'])
 
@@ -340,13 +343,17 @@ export class TokenFilter {
     return this.inMemberPosition() && (next.afterNewline || MEMBER_NAME_FOLLOWERS.has(next.name))
   }
 
-  // Keywords are property names after `.` and as object-literal keys (§4.2.4).
+  // Keywords are property names after `.` / `?.` and as object-literal keys (§4.2.4).
   private keywordAsName(token: Token) {
     if (KEYWORD_TOKENS.has(token.name) && this.inNamePosition()) token.name = 'IDENT'
   }
 
   private inNamePosition(): boolean {
-    return this.prev?.name === '.' || this.inKeyPosition() || this.inMethodNamePosition()
+    return this.afterMemberDot() || this.inKeyPosition() || this.inMethodNamePosition()
+  }
+
+  private afterMemberDot(): boolean {
+    return MEMBER_DOTS.has(this.prev?.name as string)
   }
 
   private inMethodNamePosition(): boolean {

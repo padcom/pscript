@@ -46,6 +46,19 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L5 | `setTimeout` / `clearTimeout` and `fetch` (D44) | done (2026-10-27) |
 | L6 | `setInterval` / `clearInterval` and `queueMicrotask` (D45) | done (2026-10-27) |
 | L7 | Spread (D46) | done (2026-10-27) |
+| L8 | Optional chaining (D47) | done (2026-10-27) |
+
+## L8 — Optional chaining (D47)
+
+Design in `docs/PLAN.md` D47 (R36), §4.4.19; user docs in `docs/LANGUAGE.md` → Operators.
+
+- **Parser**: `OptionalChain` / `OptionalLink` rules (named so to avoid the existing `OptionalExpression` of `for`
+  headers); `ChainExpression` wraps a chain, `optional` flags on members and calls (ESTree, checked by the acorn
+  oracle). The lexer's `?.` is not followed by a digit; keywords after `?.` are names.
+- **Compiler**: `chain()` collects the `OPTIONAL_JUMP target n` operands of a chain and patches them to its end;
+  `memberObject()` checks after an optional member's object, `plainCall` after the callee (n = 2 for methods).
+- **psc**: prints `?.`; a chain is parenthesized where a member or call would extend it.
+- **Tests**: `tests/programs/optional-chaining/`, compiler and emitter unit tests.
 
 ## L7 — Spread (D46)
 

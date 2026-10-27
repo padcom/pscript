@@ -35,7 +35,7 @@ JavaScript hard to reason about:
 - generators work as in JavaScript (missing values are `null` there too);
 - `async`/`await` and promises with the same callback order as JavaScript; `setTimeout`, `setInterval`,
   `queueMicrotask` and `fetch` use the host's event loop and network;
-- spread works in calls and in array and object literals;
+- spread works in calls and in array and object literals, and optional chaining (`a?.b`, `f?.()`) as in JavaScript;
 - no `var` or `with`.
 
 The full language reference, including a list of differences from JavaScript, is in

@@ -55,6 +55,8 @@ const PRECEDENCES: ByType<Precedence> = {
   MemberExpression: () => Precedence.Member,
   CallExpression: () => Precedence.Member,
   NewExpression: () => Precedence.Member,
+  // `(a?.b).c` keeps its parentheses: a chain ends where a member or call of it would continue it (D47)
+  ChainExpression: () => Precedence.Postfix,
 }
 
 // The sub-expression an expression's text starts with, when it does not start with its own token.
@@ -66,6 +68,7 @@ const LEFT_CHILDREN: ByType<Expression | null> = {
   CallExpression: node => node.callee.type === 'Super' ? null : node.callee,
   MemberExpression: node => node.object.type === 'Super' ? null : node.object,
   UpdateExpression: node => node.prefix ? null : node.argument,
+  ChainExpression: node => node.expression,
 }
 
 /**

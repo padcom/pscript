@@ -1,0 +1,5 @@
+// @pscript-only: optional calls of implicit members need this (D33)
+class A {
+  m() { return 1 }
+  n() { return m?.() }
+}

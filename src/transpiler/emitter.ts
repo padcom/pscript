@@ -189,6 +189,7 @@ const EXPRESSIONS: { [K in Expression['type']]?: Printer<Extract<Expression, { t
   ClassExpression: (e, node) => e.classText(node),
   YieldExpression: (e, node) => e.yieldText(node),
   AwaitExpression: (e, node) => `await ${e.expression(node.argument, Precedence.Unary)}`,
+  ChainExpression: (e, node) => e.expression(node.expression, Precedence.Member),
 }
 
 /** Unary operators not printed as `<operator><operand>` with the `- -x` guard. */
@@ -499,16 +500,28 @@ export class Emitter {
     if (this.isGlobalPrint(node)) return render('print')
 
     const base = this.memberObject(node.object)
+    const access = this.memberAccess(node)
+
+    return this.renderAccess(base + (node.optional ? '?' : ''), access, this.publicTarget(node, base), render)
+  }
+
+  private memberAccess(node: MemberExpression): PrivateAccess {
     const name = privateKey(node)
     const access = name === null ? PUBLIC : this.privateAccess(node.object as Expression, name)
 
-    return this.renderAccess(base, access, this.publicTarget(node, base), render)
+    if (node.optional && access.fallback) throw this.unsupported(node, 'Optional chaining on a member that may be private')
+
+    return access
   }
 
-  private publicTarget({ property, computed }: MemberExpression, base: string): string {
-    return computed ? `${base}[${this.expression(property as Expression)}]` : `${base}.${(property as Identifier).name}`
+  // `o.x`, `o[k]`, `o?.x`, `o?.[k]` (D47).
+  private publicTarget({ property, computed, optional }: MemberExpression, base: string): string {
+    if (computed) return `${base}${optional ? '?.' : ''}[${this.expression(property as Expression)}]`
+
+    return `${base}${optional ? '?.' : '.'}${(property as Identifier).name}`
   }
 
+  // `base` ends with `?` for an optional member, which only a private name (`base?.#x`) uses.
   private renderAccess(base: string, access: PrivateAccess, publicTarget: string, render: Render): string {
     const { names, fallback } = access
 
@@ -998,9 +1011,11 @@ export class Emitter {
 
     this.checkImportedArity(node)
     const argumentList = this.arguments(args)
-    if (callee.type === 'MemberExpression') return this.withMember(callee, target => target + argumentList)
+    const call = (node.optional ? '?.' : '') + argumentList
 
-    return `${callee.type === 'Super' ? 'super' : this.expression(callee, Precedence.Member)}${argumentList}`
+    if (callee.type === 'MemberExpression') return this.withMember(callee, target => target + call)
+
+    return `${callee.type === 'Super' ? 'super' : this.expression(callee, Precedence.Member)}${call}`
   }
 
   // Strict arity of imported functions (D38), which the compiler can only check for local functions (P10).

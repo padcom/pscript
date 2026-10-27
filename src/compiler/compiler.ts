@@ -15,6 +15,7 @@ import type {
   ClassDeclaration,
   ClassExpression,
   CallExpression,
+  ChainExpression,
   ConditionalExpression,
   ContinueStatement,
   DoWhileStatement,
@@ -252,6 +253,7 @@ const EXPRESSIONS: { [K in Expression['type']]?: Handler<Extract<Expression, { t
   ClassExpression: (c, node) => c.classExpression(node),
   YieldExpression: (c, node) => c.yieldExpression(node),
   AwaitExpression: (c, node) => c.awaitExpression(node),
+  ChainExpression: (c, node) => c.chain(node),
 }
 
 /**
@@ -441,6 +443,9 @@ class Compiler {
 
   /** classes whose bodies lexically enclose the code being compiled, innermost last (§4.5.3, §4.5.8) */
   private enclosingClasses: ClassRecord[] = []
+
+  /** the OPTIONAL_JUMP operands of the optional chains being compiled, innermost last (D47) */
+  private chains: number[][] = []
 
   constructor(private source: string | undefined, private fileName: string | undefined, goal: 'script' | 'module' = 'script') {
     if (goal === 'module') {
@@ -1513,7 +1518,30 @@ class Compiler {
 
     const isMethod = this.callee(callee)
 
+    if (node.optional) this.optional(isMethod ? 2 : 1)
     this.emitAt(node.loc, isMethod ? Op.CALL_METHOD : Op.CALL, this.arguments(node.arguments))
+  }
+
+  // `a?.b.c()` (D47): every `?.` in the chain jumps to its end, leaving undefined.
+  chain(node: ChainExpression) {
+    this.chains.push([])
+    this.expression(node.expression)
+
+    for (const operand of this.chains.pop() as number[]) this.out.patch(operand)
+  }
+
+  // After `?.`: when the value on top is null or undefined, drops it and the `count - 1` values below it.
+  private optional(count: number) {
+    const operand = this.out.emit(Op.OPTIONAL_JUMP, -1, count) + 1
+
+    this.chains[this.chains.length - 1].push(operand)
+  }
+
+  // The object of a member expression, checked when it is followed by `?.`.
+  private memberObject({ object, optional }: MemberExpression) {
+    this.expression(object as Expression)
+
+    if (optional) this.optional(1)
   }
 
   // Pushes the arguments and returns the argc operand: with a spread argument (D46), one array and SPREAD_ARGC.
@@ -1529,8 +1557,10 @@ class Compiler {
   }
 
   // `m(x)` in a class body where `m` may be a member: <x> CALL_IMPLICIT i 1 fallback (§4.5.8).
-  private implicitCall({ callee, arguments: args, loc }: CallExpression): boolean {
+  private implicitCall({ callee, arguments: args, optional, loc }: CallExpression): boolean {
     if (callee.type !== 'Identifier' || this.implicitName(callee.name, callee.loc) === null) return false
+
+    if (optional) throw this.error(`Optional call of the implicit member '${callee.name}'; use 'this.${callee.name}?.()'`, loc)
 
     const argc = this.arguments(args)
 
@@ -1561,7 +1591,7 @@ class Compiler {
       return
     }
     this.checkMember(callee, 'call')
-    this.expression(object)
+    this.memberObject(callee)
     this.out.emit(Op.DUP)
 
     if (computed) {
@@ -1668,29 +1698,32 @@ class Compiler {
     if (target.object.type === 'Super') return this.superReference(target)
     this.checkMember(target, use)
 
-    return target.computed ? this.indexReference(target, target.object) : this.propertyReference(target, target.object)
+    return target.computed ? this.indexReference(target) : this.propertyReference(target)
   }
 
   private nameReference({ name, loc }: Identifier): Reference {
     return { baseSize: 0, prepare: () => {}, get: () => this.load(name, loc), set: () => this.store(name, loc) }
   }
 
-  private propertyReference({ property, loc }: MemberExpression, object: Expression): Reference {
+  private propertyReference(target: MemberExpression): Reference {
+    const { property, loc } = target
     const { name } = property as Identifier
 
     return {
       baseSize: 1,
-      prepare: () => this.expression(object),
+      prepare: () => this.memberObject(target),
       get: () => this.emitGetProp(loc, name),
       set: () => this.emitSetProp(loc, name),
     }
   }
 
-  private indexReference({ property, loc }: MemberExpression, object: Expression): Reference {
+  private indexReference(target: MemberExpression): Reference {
+    const { property, loc } = target
+
     return {
       baseSize: 2,
       prepare: () => {
-        this.expression(object)
+        this.memberObject(target)
         this.expression(property)
       },
       get: () => this.emitAt(loc, Op.GET_INDEX),

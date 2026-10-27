@@ -5,6 +5,20 @@ function js(source: string): string {
   return transpile(source).code.trimEnd()
 }
 
+describe('psc: spread and optional chaining (D46, D47)', () => {
+  it.each([
+    ['f(...a, b, ...c)', 'f(...a, b, ...c);'],
+    ['[...a, ...b]', '[...a, ...b];'],
+    ['o = { ...a, b: 1 }', 'o = { ...a, b: 1 };'],
+    ['new a.B(...c)', 'new a.B(...c);'],
+    ['a?.b.c?.[d]?.(e)', 'a?.b.c?.[d]?.(e);'],
+    ['(a?.b).c', '(a?.b).c;'],
+    ['x = a?.b ?? c', 'x = a?.b ?? c;'],
+  ])('%s', (source, expected) => {
+    expect(js(`let a, b, c, d, e, f, o, x;\n${source}`).split('\n')[1]).toBe(expected)
+  })
+})
+
 describe('psc: expressions', () => {
   it.each([
     ['a == b', 'a === b;'],
@@ -28,10 +42,6 @@ describe('psc: expressions', () => {
     ['(1).toString()', '(1).toString();'],
     ['new a.B(1)', 'new a.B(1);'],
     ['new (f())()', 'new (f())();'],
-    ['f(...a, b, ...c)', 'f(...a, b, ...c);'],
-    ['[...a, ...b]', '[...a, ...b];'],
-    ['o = { ...a, b: 1 }', 'o = { ...a, b: 1 };'],
-    ['new a.B(...c)', 'new a.B(...c);'],
     ['o[k].m(1, 2)', 'o[k].m(1, 2);'],
   ])('%s', (source, expected) => {
     expect(js(`let a, b, c, d, e, x = 0, y = 0, o, k;\n${source}`).split('\n')[1]).toBe(expected)

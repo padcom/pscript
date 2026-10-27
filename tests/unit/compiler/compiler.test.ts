@@ -90,3 +90,20 @@ describe('compiler: spread (D46)', () => {
     expect(() => compile('function f(a) {}\nf(1, 2)')).toThrow('expects 1 argument, got 2')
   })
 })
+
+describe('compiler: optional chaining (D47)', () => {
+  const ops = (source: string) => disassemble(compile(source)).split('\n').map(line => line.slice(6).trim())
+
+  it('drops the receiver and the function of an optional method call', () => {
+    expect(ops('o.m?.(1)').some(op => /^OPTIONAL_JUMP\s+\d+ 2$/.test(op))).toBe(true)
+    expect(ops('o?.m(1)').some(op => /^OPTIONAL_JUMP\s+\d+ 1$/.test(op))).toBe(true)
+  })
+
+  it('jumps past the whole chain', () => {
+    const lines = ops('a?.b.c(d)')
+    const jump = lines.find(op => op.startsWith('OPTIONAL_JUMP')) as string
+    const target = Number(jump.split(/\s+/)[1])
+
+    expect(disassemble(compile('a?.b.c(d)'))).toContain(`${String(target).padStart(4, '0')}  STORE_POP`)
+  })
+})

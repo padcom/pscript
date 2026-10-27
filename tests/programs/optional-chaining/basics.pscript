@@ -1,0 +1,47 @@
+// Optional chaining (D47): members, computed members and calls short-circuit on null and undefined
+const config = { server: { port: 8080, tags: ['a', 'b'], describe() { return `port ${this.port}` } }, empty: null }
+print(config?.server?.port, config.empty?.port, config.missing?.port)
+print(config.server?.['port'], config.empty?.['port'], config.server.tags?.[1])
+print(config.server.describe?.(), config.server.missing?.(), config.empty?.describe())
+
+// the rest of the chain is skipped, including its arguments
+let evaluated = 0
+function count() {
+  evaluated++
+  return 1
+}
+print(config.empty?.a.b.c(count()), config.empty?.[count()], evaluated)
+
+// a nullish result after the last ?. is still an error further on, unless parenthesized
+print(config.server?.port.toString())
+try {
+  print((config.empty?.port).toString())
+} catch (e) {
+  print(e.name)
+}
+
+const callbacks = { onDone: null, onStart: () => 'started' }
+print(callbacks.onStart?.(), callbacks.onDone?.())
+
+const fn = null
+print(fn?.(1, 2), typeof fn?.name)
+print(config.empty?.port ?? 'default port')
+
+// keywords after ?. are property names
+const keywords = { delete: 1, class: 2, new: 3 }
+print(keywords?.delete, keywords?.class, keywords?.new)
+
+// ?. followed by a digit is a conditional
+const flag = false
+print(flag?.5:2)
+
+// chains in conditions and loops
+const nodes = [{ next: { value: 1 } }, { next: null }, null]
+for (const node of nodes) print(node?.next?.value ?? 'none')
+
+class Box {
+  item = null
+  constructor(item) { this.item = item }
+  label() { return this.item?.name ?? 'empty' }
+}
+print(new Box({ name: 'apple' }).label(), new Box(null).label())

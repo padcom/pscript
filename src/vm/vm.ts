@@ -1440,6 +1440,13 @@ export class VM implements AccessContext, CoroutineHost, PromiseHost {
           checkPattern(stack[stack.length - 1], k < 0 ? null : constants[k] as string, frame.proto.signature ?? frame.proto.name)
           break
         }
+        case Op.OPTIONAL_JUMP:
+          if (stack[stack.length - 1] === null || stack[stack.length - 1] === undefined) {
+            truncate(stack, stack.length - code[ip + 1])
+            stack.push(undefined)
+            ip = code[ip]
+          } else ip += 2
+          break
         case Op.OBJECT_REST: stack.push(objectRest(this, stack.pop(), constants[code[ip++]] as string)); break
         case Op.ARRAY_PUSH: arrayPush(stack); break
         case Op.ARRAY_SPREAD:

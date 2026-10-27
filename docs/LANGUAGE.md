@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D46).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D47).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -88,7 +88,10 @@ Precedence and associativity follow JavaScript, with these rules:
   (`[0, ...xs]`) and object literals (`{ ...defaults, verbose: true }`). Arguments and array elements take anything
   iterable; object spread copies own enumerable public properties. Strict arity still applies, checked at runtime
   for calls with a spread argument.
-- Not supported: bitwise operators, comma expressions and optional chaining.
+- Optional chaining `a?.b`, `a?.[k]`, `f?.(x)` works as in JavaScript: when the value before `?.` is `null` or
+  `undefined`, the rest of the chain is skipped and the result is `undefined`. In a class body, call an implicit
+  member optionally as `this.m?.()`.
+- Not supported: bitwise operators and comma expressions.
 
 ## Statements
 
@@ -393,7 +396,7 @@ Values cross the boundary by reference and identity is kept in both directions.
 | ASI quirks (`(`/`[` continue the previous line) | A line starting with `(` or `[` starts a new statement |
 | `delete` leaves holes in arrays, ignores frozen objects | `delete` works on plain objects only; elsewhere `TypeError` |
 | `var`, labels, `with`, `for…in` | Not available |
-| Bitwise operators, optional chaining, computed keys | Not available (yet) |
+| Bitwise operators, computed keys | Not available (yet) |
 | Tagged templates | Not available |
 | Generators give `undefined` for missing values | Generators give `null` (`yield`, `next()`, finished steps) |
 | Any object with a `then` method is a thenable | Only promises are adopted; `Promise` is final |

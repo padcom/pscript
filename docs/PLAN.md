@@ -104,6 +104,7 @@ Each feature in this document has one of these tags:
 | R33 | `setTimeout` / `clearTimeout` and `fetch` (D44) | 4.6.1 |
 | R34 | `setInterval` / `clearInterval` and `queueMicrotask` (D45) | 4.6.1 |
 | R35 | Spread `...x` in calls, `new`, `super(...)`, array literals and object literals (D46) | 4.4.18 |
+| R36 | Optional chaining `a?.b`, `a?.[k]`, `f?.(x)` (D47) | 4.4.19 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -123,7 +124,7 @@ Each feature in this document has one of these tags:
 
 ### 1.5 COULD (Phase 3+)
 
-~~Rest parameters and spread (`...`)~~ (done, D46), optional chaining `?.`, computed keys `{ [k]: v }`, the comma operator in `for` headers, ~~`do … while`, `switch`~~ (done, D41), `for … in`, bitwise operators, hex/binary/octal literals, ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, Map/Set, a CLI/REPL, a disassembler CLI, source maps for errors.
+~~Rest parameters and spread (`...`)~~ (done, D46), ~~optional chaining `?.`~~ (done, D47), computed keys `{ [k]: v }`, the comma operator in `for` headers, ~~`do … while`, `switch`~~ (done, D41), `for … in`, bitwise operators, hex/binary/octal literals, ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, Map/Set, a CLI/REPL, a disassembler CLI, source maps for errors.
 
 ### 1.6 WON'T (v1)
 
@@ -214,6 +215,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D44 | `setTimeout`, `clearTimeout`, `fetch` | **The JavaScript interface, backed by the host**: `setTimeout(callback, delay?, ...args)` returns a numeric id (as in browsers) that `clearTimeout` cancels; the callback runs as a **task** of the host's event loop (after `run()` returned), with a new step budget, followed by the jobs it queued (as JS drains microtasks after each task); its exception or an unhandled rejection goes to `stderr`, since there is no caller. Code strings are a `TypeError`. `fetch(resource, options?)` calls the host's `fetch` through interop (arguments `toHost`, the result `toScript`), so it returns a script promise of a host `Response`; a synchronous failure of the host's fetch rejects. The host's functions are looked up per call; `InterpreterOptions.fetch` replaces fetch (tests, sandboxing). `setInterval` came with D45. Details in §4.6.1, §5.6.10 | minor (no code strings; errors to stderr) |
 | D45 | `setInterval`, `clearInterval`, `queueMicrotask` | **The JavaScript interface, completing D44**: `setInterval(callback, delay?, ...args)` shares ids with `setTimeout` (so `clearTimeout` and `clearInterval` are interchangeable, as in browsers); it is built on the host's `setTimeout`, re-armed before each run, so the callback can clear its own interval, and an exception (to `stderr`) does not stop it. `queueMicrotask(callback)` queues a job (`AccessContext.enqueueJob`), ordered with promise reactions; an exception in the callback rejects an internal promise, so it is reported like an unhandled rejection (thrown by `run()` after the queue drained, or to `stderr` in the background) and the other jobs still run. Details in §4.6.1 | minor (no code strings) |
 | D46 | Spread `...x` | **As in JavaScript**: `f(...xs)`, `new C(...xs)`, `super(...xs)`, `[...xs]` take what an iterable produces (arrays, strings, generators, host iterables; anything else is a `TypeError`); `{ ...o }` copies the own enumerable public properties (getters run, later keys win; `null`, `undefined` and non-string primitives add nothing). Spread arguments keep **strict arity (D38) and named parameters (D40)** but move their check to runtime (`TypeError`), since the count is not known at compile time; the arguments before the first spread are still checked against named parameters at compile time. A spread in a literal that becomes an assignment pattern is its rest element, which must be a name. Details in §4.4.18 | no |
+| D47 | Optional chaining | **As in JavaScript**: `a?.b`, `a?.[k]`, `f?.(x)` and `o.m?.(x)`; when the value before `?.` is `null` or `undefined`, the rest of the chain (including its arguments) is skipped and the chain gives **`undefined`** (not `null`, D37: like a missing property, it is JavaScript's "nothing read"). Only the base is tested: an undeclared member of a class instance is still an error (D36). A chain is not an assignment, `++`/`--` or `delete` target. Inside a class body, an optional call of a bare name that may be an implicit member (`m?.()`, D33) is a `SyntaxError` (write `this.m?.()`). `?.` followed by a digit is `?` and a number, as in JS. Details in §4.4.19 | no |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -626,7 +628,10 @@ UnaryExpr       := ( '!' | '-' | '+' | 'typeof' ) UnaryExpr
                  | ( '++' | '--' ) UnaryExpr
                  | PostfixExpr
 PostfixExpr     := LeftHandSideExpr ( '++' | '--' )?
-LeftHandSideExpr:= NewExpr | CallExpr
+LeftHandSideExpr:= NewExpr | CallExpr | OptionalChain
+OptionalChain   := ( MemberExpr | CallExpr ) OptionalLink        (D47; one ChainExpression)
+                 | OptionalChain ( OptionalLink | '.' IDENT | '[' Expr ']' | Arguments )
+OptionalLink    := '?.' IDENT | '?.' '[' Expr ']' | '?.' Arguments
 NewExpr         := MemberExpr | 'new' NewExpr
 CallExpr        := MemberExpr Arguments
                  | 'super' Arguments
@@ -1109,6 +1114,19 @@ const merged = { ...defaults, ...options, verbose: true }
 - Object literals: `{ ...v }` copies the own enumerable public properties of `v`, as `Object.entries` sees them (plain objects, the fields of class instances, the indices of arrays and strings), calling getters; properties defined later replace earlier ones. `null`, `undefined`, numbers and booleans add nothing. The result is a plain object (methods of a class instance are not copied; the object is open).
 - **Strict arity (D38)**: a call with a spread argument has its argument count only at runtime, so the compile-time and link-time checks skip it and the runtime check reports it (`TypeError: sum(a, b, c) expects 3 arguments, got 2`). Likewise strict named parameters (D40) are checked at runtime, except for object literals passed before the first spread argument, which are still checked at compile time.
 - A spread in an object or array literal that becomes an assignment pattern (`[a, ...rest] = list`) is the pattern's rest element; it must be a name (`SyntaxError: A rest element must be a name`).
+
+#### 4.4.19 Optional chaining (D47)
+
+```js
+const port = config?.server?.port ?? 8080
+const first = list?.[0]
+callbacks.onDone?.(result)          // called only when onDone is not null or undefined
+const name = user?.profile.name     // undefined when user is nullish; profile must exist otherwise
+```
+
+**Syntax**: `?.` before a property name (keywords too), a computed key `?.[k]` or an argument list `?.(args)`. The chain continues with `.x`, `[k]` and calls; a parenthesized chain ends it (`(a?.b).c` reads `c` of the result). `?.` immediately followed by a digit is the conditional operator and a number (`x?.5:1`).
+
+**Semantics** (as in JavaScript): the expression before each `?.` is evaluated once; if it is `null` or `undefined`, the rest of the chain is not evaluated (no property reads, no calls, no argument evaluation) and the whole chain gives `undefined`. Otherwise the chain continues normally, so a later `.x` on `null` still throws, and an undeclared member of a class instance is still an error (D36). `o.m?.(x)` calls `m` with `this = o`. A chain cannot be assigned to, incremented or deleted (`SyntaxError`), and `new a?.b()` is a syntax error. In a class body, `m?.()` on a bare name that may be an implicit member (§4.5.8) is a `SyntaxError`; write `this.m?.()`.
 
 ### 4.5 Classes, access control and interfaces (R12, R24)
 
@@ -1975,6 +1993,7 @@ export interface ModuleRecord {
 | `CONCAT` | n | s1…sn → s | concatenates `n` strings (template literals: cooked parts as `CONST`, substitutions via `TO_STRING`) |
 | `INC` `DEC` | — | n → n±1 | operand already ToNumber'd via `POS` |
 | `JUMP` | target | → | |
+| `OPTIONAL_JUMP` | target n | x1…xn → x1…xn \| undefined | `?.` (D47): when xn is null or undefined, drops x1…xn, pushes `undefined` and jumps to the end of the chain (n = 2 for an optional method call: receiver and function) |
 | `JUMP_IF_FALSE` | target | v → | pops |
 | `JUMP_IF_TRUE` | target | v → | pops |
 | `AND_JUMP` | target | v → v \| (popped) | if falsy: keep and jump; else pop |
