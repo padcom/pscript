@@ -18,8 +18,12 @@ export function rewriteSpecifiers(source: string): string {
   return source.replace(RELATIVE_SPECIFIER, '$<keyword>$<quote>$<path>.mjs$<quote>')
 }
 
+// `console.log` writes its arguments like `print` in the oracle, so transpiled code (whose `print` is `console.log`)
+// prints the same lines.
 const PRELUDE = [
-  "globalThis.print = (...args) => console.log(args.map(String).join(' '))",
+  'const log = console.log',
+  "console.log = (...args) => log(args.map(String).join(' '))",
+  'globalThis.print = (...args) => console.log(...args)',
   "process.on('uncaughtException', error => { console.log('\\u0000' + error.name); process.exit(0) })",
 ].join('\n')
 
@@ -50,19 +54,20 @@ function result(stdout: string, stderr: string): NodeResult {
 }
 
 /**
- * Runs a module graph in Node.
+ * Runs JavaScript modules in Node (`.js` files are ES modules).
  *
- * @param files module sources by file name (relative paths), including the entry
+ * @param files module code by file name (relative paths), including the entry
  * @param entry file name of the entry module
  * @returns output and the thrown error's name
  */
-export function runModulesInNode(files: Record<string, string>, entry: string): NodeResult {
+export function runFilesInNode(files: Record<string, string>, entry: string): NodeResult {
   const dir = mkdtempSync(join(tmpdir(), 'pscript-modules-'))
 
   try {
-    for (const [name, source] of Object.entries(files)) write(dir, moduleFile(name), rewriteSpecifiers(rewriteEquality(source)))
+    for (const [name, code] of Object.entries(files)) write(dir, name, code)
+    write(dir, 'package.json', '{ "type": "module" }\n')
     write(dir, 'prelude.mjs', PRELUDE)
-    write(dir, 'entry.mjs', `import './prelude.mjs'\nimport './${moduleFile(entry)}'\n`)
+    write(dir, 'entry.mjs', `import './prelude.mjs'\nimport './${entry}'\n`)
 
     const { stdout, stderr } = spawnSync(process.execPath, [join(dir, 'entry.mjs')], { encoding: 'utf8' })
 
@@ -70,4 +75,17 @@ export function runModulesInNode(files: Record<string, string>, entry: string): 
   } finally {
     rmSync(dir, { recursive: true, force: true })
   }
+}
+
+/**
+ * Runs a module graph in Node.
+ *
+ * @param files module sources by file name (relative paths), including the entry
+ * @param entry file name of the entry module
+ * @returns output and the thrown error's name
+ */
+export function runModulesInNode(files: Record<string, string>, entry: string): NodeResult {
+  const rewritten = Object.entries(files).map(([name, source]) => [moduleFile(name), rewriteSpecifiers(rewriteEquality(source))])
+
+  return runFilesInNode(Object.fromEntries(rewritten), moduleFile(entry))
 }

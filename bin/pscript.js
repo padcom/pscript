@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 // The PScript command line (H5): runs a file, an inline script or stdin, or starts a REPL. Node-only, so it lives
 // outside `src/` and the library stays browser-safe.
-import { existsSync, readFileSync, statSync } from 'node:fs'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
+import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
 import repl from 'node:repl'
 import { Interpreter, PScriptError, PScriptSyntaxError, parse } from '../dist/index.js'
+import { findFile, isPath } from './files.js'
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 
@@ -18,28 +19,6 @@ Options:
   -e, --eval <script>   run the script
   -h, --help            show this help
   -v, --version         show the version`
-
-const EXTENSIONS = ['.pscript', '.psc']
-
-function isFile(path) {
-  return existsSync(path) && statSync(path).isFile()
-}
-
-// The exact path first, then the extensions (D10); both extensions present is an error.
-function findFile(path, kind) {
-  if (isFile(path)) return path
-
-  const found = EXTENSIONS.map(extension => path + extension).filter(isFile)
-  if (found.length !== 1) {
-    throw new Error(found.length === 0 ? `no ${kind} '${path}'` : `ambiguous ${kind} '${path}': ${found.join(' and ')}`)
-  }
-
-  return found[0]
-}
-
-function isPath(specifier) {
-  return specifier.startsWith('./') || specifier.startsWith('../') || isAbsolute(specifier)
-}
 
 // Module ids are paths relative to the working directory, so that error messages stay short.
 function fsLoader(specifier, referrer) {

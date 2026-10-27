@@ -11,6 +11,7 @@ import type {
   CallExpression,
   ClassDeclaration,
   ConditionalExpression,
+  ExportNamedDeclaration,
   Expression,
   ForOfStatement,
   ForStatement,
@@ -18,11 +19,13 @@ import type {
   FunctionExpression,
   Identifier,
   IfStatement,
+  ImportDeclaration,
   InterfaceDeclaration,
   Literal,
   LogicalExpression,
   MemberExpression,
   MethodDefinition,
+  ModuleDeclaration,
   NewExpression,
   Node,
   ObjectExpression,
@@ -45,6 +48,7 @@ import { ambiguityMessage, memberCandidate, type MemberContext } from '@/compile
 import { stdlibGlobalNames } from '@/stdlib'
 import { declaringClass, inheritedHalves, privateKey, staticPrefix, uniquePrivateName, type ClassNode } from './classes'
 import { Helpers } from './helpers'
+import { exportList, importClause, isModuleDeclaration, sourceText } from './modules'
 import { Precedence, binaryPrecedence, precedenceOf, startsAmbiguously } from './precedence'
 
 /** Names JavaScript's strict mode does not allow as bindings. */
@@ -138,7 +142,7 @@ const EXPRESSIONS: { [K in Expression['type']]?: Printer<Extract<Expression, { t
   CallExpression: (e, node) => e.call(node),
   NewExpression: (e, node) => e.newExpression(node),
   MemberExpression: (e, node) => e.member(node),
-  ThisExpression: () => 'this',
+  ThisExpression: e => e.thisText(),
   ClassExpression: (e, node) => e.classText(node),
 }
 
@@ -181,14 +185,21 @@ function isGlobalPrintAccess({ object, property, computed }: MemberExpression): 
 
 const DECLARATIONS = new Set<Statement['type']>(['FunctionDeclaration', 'ClassDeclaration', 'InterfaceDeclaration'])
 
-// The names a statement declares in its block (function declarations are hoisted, `let`/`const` have a TDZ: either
-// way a use anywhere in the block refers to them).
-function declaredBy(statement: Statement): Identifier[] {
+function declaredByStatement(statement: Statement): Identifier[] {
   if (statement.type === 'VariableDeclaration') return statement.declarations.map(({ id }) => id)
 
   const declaration = statement as FunctionDeclaration | ClassDeclaration | InterfaceDeclaration
 
   return DECLARATIONS.has(statement.type) ? [declaration.id] : []
+}
+
+// The names a statement declares in its block (function declarations are hoisted, `let`/`const` have a TDZ: either
+// way a use anywhere in the block refers to them). Imports declare their local names.
+function declaredBy(statement: Statement | ModuleDeclaration): Identifier[] {
+  if (statement.type === 'ImportDeclaration') return statement.specifiers.map(({ local }) => local)
+  if (statement.type === 'ExportNamedDeclaration') return statement.declaration ? declaredBy(statement.declaration) : []
+
+  return declaredByStatement(statement)
 }
 
 function paramName(param: Pattern): Identifier {
@@ -240,16 +251,16 @@ export class Emitter {
    * @returns the JavaScript code
    */
   emit(): string {
-    const body = this.program.body.map(node => {
-      if (node.type === 'ImportDeclaration' || node.type === 'ExportNamedDeclaration') throw this.unsupported(node, 'Modules')
-
-      return node
-    })
+    const { body } = this.program
 
     this.declareAll(body)
-    const statements = body.map(statement => this.statement(statement)).filter(text => text !== '')
+    const statements = body.map(node => isModuleDeclaration(node) ? this.moduleDeclaration(node) : this.statement(node))
+    // the helpers follow the leading imports
+    const imports = body.findIndex(node => node.type !== 'ImportDeclaration')
+    const split = imports === -1 ? body.length : imports
+    const lines = [...statements.slice(0, split), ...this.helpers.code(), ...statements.slice(split)]
 
-    return `${[...this.helpers.code(), ...statements].join('\n')}\n`
+    return `${lines.filter(text => text !== '').join('\n')}\n`
   }
 
   // ---------------------------------------------------------------------------
@@ -261,7 +272,7 @@ export class Emitter {
     this.names.names.set(id.name, info)
   }
 
-  private declareAll(body: Statement[]) {
+  private declareAll(body: (Statement | ModuleDeclaration)[]) {
     body.flatMap(declaredBy).forEach(id => this.declare(id))
   }
 
@@ -598,6 +609,11 @@ export class Emitter {
     return name
   }
 
+  // `this` outside functions and classes is null in PScript (D37); in JavaScript it is the global object or undefined.
+  thisText(): string {
+    return this.frames.some(({ kind }) => kind !== 'arrow') ? 'this' : 'null'
+  }
+
   template({ quasis, expressions }: TemplateLiteral): string {
     const substitutions = expressions.map(expression => `\${${this.expression(expression)}}`)
     const parts = quasis.map(({ value }, i) => value.raw + (substitutions[i] ?? ''))
@@ -877,6 +893,23 @@ export class Emitter {
     const parentList = parents.map(parent => this.expression(parent, Precedence.Assignment)).join(', ')
 
     return `const ${id.name} = ${this.helpers.use('interface')}('${id.name}', [${parentList}]);`
+  }
+
+  // ---------------------------------------------------------------------------
+  // Modules (P9)
+
+  private moduleDeclaration(node: ModuleDeclaration): string {
+    return node.type === 'ImportDeclaration' ? this.importText(node) : this.exportText(node)
+  }
+
+  private importText(node: ImportDeclaration): string {
+    return `import ${importClause(node)}${sourceText(node.source)};`
+  }
+
+  private exportText({ declaration, specifiers, source }: ExportNamedDeclaration): string {
+    if (declaration) return `export ${this.statement(declaration)}`
+
+    return `export ${exportList(specifiers)}${source ? ` from ${sourceText(source)}` : ''};`
   }
 
   // ---------------------------------------------------------------------------

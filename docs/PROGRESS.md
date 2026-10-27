@@ -36,6 +36,41 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | H5 | CLI/REPL | done (2026-10-27) |
 | T1 | psc: emitter core | done (2026-10-27) |
 | T2 | psc: classes and interfaces | done (2026-10-27) |
+| T3 | psc: modules and CLI | done (2026-10-27) |
+
+## T3 — psc: modules and CLI
+
+`transpile(source, { fileName, goal })` compiles modules (`docs/PLAN.md` §11, P9):
+
+- `goal` defaults to `'module'` when the source parses as a module with `import`/`export` declarations, else
+  `'script'` (as `bin/pscript.js` decides). Modules run `compileModule(source, fileName ?? 'main')` for the checks
+  (`checkedProgram()` in `transpile.ts`), so assigning an import, duplicate and undefined exports are psc errors.
+- `src/transpiler/modules.ts`: `outputSpecifier()` (relative: `.pscript`/`.psc` → `.js`, no extension → `+ .js`,
+  another extension is kept; bare and `host:` unchanged), import clauses and export lists. The emitter prints
+  `import …;`, `export <declaration>`, `export { … } [from …];`; imports declare their local names in the top
+  `Names` scope. The inline helpers follow the leading imports.
+- `this` outside functions and classes is `null` (PScript's value; JS has `undefined` in modules).
+- The class-check skeleton keeps exported declarations and treats imported names as declared, not evaluable: a
+  class extending an imported class is left out (T4).
+
+`bin/psc.js` (bin `psc`): files and directories (searched recursively for `.pscript`/`.psc`, `node_modules`
+skipped); every relative import or re-export of an existing PScript file is compiled too (a missing one is an error,
+another file type is left to Node). Output is `.js` next to each source, or with `-o dir` mirrored below the common
+directory of all files. Module ids (error messages) are paths relative to the working directory, or to the common
+directory when a file is outside it. The first error stops the run and nothing is written. `bin/files.js` holds the
+file lookup shared with `bin/pscript.js`; `npm run build` checks that psc compiles a two-module graph Node runs.
+
+Tests: `tests/unit/transpiler/modules.test.ts`; `tests/transpiler-modules.test.ts` transpiles every `tests/modules`
+graph and runs it in Node (`runFilesInNode` in `tests/helpers/node-modules.ts`, whose prelude makes `console.log`
+print like `print`); output and error kind must match the interpreter. `assign-import` fails at compile time with its
+`.err` message; `namespace-print` is a known difference (print formatting). `tests/helpers/module-graphs.ts` is shared
+with `tests/modules.test.ts`.
+
+Notes for T4:
+
+- Link errors (`missing-export`, `circular-reexport`) are Node `SyntaxError`s at load time today; T4 makes them psc
+  errors with the interpreter's messages.
+- Imported superclasses are invisible to the emitter (implicit members) and the skeleton (class checks).
 
 ## T2 — psc: classes and interfaces
 

@@ -3091,7 +3091,7 @@ print(new P(), P, print, () => 1)    // → P(x = 1) [class P] [Function: print]
 
 ## 11. `psc`: the PScript-to-JavaScript transpiler
 
-> Status: planned (2026-10-27). Milestones T1–T5 below, tracked in `docs/PROGRESS.md`.
+> Status: in progress (2026-10-27): T1–T3 done. Milestones T1–T5 below, tracked in `docs/PROGRESS.md`.
 
 ### 11.1 Goal and non-goals
 
@@ -3116,7 +3116,7 @@ exports), not in reproducing the VM's runtime behaviour.
 | P1 | Diagnostics | `transpile()` first runs the existing `compile()` / `compileModule()` on the AST and discards the bytecode, so `psc` reports exactly the interpreter's compile-time errors (`PScriptSyntaxError`). The first error stops compilation (as in `compile()`). |
 | P2 | Emitter | A separate AST → JS printer (`src/transpiler/`). It needs its own light name resolution only for implicit members (T2); everything else is syntax-directed. |
 | P3 | Output style | ES2022, 2-space indent, semicolons (generated code must not depend on ASI), one statement per line, original literal spelling (`raw`). Comments are not kept (the parser drops them). |
-| P4 | Cheap semantics kept | `==`/`!=` → `===`/`!==` (D1); `typeof` yields `'null'` for `null` (helper); `-x ** 2` → `-(x ** 2)`; `let x` and fields without initialiser start as `null` (D37); bare `return` returns `null`. |
+| P4 | Cheap semantics kept | `==`/`!=` → `===`/`!==` (D1); `typeof` yields `'null'` for `null` (helper); `-x ** 2` → `-(x ** 2)`; `let x` and fields without initialiser start as `null` (D37); bare `return` returns `null`; `this` outside functions and classes is `null`. |
 | P5 | Semantics left to JS | Operators converting objects (D5), array reads out of range (§4.4.7), functions falling off the end return `undefined`, strict arity of dynamic calls (D38: only callees known at compile time are checked), integer-like keys listed first, completion values (D12). |
 | P6 | Globals | Stdlib globals map to the JS ones of the same name. `print` maps to `console.log` (an inline `const print = …` when used); its PScript formatting (D18) is not reproduced. Unknown globals are left as free names (host globals). |
 | P7 | Classes (T2) | Implicit members become `this.x` (`$this.x`, an alias saved by the member, inside nested plain functions). `private` members become JS private names (`#x`; `#x$2` when an enclosing class has a private `x` too). `o.x` follows §4.5.3: `this.x` and `C.x` are resolved statically; another plain-name receiver gets brand checks with the public member last (`#x in o ? o.#x : o.x`); globals never reach private names. `protected`, `override`, `final`, `final class`, `implements` are erased after the checks. Fields without initialiser are `= null`. A class that redefines one accessor half gets a forwarding other half (§4.5.4). **Checks**: the program's classes and interfaces (top-level ones, and nested ones whose superclass and interfaces are top-level) are defined in a throwaway interpreter with everything else stripped, so the VM's class-definition checks (overriding, `final`, signatures, access, `implements`, inherited-name ambiguity) become compile-time errors with the VM's messages. |

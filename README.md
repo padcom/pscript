@@ -46,6 +46,15 @@ echo 'print("hi")' | npx @padcom/pscript
 Modules are loaded from the file system: `./` and `../` resolve against the importing file, trying the exact path,
 then `.pscript`, then `.psc`. Errors go to stderr and set the exit code to 1.
 
+`psc` compiles PScript to JavaScript ES modules (see [Transpiling to JavaScript](#transpiling-to-javascript-experimental)):
+
+```sh
+npx -p @padcom/pscript psc main.pscript       # writes main.js, and a .js for every PScript file main imports
+npx -p @padcom/pscript psc -o dist src/       # every .pscript/.psc file under src/, laid out the same under dist/
+```
+
+Nothing is written when a file has an error.
+
 ## Installing and building
 
 ```sh
@@ -94,11 +103,12 @@ interpreter.defineModule('host:clock', { now: () => Date.now() })
 
 ### Transpiling to JavaScript (experimental)
 
-`transpile(source)` compiles a script to plain JavaScript with the interpreter's compile-time checks (arity, constant
-bindings, implicit members) plus the class checks the interpreter makes when a class is defined (`override`, `final`,
-access, `implements`). Classes become JavaScript classes (`private` members are `#private`), interfaces work with
-`instanceof`. The output has JavaScript runtime semantics; see `docs/PLAN.md` §11 for the plan (modules and a `psc`
-command line are next) and the list of differences.
+`transpile(source)` compiles a script or module to plain JavaScript with the interpreter's compile-time checks
+(arity, constant bindings, implicit members, module exports) plus the class checks the interpreter makes when a class
+is defined (`override`, `final`, access, `implements`). Classes become JavaScript classes (`private` members are
+`#private`), interfaces work with `instanceof`, modules become ES modules (`import { a } from './m'` →
+`'./m.js'`). A source with `import`/`export` declarations is a module (or pass `{ goal: 'module' }`). The output has
+JavaScript runtime semantics; see `docs/PLAN.md` §11 for the design and the list of differences.
 
 ```js
 import { transpile } from '@padcom/pscript'
@@ -131,7 +141,9 @@ values you give it can do. Only pass in what scripts are meant to use.
 | `src/runtime/` | value model, property access, operators, interop, formatting |
 | `src/stdlib/` | the standard library (`print`, `Object`, `Array`, `String`, `Math`, `JSON`, errors …) |
 | `src/modules/` | module loader and registry |
+| `src/transpiler/` | `psc`: the PScript-to-JavaScript transpiler |
 | `bin/pscript.js` | the command line and REPL (Node-only, outside the browser-safe library) |
+| `bin/psc.js` | the transpiler's command line |
 | `tests/` | unit tests, program corpus (`tests/programs`, `tests/modules`), Node and acorn oracles |
 | `docs/PLAN.md` | the design: decisions, grammar, contracts, milestones |
 | `docs/PROGRESS.md` | implementation log per milestone |

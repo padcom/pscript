@@ -11,13 +11,16 @@ import { Interpreter } from '@/interpreter'
 import type {
   ClassDeclaration,
   ClassExpression,
+  ExportNamedDeclaration,
   Expression,
   FunctionDeclaration,
   Identifier,
+  ImportDeclaration,
   InterfaceDeclaration,
   Literal,
   MemberExpression,
   MethodDefinition,
+  ModuleDeclaration,
   Node,
   Pattern,
   Program,
@@ -149,14 +152,16 @@ class NestedClasses {
   }
 }
 
-type Kept = (skeleton: Skeleton, node: never) => Statement
+type Kept = (skeleton: Skeleton, node: never) => Statement | null
 
-/** The top-level statements a skeleton keeps (in their skeleton form). */
-const SKELETON_STATEMENTS: Partial<Record<Statement['type'], Kept>> = {
+/** The top-level statements a skeleton keeps (in their skeleton form). Imports only declare their names. */
+const SKELETON_STATEMENTS: Partial<Record<(Statement | ModuleDeclaration)['type'], Kept>> = {
   FunctionDeclaration: (skeleton, node: FunctionDeclaration) => skeleton.declare(node.id, node),
   VariableDeclaration: (skeleton, node: VariableDeclaration) => skeleton.variables(node),
   ClassDeclaration: (skeleton, node: ClassDeclaration) => skeleton.definition(node),
   InterfaceDeclaration: (skeleton, node: InterfaceDeclaration) => skeleton.definition(node),
+  ImportDeclaration: (skeleton, node: ImportDeclaration) => skeleton.imports(node),
+  ExportNamedDeclaration: (skeleton, node: ExportNamedDeclaration) => skeleton.exported(node),
 }
 
 /**
@@ -173,19 +178,30 @@ class Skeleton {
   constructor(private readonly program: Program) {}
 
   build(): Program {
-    const body = this.program.body.flatMap(statement => this.statement(statement as Statement))
+    const body = this.program.body.flatMap(statement => this.statement(statement))
     const nested = new NestedClasses(this.defined).find(this.program).filter(node => this.canDefine(node))
 
-    return { ...this.program, body: [...body, ...nested.map(node => this.nestedCheck(node))] }
+    return { ...this.program, sourceType: 'script', body: [...body, ...nested.map(node => this.nestedCheck(node))] }
   }
 
-  private statement(node: Statement): Statement[] {
+  private statement(node: Statement | ModuleDeclaration): Statement[] {
     const kept = SKELETON_STATEMENTS[node.type]?.(this, node as never)
 
     return kept ? [kept] : []
   }
 
-  declare<T extends Statement>(id: Identifier, node: T, defined = false): T {
+  // Imported bindings are not definitions the skeleton can evaluate.
+  imports({ specifiers }: ImportDeclaration): null {
+    specifiers.forEach(({ local }) => this.declare(local, null))
+
+    return null
+  }
+
+  exported(node: ExportNamedDeclaration): Statement | null {
+    return node.declaration ? this.statement(node.declaration)[0] : null
+  }
+
+  declare<T extends Statement | null>(id: Identifier, node: T, defined = false): T {
     this.declared.add(id.name)
 
     if (defined) this.defined.add(id.name)

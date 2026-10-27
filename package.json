@@ -4,7 +4,8 @@
   "description": "PScript - a JavaScript-inspired scripting engine",
   "type": "module",
   "bin": {
-    "pscript": "./bin/pscript.js"
+    "pscript": "./bin/pscript.js",
+    "psc": "./bin/psc.js"
   },
   "files": [
     "bin",
