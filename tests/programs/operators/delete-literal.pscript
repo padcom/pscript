@@ -1,0 +1,2 @@
+// @pscript-only: `delete 1` is valid JS (it gives true)
+attempt(() => delete 1)

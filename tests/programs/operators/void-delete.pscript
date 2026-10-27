@@ -1,0 +1,18 @@
+// void evaluates its operand and gives undefined
+let calls = 0
+print(void 0, void (calls += 1), calls)
+print(typeof void 'x')
+
+// delete removes own properties of plain objects
+const o = { a: 1, b: 2, c: 3 }
+print(delete o.a, JSON.stringify(o))
+const key = 'b'
+print(delete o[key], JSON.stringify(o))
+print(delete o.missing, JSON.stringify(o))
+print('a' in o, 'c' in o)
+const getter = { get x() { return 1 }, y: 2 }
+delete getter.x
+print(JSON.stringify(getter), Object.keys(getter).join(','))
+const nested = { inner: { v: 1, w: 2 } }
+delete nested.inner.v
+print(JSON.stringify(nested))

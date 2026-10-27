@@ -15,6 +15,7 @@ import type {
   ConditionalExpression,
   ExportNamedDeclaration,
   Expression,
+  DoWhileStatement,
   ForOfStatement,
   ForStatement,
   FunctionDeclaration,
@@ -47,6 +48,8 @@ import type {
   UnaryExpression,
   UpdateExpression,
   VariableDeclaration,
+  SwitchCase,
+  SwitchStatement,
   WhileStatement,
 } from '@/parser/ast'
 import { classInfoOf, keyName, type ClassInfo } from '@/compiler/class-info'
@@ -184,6 +187,14 @@ const EXPRESSIONS: { [K in Expression['type']]?: Printer<Extract<Expression, { t
   ClassExpression: (e, node) => e.classText(node),
 }
 
+/** Unary operators not printed as `<operator><operand>` with the `- -x` guard. */
+const SPECIAL_UNARY: Partial<Record<UnaryExpression['operator'], (e: Emitter, argument: Expression) => string>> = {
+  'typeof': (e, argument) => e.typeofText(argument),
+  'delete': (e, argument) => e.deleteText(argument as MemberExpression),
+  '!': (e, argument) => `!${e.expression(argument, Precedence.Unary)}`,
+  'void': (e, argument) => `void ${e.expression(argument, Precedence.Unary)}`,
+}
+
 const STATEMENTS: { [K in Statement['type']]?: Printer<Extract<Statement, { type: K }>> } = {
   ExpressionStatement: (e, { expression }) => `${e.wrapAmbiguous(expression, Precedence.Lowest)};`,
   VariableDeclaration: (e, node) => `${e.declaration(node)};`,
@@ -191,6 +202,8 @@ const STATEMENTS: { [K in Statement['type']]?: Printer<Extract<Statement, { type
   ReturnStatement: (e, node) => e.returnStatement(node),
   IfStatement: (e, node) => e.ifStatement(node),
   WhileStatement: (e, node) => e.whileStatement(node),
+  DoWhileStatement: (e, node) => e.doWhileStatement(node),
+  SwitchStatement: (e, node) => e.switchStatement(node),
   ForStatement: (e, node) => e.forStatement(node),
   ForOfStatement: (e, node) => e.forOfStatement(node),
   BreakStatement: () => 'break;',
@@ -587,6 +600,35 @@ export class Emitter {
     return `while (${this.expression(test)}) ${this.body(body)}`
   }
 
+  doWhileStatement({ body, test }: DoWhileStatement): string {
+    return `do ${this.body(body)} while (${this.expression(test)});`
+  }
+
+  // The clauses share one scope (as in JS).
+  switchStatement({ discriminant, cases }: SwitchStatement): string {
+    const head = `switch (${this.expression(discriminant)})`
+
+    return this.scoped(() => {
+      this.declareAll(cases.flatMap(({ consequent }) => consequent))
+      this.depth++
+      const clauses = cases.map(clause => this.switchCase(clause))
+      this.depth--
+
+      return clauses.length === 0 ? `${head} {}` : `${head} {\n${clauses.join('\n')}\n${INDENT.repeat(this.depth)}}`
+    })
+  }
+
+  private switchCase({ test, consequent }: SwitchCase): string {
+    const label = test ? `case ${this.expression(test)}:` : 'default:'
+
+    this.depth++
+    const inner = INDENT.repeat(this.depth)
+    const lines = consequent.map(statement => this.statement(statement)).filter(text => text !== '').map(text => inner + text)
+    this.depth--
+
+    return [INDENT.repeat(this.depth) + label, ...lines].join('\n')
+  }
+
   forStatement({ init, test, update, body }: ForStatement): string {
     return this.scoped(() => {
       const clauses = [test, update].map(clause => this.optional(clause, Precedence.Lowest, '', ' '))
@@ -812,8 +854,8 @@ export class Emitter {
   }
 
   unary({ operator, argument }: UnaryExpression): string {
-    if (operator === 'typeof') return this.typeofText(argument)
-    if (operator === '!') return `!${this.expression(argument, Precedence.Unary)}`
+    const special = SPECIAL_UNARY[operator]
+    if (special) return special(this, argument)
 
     const text = this.expression(argument, Precedence.Unary)
 
@@ -821,8 +863,15 @@ export class Emitter {
     return /^[+-]/.test(text) ? `${operator}(${text})` : `${operator}${text}`
   }
 
+  // D41: only plain objects lose properties; the helper throws a TypeError for the rest, as PScript does.
+  deleteText({ object, property, computed }: MemberExpression): string {
+    const key = computed ? this.expression(property, Precedence.Assignment) : `'${(property as Identifier).name}'`
+
+    return `${this.helpers.use('delete')}(${this.expression(object as Expression, Precedence.Assignment)}, ${key})`
+  }
+
   // D39: `typeof null` is 'null'. `typeof` of an undeclared global must not throw.
-  private typeofText(argument: Expression): string {
+  typeofText(argument: Expression): string {
     const name = this.helpers.use('typeof')
     const text = this.expression(argument, Precedence.Assignment)
     const isGlobal = argument.type === 'Identifier' && this.isFree(argument.name) && !this.isImplicitMember(argument.name)

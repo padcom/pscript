@@ -37,6 +37,12 @@ export const KEYWORDS = [
   'private',
   'interface',
   'implements',
+  'do',
+  'switch',
+  'case',
+  'default',
+  'delete',
+  'void',
 ] as const
 
 export type Keyword = typeof KEYWORDS[number]
@@ -49,15 +55,9 @@ export type ContextualKeyword = typeof CONTEXTUAL_KEYWORDS[number]
 /** Words reserved for the future: always a `SyntaxError` as an identifier. */
 export const FUTURE_RESERVED_WORDS = [
   'var',
-  'switch',
-  'case',
-  'default',
-  'do',
   'async',
   'await',
   'yield',
-  'delete',
-  'void',
   'enum',
   'package',
   'abstract',

@@ -217,6 +217,12 @@ export class Interop implements HostAccess {
     this.call(() => Reflect.set(target, key, this.toHost(value)))
   }
 
+  delete(target: object, key: string): boolean {
+    if (BLOCKED_KEYS.has(key)) throw typeError(`Cannot delete '${key}' of a host object`)
+
+    return this.call(() => Reflect.deleteProperty(target, key))
+  }
+
   has(target: object, key: string): boolean {
     return !BLOCKED_KEYS.has(key) && key in target
   }

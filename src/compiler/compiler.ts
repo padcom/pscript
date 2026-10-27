@@ -17,6 +17,7 @@ import type {
   CallExpression,
   ConditionalExpression,
   ContinueStatement,
+  DoWhileStatement,
   Expression,
   ForOfStatement,
   ForStatement,
@@ -46,6 +47,8 @@ import type {
   ReturnStatement,
   SourceLocation,
   Statement,
+  SwitchCase,
+  SwitchStatement,
   TemplateLiteral,
   ThisExpression,
   ThrowStatement,
@@ -162,6 +165,9 @@ function bindingOf(resolution: Resolution): Binding | undefined {
   return resolution.where === 'global' ? undefined : resolution.binding
 }
 
+/** Statements that declare bindings with a TDZ. */
+const LEXICAL_DECLARATIONS = new Set<Statement['type']>(['VariableDeclaration', 'ClassDeclaration', 'InterfaceDeclaration'])
+
 /** Slot of the completion value in the script's top environment (§4.4.10). */
 const COMPLETION_SLOT = 0
 
@@ -196,6 +202,18 @@ const UNARY_OPS: Record<UnaryExpression['operator'], Op> = {
   '-': Op.NEG,
   '+': Op.POS,
   'typeof': Op.TYPEOF,
+  'void': Op.POP, // followed by UNDEFINED
+  'delete': Op.DELETE_PROP, // see deleteExpression
+}
+
+/** Unary operators with their own code; a handler returns false to fall back to the plain form. */
+const SPECIAL_UNARY: Partial<Record<UnaryExpression['operator'], (c: Compiler, node: UnaryExpression) => boolean>> = {
+  typeof: (c, node) => c.typeofGlobal(node),
+  delete: (c, node) => {
+    c.deleteExpression(node.argument as MemberExpression, node.loc)
+
+    return true
+  },
 }
 
 /** Short-circuit jumps of `&&`, `||`, `??` and their assignment forms. */
@@ -274,6 +292,8 @@ const STATEMENTS: { [K in TopLevel['type']]?: Handler<Extract<TopLevel, { type: 
   BlockStatement: (c, node) => c.block(node),
   IfStatement: (c, node) => c.ifStatement(node),
   WhileStatement: (c, node) => c.whileStatement(node),
+  DoWhileStatement: (c, node) => c.doWhileStatement(node),
+  SwitchStatement: (c, node) => c.switchStatement(node),
   ForStatement: (c, node) => c.forStatement(node),
   ForOfStatement: (c, node) => c.forOfStatement(node),
   BreakStatement: (c, node) => c.jump(node, 'breaks'),
@@ -303,6 +323,8 @@ interface Loop {
   regionDepth: number
   /** values the loop itself keeps on the stack (a for-of iterator); others are dropped by `break` / `continue` */
   stackItems: number
+  /** a `switch`: `break` leaves it, `continue` belongs to an enclosing loop */
+  isSwitch: boolean
 }
 
 /**
@@ -709,6 +731,73 @@ class Compiler {
     this.patchAll(loop.breaks)
   }
 
+  // top: <body>; next: <test> JUMP_IF_TRUE top; break:
+  doWhileStatement(node: DoWhileStatement) {
+    this.resetCompletion()
+    const top = this.out.code.length
+    const loop = this.loopBody(node.body)
+
+    this.patchAll(loop.continues)
+    this.expression(node.test)
+    this.out.patch(this.out.emitJump(Op.JUMP_IF_TRUE), top)
+    this.patchAll(loop.breaks)
+  }
+
+  // <discriminant> [PUSH_ENV]; per case: DUP <test> EQ JUMP_IF_TRUE body_i; JUMP default|end;
+  // body_0 … body_n (falling through); end (and break): [POP_ENV] POP. The clauses share one block scope (as in JS).
+  switchStatement(node: SwitchStatement) {
+    this.resetCompletion()
+    this.expression(node.discriminant)
+    this.fn.stackItems++ // the discriminant
+
+    const outer = this.scope
+    const statements = node.cases.flatMap(clause => clause.consequent)
+    const scope = this.switchScope(node, statements)
+
+    this.declare(statements, scope)
+    this.enterScope(scope)
+    this.hoistFunctions(statements)
+    const bodies = node.cases.map(clause => this.caseTest(clause))
+    const otherwise = this.out.emitJump(Op.JUMP)
+    const loop = this.breakable(true, () => node.cases.forEach((clause, i) => this.caseBody(clause, bodies[i], otherwise)))
+
+    if (!node.cases.some(clause => clause.test === null)) this.out.patch(otherwise)
+    this.patchAll(loop.breaks)
+    this.scope = outer
+
+    if (scope.hasEnv) this.out.emit(Op.POP_ENV)
+    this.fn.stackItems--
+    this.out.emit(Op.POP)
+  }
+
+  // Jumping between clauses can skip a declaration, so a scope that declares anything keeps its own environment
+  // (fresh TDZ slots each time the switch runs).
+  private switchScope(node: SwitchStatement, statements: Statement[]): Scope {
+    const scope = new Scope(this.scope, 'block')
+    const declares = statements.some(({ type }) => LEXICAL_DECLARATIONS.has(type))
+
+    if (!declares && canFold(node, statements)) scope.fold()
+
+    return scope
+  }
+
+  // DUP <test> EQ JUMP_IF_TRUE → the clause's body (patched later); -1 for `default`.
+  private caseTest({ test, loc }: SwitchCase): number {
+    if (!test) return -1
+
+    this.out.emit(Op.DUP)
+    this.expression(test)
+    this.out.mark(loc)
+    this.out.emit(Op.EQ)
+
+    return this.out.emitJump(Op.JUMP_IF_TRUE)
+  }
+
+  private caseBody({ test, consequent }: SwitchCase, jump: number, otherwise: number) {
+    this.out.patch(test ? jump : otherwise)
+    this.statements(consequent)
+  }
+
   // for-let: init env → loop: test, body, COPY_ENV, update (§5.5).
   forStatement(node: ForStatement) {
     this.resetCompletion()
@@ -850,11 +939,16 @@ class Compiler {
   }
 
   private loopBody(body: Statement): Loop {
+    return this.breakable(false, () => this.statement(body))
+  }
+
+  private breakable(isSwitch: boolean, body: () => void): Loop {
     const { regions, stackItems } = this.fn
-    const loop: Loop = { breaks: [], continues: [], envDepth: this.scope.envDepth, regionDepth: regions.length, stackItems }
+    const { envDepth } = this.scope
+    const loop: Loop = { breaks: [], continues: [], envDepth, regionDepth: regions.length, stackItems, isSwitch }
 
     this.loops.push(loop)
-    this.statement(body)
+    body()
     this.loops.pop()
 
     return loop
@@ -873,7 +967,7 @@ class Compiler {
   // break / continue (§5.5): drop extra stack values, leave the handler regions inside the loop
   // (running their finally blocks), unwind block environments, then jump.
   jump(node: BreakStatement | ContinueStatement, list: 'breaks' | 'continues') {
-    const loop = this.loops.at(-1)
+    const loop = this.jumpTarget(list)
     if (!loop) throw this.error(`Illegal ${list === 'breaks' ? 'break' : 'continue'} statement`, node.loc)
 
     for (let n = this.fn.stackItems; n > loop.stackItems; n--) this.out.emit(Op.POP)
@@ -882,6 +976,10 @@ class Compiler {
 
     this.popEnvs(depth, loop.envDepth)
     loop[list].push(this.out.emitJump(Op.JUMP))
+  }
+
+  private jumpTarget(list: 'breaks' | 'continues'): Loop | undefined {
+    return list === 'breaks' ? this.loops.at(-1) : this.loops.findLast(({ isSwitch }) => !isSwitch)
   }
 
   private popEnvs(from: number, to: number) {
@@ -1322,15 +1420,32 @@ class Compiler {
   }
 
   unary(node: UnaryExpression) {
-    const { argument } = node
-    if (node.operator === 'typeof' && this.isGlobalName(argument)) {
-      this.out.emit(Op.TYPEOF_GLOBAL, this.out.constant(argument.name))
+    const special = SPECIAL_UNARY[node.operator]
 
-      return
-    }
-    this.expression(argument)
+    if (special?.(this, node)) return
+    this.expression(node.argument)
     this.out.mark(node.loc)
     this.out.emit(UNARY_OPS[node.operator])
+
+    if (node.operator === 'void') this.out.emit(Op.UNDEFINED)
+  }
+
+  typeofGlobal({ argument }: UnaryExpression): boolean {
+    if (!this.isGlobalName(argument)) return false
+    this.out.emit(Op.TYPEOF_GLOBAL, this.out.constant(argument.name))
+
+    return true
+  }
+
+  // `delete o.k` / `delete o[k]` (D41; the parser accepts only member expressions not on `super`).
+  deleteExpression({ object, property, computed }: MemberExpression, loc: SourceLocation) {
+    this.expression(object as Expression)
+
+    if (computed) this.expression(property)
+    this.out.mark(loc)
+
+    if (computed) this.out.emit(Op.DELETE_INDEX)
+    else this.out.emit(Op.DELETE_PROP, this.out.constant((property as Identifier).name))
   }
 
   // `typeof x` of a name that is not lexical must not throw when it is undeclared.

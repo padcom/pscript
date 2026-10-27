@@ -40,6 +40,38 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | T4 | psc: whole-program checks | done (2026-10-27) |
 | T5 | psc: source maps | done (2026-10-27) — psc complete |
 | L1 | Destructuring and named parameters (D40) | done (2026-10-27) |
+| L2 | `do … while`, `switch`, `void`, `delete` (D41) | done (2026-10-27) |
+
+## L2 — `do … while`, `switch`, `void`, `delete` (D41)
+
+Requested together with generators and `async`/`await` (L3, L4) to close gaps with JavaScript. Design in
+`docs/PLAN.md` §4.4.15 (D41, R30), user docs in `docs/LANGUAGE.md` → Operators / Statements.
+
+- **Tokens**: `do switch case default delete void` moved from the future-reserved words to `KEYWORDS` (still usable
+  as property names).
+- **Token filter**: `switch` is a header keyword (its body brace is a statement brace, ASI inside). The `:` that ends
+  a `case`/`default` clause (not one closing a `?` of its expression, counted per bracket depth) counts as a statement
+  start, so `case 1: { … }` is a block and `case 1: function f() {}` a declaration. `do`: the filter remembers the
+  bracket depth of every pending `do`; the first `while` at that depth right after a `;` or `}` is the `do`'s
+  (`do while (a) b(); while (c)` works), its `(` is a `(do-while)` bracket, and after the matching `)` a `;` is
+  inserted unless one follows — also on the same line, as JS ASI does.
+- **Grammar/AST**: ESTree `DoWhileStatement`, `SwitchStatement`, `SwitchCase`; `void`/`delete` are prefix
+  operators of the unary level. `parse.ts` rejects two `default`s, `delete x` (identifier), `delete <non-member>` and
+  `delete super.x`.
+- **Compiler**: `do … while` is `top: body; next: test JUMP_IF_TRUE top`. `switch` keeps the discriminant on the
+  stack (`stackItems`), emits `DUP <test> EQ JUMP_IF_TRUE body_i` per case, then `JUMP default|end`, then the bodies
+  in source order. The clauses share one block scope, folded only when it declares no `let`/`const`/class/interface
+  (a jump can skip a declaration, so TDZ slots must be fresh each time). `Loop.isSwitch`: `break` targets the
+  innermost loop or switch, `continue` the innermost loop. `void x` is `x POP UNDEFINED`.
+- **Opcodes**: `DELETE_PROP k`, `DELETE_INDEX` (appended after `OBJECT_REST`); runtime `deleteProperty()` in
+  `properties.ts`; `HostAccess.delete` (interop: `Reflect.deleteProperty`, blocked keys throw).
+- **psc**: native `do … while` and `switch` (clauses indented one level, consequents two); `void` as is; `delete`
+  through a `$delete(object, key)` helper that enforces D41 by prototype (documented §11.4 difference: host objects
+  such as `Map` instances cannot lose properties in emitted code).
+
+Tests: `tests/unit/parser/control-flow.test.ts` (acorn comparisons including ASI, errors),
+`tests/unit/transpiler/emitter.test.ts`, programs `control-flow/{do-while,switch,switch-tdz,…}` and
+`operators/{void-delete,delete-pscript,delete-identifier,delete-literal}`.
 
 ## L1 — Destructuring and named parameters (D40)
 

@@ -80,6 +80,8 @@ function declarationsOf(node: Node | null): Identifier[] {
 // Names a node declares in the scope it opens (every declaration anywhere in a block counts).
 const SCOPE_NAMES: Partial<Record<Node['type'], ScopeNames>> = {
   BlockStatement: (node: Extract<Node, { type: 'BlockStatement' }>) => node.body.flatMap(declarationIds),
+  SwitchStatement: (node: Extract<Node, { type: 'SwitchStatement' }>) => node.cases.flatMap(({ consequent }) => consequent)
+    .flatMap(declarationIds),
   FunctionDeclaration: (node: Extract<Node, { type: 'FunctionDeclaration' }>) => paramNames(node.params),
   FunctionExpression: (node: Extract<Node, { type: 'FunctionExpression' }>) => paramNames(node.params),
   ArrowFunctionExpression: (node: Extract<Node, { type: 'ArrowFunctionExpression' }>) => paramNames(node.params),

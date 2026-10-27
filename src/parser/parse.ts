@@ -16,6 +16,8 @@ import type {
   Program,
   SourceLocation,
   Statement,
+  SwitchCase,
+  UnaryExpression,
   VariableDeclarator,
 } from './ast'
 import { builders, sourceLoc, type ForHeader, type FunctionHead, type FunctionType, type JisonLoc } from './ast-builders'
@@ -141,6 +143,12 @@ function checkTarget(errors: SyntaxErrorFactory, target: Expression, what: strin
   return target as Identifier | MemberExpression
 }
 
+function checkDeleteTarget(errors: SyntaxErrorFactory, argument: Expression) {
+  if (argument.type === 'Identifier') throw errors.at('Delete of an unqualified identifier is not allowed', argument.loc)
+  if (argument.type !== 'MemberExpression') throw errors.at('Invalid delete target: expected o.x or o[k]', argument.loc)
+  if (argument.object.type === 'Super') throw errors.at("Cannot delete a property of 'super'", argument.loc)
+}
+
 // `if (x) let y = 1` is not allowed (as in JS strict mode): a declaration needs a block.
 const SINGLE_STATEMENT_ERRORS: Partial<Record<Statement['type'], string>> = {
   VariableDeclaration: 'Lexical declaration cannot appear in a single-statement context',
@@ -154,6 +162,17 @@ function checkBody(errors: SyntaxErrorFactory, body: Statement): Statement {
   return body
 }
 
+// `delete` needs a property reference: `delete x` is an error, as in strict mode JS; so are `delete 1` and `delete f()`.
+function operatorBuilders(errors: SyntaxErrorFactory) {
+  return {
+    unary(operator: UnaryExpression['operator'], argument: Expression, loc: JisonLoc) {
+      if (operator === 'delete') checkDeleteTarget(errors, argument)
+
+      return builders.unary(operator, argument, loc)
+    },
+  }
+}
+
 // Bodies of if/while/for, checked by checkBody.
 function controlFlowBuilders(errors: SyntaxErrorFactory) {
   return {
@@ -162,6 +181,15 @@ function controlFlowBuilders(errors: SyntaxErrorFactory) {
     },
     whileStatement(test: Expression, body: Statement, loc: JisonLoc) {
       return builders.whileStatement(test, checkBody(errors, body), loc)
+    },
+    doWhileStatement(body: Statement, test: Expression, loc: JisonLoc) {
+      return builders.doWhileStatement(checkBody(errors, body), test, loc)
+    },
+    switchStatement(discriminant: Expression, cases: SwitchCase[], loc: JisonLoc) {
+      const defaults = cases.filter(clause => clause.test === null)
+      if (defaults.length > 1) throw errors.at('More than one default clause in switch statement', defaults[1].loc)
+
+      return builders.switchStatement(discriminant, cases, loc)
     },
     forStatement(header: ForHeader, body: Statement, loc: JisonLoc) {
       return builders.forStatement(header, checkBody(errors, body), loc)
@@ -321,6 +349,7 @@ function createYy(source: string, options: ParseOptions, tokens: TokenState) {
     ...patternHelpers(patterns),
     ...checkedBuilders(errors, patterns),
     ...controlFlowBuilders(errors),
+    ...operatorBuilders(errors),
     ...objectBuilders(errors),
     ...classBuilders(errors),
     ...modules,

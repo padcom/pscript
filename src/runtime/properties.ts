@@ -5,7 +5,7 @@ import { GlobalObject } from './global-object'
 import { find, functionProperty, onlyGetter, own, resolve } from './lookup'
 import { getClassMember, getInstanceMember, hasClassMember, setClassMember, setInstanceMember } from './members'
 import { hasProperty, isObject, kindOf, toString } from './operators'
-import { rangeError, typeError } from './script-error'
+import { rangeError, typeError, type ScriptError } from './script-error'
 import {
   Accessor,
   Array as ScriptArray,
@@ -315,4 +315,45 @@ export function hasPropertyIn(ctx: AccessContext, key: Value, object: Value): bo
   if (object instanceof HostObject) return object.host.has(object.target, propertyKey(key))
 
   return isClassObject(object) ? hasClassMember(ctx, object as ScriptObject, propertyKey(key)) : hasProperty(key, object)
+}
+
+const EXOTIC_KINDS: [abstract new (...args: any[]) => unknown, string][] = [
+  [ScriptArray, 'an array'],
+  [Class, 'a class'],
+  [ModuleNamespace, 'a module namespace'],
+  [GlobalObject, 'globalThis'],
+  [ScriptFunction, 'a function'],
+  [ScriptObject, 'an interface'],
+]
+
+// Only plain objects (and host objects) lose properties: class instances, arrays, functions, classes and namespaces
+// keep their shape (D36, D29), so `delete` on them is a TypeError rather than JS's silent hole or no-op.
+function objectKind(object: ScriptObject): string | null {
+  if (object.klass !== undefined) return 'a class instance'
+  if (object.constructor === ScriptObject) return object.frozen ? 'a frozen object' : null
+
+  return (EXOTIC_KINDS.find(([type]) => object instanceof type) as [unknown, string])[1]
+}
+
+function deleteTargetKind(object: Value): string | null {
+  if (!isObject(object)) return object === null || object === undefined ? String(object) : `a ${kindOf(object)}`
+
+  return objectKind(object)
+}
+
+/**
+ * `delete object[key]` (D41): removes an own property of a plain object (a missing one is fine) or of a host object.
+ *
+ * @param object the object
+ * @param key property name
+ * @returns true (host objects: whether the host allowed it)
+ * @throws {ScriptError} TypeError for anything that is not a plain, unfrozen object
+ */
+export function deleteProperty(object: Value, key: string): boolean {
+  if (object instanceof HostObject) return object.host.delete(object.target, key)
+
+  const kind = deleteTargetKind(object)
+  if (kind !== null) throw typeError(`Cannot delete property '${key}' of ${kind}`)
+
+  return (object as ScriptObject).props.delete(key) || true
 }

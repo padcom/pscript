@@ -9,7 +9,7 @@ describe('tokens', () => {
   })
 
   it('reserves the listed keywords', () => {
-    expect(KEYWORDS).toHaveLength(35)
+    expect(KEYWORDS).toHaveLength(41)
     expect(KEYWORDS).toContain('interface')
     expect(KEYWORDS).not.toContain('get')
   })

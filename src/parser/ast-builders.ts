@@ -14,6 +14,7 @@ import type {
   ClassDeclaration,
   ClassExpression,
   ContinueStatement,
+  DoWhileStatement,
   ForOfStatement,
   ForStatement,
   IfStatement,
@@ -40,6 +41,8 @@ import type {
   SourceLocation,
   Statement,
   Super,
+  SwitchCase,
+  SwitchStatement,
   TemplateElement,
   TemplateLiteral,
   ThisExpression,
@@ -152,6 +155,18 @@ export const builders = {
 
   whileStatement(test: Expression, body: Statement, loc: JisonLoc): WhileStatement {
     return { type: 'WhileStatement', test, body, loc: toLoc(loc) }
+  },
+
+  doWhileStatement(body: Statement, test: Expression, loc: JisonLoc): DoWhileStatement {
+    return { type: 'DoWhileStatement', body, test, loc: toLoc(loc) }
+  },
+
+  switchStatement(discriminant: Expression, cases: SwitchCase[], loc: JisonLoc): SwitchStatement {
+    return { type: 'SwitchStatement', discriminant, cases, loc: toLoc(loc) }
+  },
+
+  switchCase(test: Expression | null, consequent: Statement[], loc: JisonLoc): SwitchCase {
+    return { type: 'SwitchCase', test, consequent, loc: toLoc(loc) }
   },
 
   forStatement({ init, test, update }: ForHeader, body: Statement, loc: JisonLoc): ForStatement {

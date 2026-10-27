@@ -1,0 +1,8 @@
+instance TypeError: Cannot delete property 'x' of a class instance
+array TypeError: Cannot delete property '0' of an array
+array length TypeError: Cannot delete property 'length' of an array
+function TypeError: Cannot delete property 'name' of a function
+class TypeError: Cannot delete property 'name' of a class
+frozen TypeError: Cannot delete property 'a' of a frozen object
+null TypeError: Cannot delete property 'x' of null
+string TypeError: Cannot delete property 'length' of a string

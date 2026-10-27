@@ -177,3 +177,33 @@ describe('psc: errors', () => {
     expect(() => transpile('let arguments = 1', { fileName: 'a.pscript' })).toThrow(message)
   })
 })
+
+describe('psc: do … while, switch, void, delete (D41)', () => {
+  it('prints do … while', () => {
+    expect(js('let i = 0\ndo i++\nwhile (i < 3)')).toBe('let i = 0;\ndo {\n  i++;\n} while (i < 3);')
+  })
+
+  it('prints switch with its clauses indented', () => {
+    expect(js('let i = 0\nswitch (i) {\n  case 1:\n  case 2: i = 0; break\n  default: { i-- }\n}\nswitch (i) {}')).toBe([
+      'let i = 0;',
+      'switch (i) {',
+      '  case 1:',
+      '  case 2:',
+      '    i = 0;',
+      '    break;',
+      '  default:',
+      '    {',
+      '      i--;',
+      '    }',
+      '}',
+      'switch (i) {}',
+    ].join('\n'))
+  })
+
+  it('prints void and routes delete through a helper', () => {
+    const code = js('const o = { a: 1 }\nvoid -1\ndelete o.a\ndelete o["b"]')
+
+    expect(code).toContain('function $delete(object, key) {')
+    expect(code).toContain('void -1;\n$delete(o, \'a\');\n$delete(o, "b");')
+  })
+})

@@ -36,6 +36,8 @@ export interface HostAccess {
   set(target: object, key: string, value: Value): void
   /** `key in target` */
   has(target: object, key: string): boolean
+  /** `delete target[key]` (blocked keys throw) */
+  delete(target: object, key: string): boolean
   /** own enumerable string keys */
   keys(target: object): string[]
   /** iterates a host iterable, converting each value */

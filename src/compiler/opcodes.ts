@@ -88,6 +88,8 @@ export enum Op {
   ITER_REST,
   CHECK_PATTERN,
   OBJECT_REST,
+  DELETE_PROP,
+  DELETE_INDEX,
   THROW,
   TRY,
   END_TRY,
@@ -220,6 +222,8 @@ export const OPCODES: Readonly<Record<Op, OpcodeInfo>> = {
   [Op.ITER_REST]: info('', 'iter → arr'), // array pattern rest (D40)
   [Op.CHECK_PATTERN]: info('k', 'v → v'), // null/undefined TypeError; k (JSON { keys, path }) or -1: strict keys (D40)
   [Op.OBJECT_REST]: info('k', 'v → obj'), // object pattern rest without the keys in k (JSON array) (D40)
+  [Op.DELETE_PROP]: info('k', 'obj → bool'), // `delete o.k`: plain and host objects only, else TypeError (D41)
+  [Op.DELETE_INDEX]: info('', 'obj key → bool'), // `delete o[key]`
   [Op.THROW]: info('', 'v →'),
   [Op.TRY]: info('catchTarget finallyTarget', '→'), // push handler (-1 = none)
   [Op.END_TRY]: info('', '→'), // pop handler

@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D40).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D41).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -33,8 +33,7 @@ document describes the language as implemented; the design rationale is in `docs
   ends a statement when the line could end there and the next line cannot continue it. A line starting with `(` or
   `[` starts a new statement (no accidental calls or indexing of the previous line); a line starting with `.`, an
   operator, `,`, `?`, `:` or `=>` continues the previous one.
-- Reserved for the future (always errors as names): `var`, `switch`, `case`, `default`, `do`, `async`, `await`,
-  `yield`, `delete`, `void`, `enum`, `package`, `abstract`.
+- Reserved for the future (always errors as names): `var`, `async`, `await`, `yield`, `enum`, `package`, `abstract`.
 - `get`, `set`, `as`, `from`, `final` and `override` are keywords only where they have a meaning; elsewhere they are
   ordinary names. Keywords may be used as property names (`o.class`, `{ if: 1 }`).
 
@@ -78,17 +77,23 @@ Precedence and associativity follow JavaScript, with these rules:
 - Arithmetic and comparison operators never convert objects: `[] + 1`, `{} < 1` and `[1] * 2` are `TypeError`s.
   Primitives convert as in JavaScript (`'3' * 2` is `6`, `'a' + 1` is `'a1'`).
 - `-x ** 2` means `-(x ** 2)`.
-- `typeof`, `instanceof`, `in`, `!`, `?:`, `&&`, `||`, `??`, `++`, `--` and compound assignments (`+=`, `&&=`, `??=` …)
-  work as in JavaScript.
-- Not supported: bitwise operators, `void`, `delete`, comma expressions, spread and optional chaining.
+- `typeof`, `instanceof`, `in`, `!`, `?:`, `&&`, `||`, `??`, `++`, `--`, `void` and compound assignments (`+=`, `&&=`,
+  `??=` …) work as in JavaScript.
+- `delete o.x` / `delete o[k]` removes an own property of a **plain object** (or a host object) and gives `true`.
+  Class instances, arrays, functions, classes, frozen objects and primitives keep their shape: deleting from them is
+  a `TypeError` (use `splice` for arrays). `delete x` and `delete 1` are syntax errors.
+- Not supported: bitwise operators, comma expressions, spread and optional chaining.
 
 ## Statements
 
-- `if`/`else`, `while`, `for (init; test; update)` (with a fresh `let` binding per iteration), `for (const x of
-  iterable)`, `break`, `continue`, `return`, `throw`, `try`/`catch`/`finally`, blocks and expression statements.
+- `if`/`else`, `while`, `do … while`, `for (init; test; update)` (with a fresh `let` binding per iteration),
+  `for (const x of iterable)`, `switch`, `break`, `continue`, `return`, `throw`, `try`/`catch`/`finally`, blocks
+  and expression statements.
+- `switch` compares with `==` (which is strict), falls through until `break`, and may have its `default` anywhere.
+  Its clauses share one block scope; `continue` inside it continues the enclosing loop.
 - `for…of` iterates arrays (live: elements pushed during the loop are visited), strings (by UTF-16 code unit) and
   host iterables. The loop variable is a single name (no destructuring).
-- No `do…while`, `switch`, labels, `for…in` or `with`.
+- No labels, `for…in` or `with`.
 - A script's value is the value of the last expression statement executed (as with `eval`).
 
 ## Functions
@@ -288,7 +293,8 @@ Values cross the boundary by reference and identity is kept in both directions.
 | No interfaces | `interface`, `implements`, `instanceof Interface` |
 | `this.` required for members | Members usable without `this.` inside class bodies |
 | ASI quirks (`(`/`[` continue the previous line) | A line starting with `(` or `[` starts a new statement |
-| `var`, `switch`, `do…while`, labels, `with`, `delete`, `void` | Not available |
+| `delete` leaves holes in arrays, ignores frozen objects | `delete` works on plain objects only; elsewhere `TypeError` |
+| `var`, labels, `with`, `for…in` | Not available |
 | Bitwise operators, spread, optional chaining, computed keys | Not available (yet) |
 | Tagged templates | Not available |
 | Generators, `async`/`await`, Promises | Not available |

@@ -121,6 +121,8 @@ Statement
     { $$ = yy.returnStatement($2, @$) }
   | IfStatement
   | WhileStatement
+  | DoWhileStatement
+  | SwitchStatement
   | ForStatement
   | ForOfStatement
   | TryStatement
@@ -464,6 +466,32 @@ WhileStatement
     { $$ = yy.whileStatement($3, $5, @$) }
   ;
 
+/* The token filter ends the statement after the `)` (a `;` is inserted unless one follows), as JS ASI does. */
+DoWhileStatement
+  : DO Statement WHILE '(' Expression ')' ';'
+    { $$ = yy.doWhileStatement($2, $5, @$) }
+  ;
+
+/* The body brace follows a header `)`, so it is a BLOCK_LBRACE and ASI applies inside (§4.2.2). */
+SwitchStatement
+  : SWITCH '(' Expression ')' BLOCK_LBRACE CaseClauses '}'
+    { $$ = yy.switchStatement($3, $6, @$) }
+  ;
+
+CaseClauses
+  : /* empty */
+    { $$ = [] }
+  | CaseClauses CaseClause
+    { $$ = $1.concat([$2]) }
+  ;
+
+CaseClause
+  : CASE Expression ':' StatementList
+    { $$ = yy.switchCase($2, $4, @$) }
+  | DEFAULT ':' StatementList
+    { $$ = yy.switchCase(null, $3, @$) }
+  ;
+
 ForStatement
   : FOR '(' ForInit ';' OptionalExpression ';' OptionalExpression ')' Statement
     { $$ = yy.forStatement({ init: $3, test: $5, update: $7 }, $9, @$) }
@@ -651,6 +679,10 @@ UnaryExpression
     { $$ = yy.unary($1, $2, @$) }
   | TYPEOF UnaryExpression
     { $$ = yy.unary('typeof', $2, @$) }
+  | VOID UnaryExpression
+    { $$ = yy.unary('void', $2, @$) }
+  | DELETE UnaryExpression
+    { $$ = yy.unary('delete', $2, @$) }
   | '++' UnaryExpression
     { $$ = yy.update($1, true, $2, @$) }
   | '--' UnaryExpression

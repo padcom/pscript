@@ -21,6 +21,17 @@ const INTERFACE = `const $interface = (() => {
   return define;
 })();`
 
+const DELETE = `function $delete(object, key) {
+  const proto = Object(object) === object && typeof object !== 'function' ? Object.getPrototypeOf(object) : undefined;
+  if ((proto === Object.prototype || proto === null) && !Object.isFrozen(object)) return delete object[key];
+  const kind = object === null || object === undefined ? String(object)
+    : Array.isArray(object) ? 'an array'
+    : typeof object === 'function' ? (Function.prototype.toString.call(object).startsWith('class') ? 'a class' : 'a function')
+    : Object(object) !== object ? \`a \${typeof object}\`
+    : Object.isFrozen(object) && proto === Object.prototype ? 'a frozen object' : 'a class instance';
+  throw new TypeError(\`Cannot delete property '\${String(key)}' of \${kind}\`);
+}`
+
 /** The helpers, by the base name the emitter asks for. */
 const HELPERS: Record<string, (name: string) => string> = {
   // P6: `print` writes its arguments like `console.log`
@@ -29,6 +40,8 @@ const HELPERS: Record<string, (name: string) => string> = {
   typeof: name => `function ${name}(value) {\n  return value === null ? 'null' : typeof value;\n}`,
   // P8: interfaces are values for `instanceof` (D32); classes record what they implement
   interface: name => INTERFACE.replaceAll('$interface', name),
+  // D41: `delete` removes properties of plain objects only
+  delete: name => DELETE.replace('$delete', name),
 }
 
 // Every identifier name in a tree (also property keys: a safe over-approximation of the names in use).

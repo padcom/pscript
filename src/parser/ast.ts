@@ -114,8 +114,8 @@ export interface ExportSpecifier extends NodeBase {
 
 export type Statement
   = VariableDeclaration | FunctionDeclaration | ClassDeclaration | InterfaceDeclaration | ReturnStatement | IfStatement
-    | ForStatement | ForOfStatement | WhileStatement | BreakStatement | ContinueStatement
-    | ThrowStatement | TryStatement | BlockStatement | ExpressionStatement | EmptyStatement
+    | ForStatement | ForOfStatement | WhileStatement | DoWhileStatement | SwitchStatement | BreakStatement
+    | ContinueStatement | ThrowStatement | TryStatement | BlockStatement | ExpressionStatement | EmptyStatement
 
 export type Expression
   = Identifier | Literal | ArrayExpression | ObjectExpression | FunctionExpression
@@ -507,6 +507,42 @@ export interface WhileStatement extends NodeBase {
 }
 
 /**
+ * `do body while (test)`.
+ */
+export interface DoWhileStatement extends NodeBase {
+  /** node type */
+  type: 'DoWhileStatement'
+  /** loop body */
+  body: Statement
+  /** condition, tested after each iteration */
+  test: Expression
+}
+
+/**
+ * `switch (discriminant) { case …: … default: … }`.
+ */
+export interface SwitchStatement extends NodeBase {
+  /** node type */
+  type: 'SwitchStatement'
+  /** the value compared (with `==`, D1) against each case */
+  discriminant: Expression
+  /** the clauses in source order (at most one `default`) */
+  cases: SwitchCase[]
+}
+
+/**
+ * `case test: consequent` or `default: consequent`.
+ */
+export interface SwitchCase extends NodeBase {
+  /** node type */
+  type: 'SwitchCase'
+  /** the compared value; `null` for `default` */
+  test: Expression | null
+  /** statements, run until a `break` (falling through to the next clause) */
+  consequent: Statement[]
+}
+
+/**
  * `break`.
  */
 export interface BreakStatement extends NodeBase {
@@ -663,13 +699,13 @@ export interface Property extends NodeBase {
 }
 
 /**
- * `!x`, `-x`, `+x`, `typeof x`.
+ * `!x`, `-x`, `+x`, `typeof x`, `void x`, `delete o.x`.
  */
 export interface UnaryExpression extends NodeBase {
   /** node type */
   type: 'UnaryExpression'
   /** the operator */
-  operator: '!' | '-' | '+' | 'typeof'
+  operator: '!' | '-' | '+' | 'typeof' | 'void' | 'delete'
   /** always prefix */
   prefix: true
   /** the operand */
@@ -796,4 +832,4 @@ export type Node
   = Program | ModuleDeclaration | ImportSpecifier | ImportNamespaceSpecifier | ExportSpecifier
     | Statement | Expression | Pattern | Super | VariableDeclarator
     | ClassBody | MethodDefinition | PropertyDefinition | InterfaceMember
-    | CatchClause | TemplateElement | Property | AssignmentProperty
+    | CatchClause | SwitchCase | TemplateElement | Property | AssignmentProperty

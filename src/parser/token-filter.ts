@@ -28,8 +28,14 @@ interface Token {
   lineno: number
   /** whether a line terminator (or a multi-line comment) came before the token */
   afterNewline: boolean
-  /** a `)` that closes the condition of `if` / `while` / `for`: the statement continues */
+  /** a `)` that closes the condition of `if` / `while` / `for` / `switch` / `catch`: the statement continues */
   closesHeader?: boolean
+  /** a `)` that closes the condition of a `do … while`: the statement ends here, even without a newline */
+  closesDoWhile?: boolean
+  /** the `while` of a `do … while` */
+  endsDo?: boolean
+  /** the `:` of a `case` / `default` clause: a statement starts after it */
+  endsCase?: boolean
   /** a `}` that closes a block */
   closesBlock?: boolean
   /** a `}` that closes a block statement or a function declaration's body: no `;` needed after it */
@@ -54,8 +60,8 @@ const UNSUPPORTED_EXPORTS: Record<string, string> = {
  * bodies), `{block}` (bodies of function expressions, arrows and methods: the expression goes on
  * after the `}`) or `{object}` (object literals).
  */
-type Bracket = '(' | '(header)' | '[' | '{statement}' | '{block}' | '{object}' | '{template}' | '{class}' | '{class-statement}'
-  | '{specifiers}'
+type Bracket = '(' | '(header)' | '(do-while)' | '[' | '{statement}' | '{block}' | '{object}' | '{template}' | '{class}'
+  | '{class-statement}' | '{specifiers}'
 
 /** Brackets whose contents are statements or class members: ASI applies inside them. */
 const BLOCK_LIKE = new Set<Bracket | undefined>(['{statement}', '{block}', '{class}', '{class-statement}'])
@@ -95,10 +101,16 @@ const EMIT_HOOKS: Record<string, (filter: TokenFilter, token: Token) => void> = 
   ';': filter => filter.moduleEnd(),
   'STRING': filter => filter.moduleEnd(),
   '{': (filter, token) => filter.classifyBrace(token),
+  'DO': filter => filter.doStart(),
+  'CASE': filter => filter.caseStart(),
+  'DEFAULT': filter => filter.caseStart(),
+  '?': filter => filter.caseTernary(),
+  ':': (filter, token) => filter.caseColon(token),
+  'WHILE': (filter, token) => filter.whileStart(token),
 }
 
 /** A `{` after one of these opens a block statement. */
-const STATEMENT_BRACE_PRECEDERS = new Set([';', 'BLOCK_LBRACE', '}', 'ELSE', 'TRY', 'CATCH', 'FINALLY', 'EXPORT'])
+const STATEMENT_BRACE_PRECEDERS = new Set([';', 'BLOCK_LBRACE', '}', 'ELSE', 'TRY', 'CATCH', 'FINALLY', 'EXPORT', 'DO'])
 
 /** A `{` after one of these opens an import or export list (§4.2.5). */
 const SPECIFIER_BRACE_PRECEDERS = new Set(['IMPORT', 'EXPORT'])
@@ -129,7 +141,10 @@ const ARROW_STARTS: Record<string, (filter: TokenFilter, token: Token) => void> 
 }
 
 /** Keywords whose `( … )` is followed by a statement, so their `)` does not end one. */
-const HEADER_KEYWORDS = new Set(['IF', 'WHILE', 'FOR', 'CATCH'])
+const HEADER_KEYWORDS = new Set(['IF', 'WHILE', 'FOR', 'CATCH', 'SWITCH'])
+
+/** After the body of a `do`, its `while` follows the end of a statement. */
+const DO_BODY_ENDERS = new Set([';', '}'])
 
 // Inside `${ … }` (between TEMPLATE_HEAD and TEMPLATE_TAIL) there is no ASI (§4.2.6).
 const OPENERS: Record<string, Bracket> = { '(': '(', 'ARROW_LPAREN': '(', '[': '[', 'TEMPLATE_HEAD': '{template}' }
@@ -180,6 +195,11 @@ export class TokenFilter {
   private classIsStatement = false
   /** inside an `import` / `export … from` clause, where `as` and `from` are keywords (§4.2.5) */
   private moduleClause = false
+  /** bracket depths of the `do` statements whose `while` is still to come, innermost last */
+  private doDepths: number[] = []
+  /** bracket depth of a `case` / `default` whose `:` is still to come, or -1; and the open `?` of its expression */
+  private caseDepth = -1
+  private caseTernaries = 0
 
   constructor(private base: JisonLexer, private terminals: Record<number, string>, private state: TokenState) {
     this.options = base.options
@@ -197,6 +217,8 @@ export class TokenFilter {
     this.declarationDepth = -1
     this.classDepth = -1
     this.moduleClause = false
+    this.doDepths = []
+    this.caseDepth = -1
 
     return this
   }
@@ -393,7 +415,12 @@ export class TokenFilter {
   }
 
   private needsSemicolon(token: Token): boolean {
-    return this.prevEnds() && this.insertsBefore(token)
+    return this.prevEnds() && (this.endsDoWhile(token) || this.insertsBefore(token))
+  }
+
+  // `do … while (c) x()`: the `do` statement ends after its `)`, on the same line too (as in JS).
+  private endsDoWhile(token: Token): boolean {
+    return Boolean(this.prev?.closesDoWhile) && token.name !== ';'
   }
 
   private prevEnds(): boolean {
@@ -456,11 +483,47 @@ export class TokenFilter {
   private atStatementStart(): boolean {
     const { prev } = this
 
-    return prev === null || STATEMENT_BRACE_PRECEDERS.has(prev.name) || Boolean(prev.closesHeader)
+    return prev === null || STATEMENT_BRACE_PRECEDERS.has(prev.name) || Boolean(prev.closesHeader || prev.endsCase)
+  }
+
+  caseStart() {
+    this.caseDepth = this.brackets.length
+    this.caseTernaries = 0
+  }
+
+  // `case a ? b : c:` — the clause's `:` is the first one at its depth that does not close a `?`.
+  caseTernary() {
+    if (this.caseDepth === this.brackets.length) this.caseTernaries++
+  }
+
+  caseColon(token: Token) {
+    if (this.caseDepth !== this.brackets.length) return
+    if (this.caseTernaries > 0) {
+      this.caseTernaries--
+
+      return
+    }
+    token.endsCase = true
+    this.caseDepth = -1
   }
 
   functionStart(token: Token) {
     if (this.atStatementStart()) this.declarationStart(token)
+  }
+
+  doStart() {
+    this.doDepths.push(this.brackets.length)
+  }
+
+  // The `while` of a `do` comes at the `do`'s depth, after the body statement has ended (`do while (a) b(); while (c)`).
+  whileStart(token: Token) {
+    if (!this.endsDoBody()) return
+    this.doDepths.pop()
+    token.endsDo = true
+  }
+
+  private endsDoBody(): boolean {
+    return this.doDepths.at(-1) === this.brackets.length && DO_BODY_ENDERS.has(this.prev?.name ?? '')
   }
 
   finalStart(token: Token) {
@@ -540,12 +603,19 @@ export class TokenFilter {
 
   private close(token: Token, bracket: Bracket | undefined) {
     token.closesHeader = bracket === '(header)'
+    token.closesDoWhile = bracket === '(do-while)'
     token.closesBlock = BLOCK_LIKE.has(bracket)
     token.closesStatement = STATEMENT_BRACKETS.has(bracket)
   }
 
   private opener(name: string): Bracket {
-    return name === '(' && this.afterHeaderKeyword() ? '(header)' : OPENERS[name]
+    return name === '(' ? this.parenKind() : OPENERS[name]
+  }
+
+  private parenKind(): Bracket {
+    if (this.prev?.endsDo) return '(do-while)'
+
+    return this.afterHeaderKeyword() ? '(header)' : '('
   }
 
   private afterHeaderKeyword(): boolean {

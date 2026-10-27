@@ -1,0 +1,39 @@
+// do…while runs its body before testing the condition
+let i = 0
+do i++
+while (i < 3)
+print(i)
+
+do {
+  i--
+} while (i > 0) print('same line', i)
+
+let n = 10
+do {
+  n++
+  if (n == 12) continue
+  if (n > 13) break
+  print('n', n)
+} while (n < 20)
+print('n after', n)
+
+// the body runs once even when the condition is false
+let runs = 0
+do runs++; while (false)
+print('runs', runs)
+
+// nested, with an unbraced while loop as the body
+let a = 0
+let b = 0
+do while (b < 2) b++; while (++a < 2)
+print(a, b)
+
+// a closure in the body sees each iteration's binding
+const fns = []
+let k = 0
+do {
+  const captured = k
+  fns.push(() => captured)
+  k++
+} while (k < 3)
+print(fns.map(f => f()).join(','))

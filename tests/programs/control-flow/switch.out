@@ -1,0 +1,12 @@
+one two or three two or three the string one something else
+a b | b | c default | default
+two
+three (fallthrough)
+1,2
+one:1 after:1 other:2 after:2 one:4 after:4 other:5 after:5
+loop 1
+still in case
+hoisted
+block
+fell into default
+done

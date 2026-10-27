@@ -1,0 +1,95 @@
+// switch compares with == (strict), falls through until break, default may be anywhere
+function describe(x) {
+  switch (x) {
+    case 1:
+      return 'one'
+    case 2:
+    case 3:
+      return 'two or three'
+    default:
+      return 'something else'
+    case '1':
+      return 'the string one'
+  }
+}
+print(describe(1), describe(2), describe(3), describe('1'), describe(null))
+
+function fall(x) {
+  const seen = []
+  switch (x) {
+    case 'a':
+      seen.push('a')
+    case 'b':
+      seen.push('b')
+      break
+    case 'c':
+      seen.push('c')
+    default:
+      seen.push('default')
+  }
+  return seen.join(' ')
+}
+print(fall('a'), '|', fall('b'), '|', fall('c'), '|', fall('z'))
+
+// case values are expressions, evaluated in order until one matches
+let evaluated = []
+function value(v) { evaluated.push(v); return v }
+switch (2) {
+  case value(1): print('no')
+  case value(2): print('two')
+  case value(3): print('three (fallthrough)')
+}
+print(evaluated.join(','))
+
+// break leaves the switch; continue goes to the enclosing loop
+const out = []
+for (let i = 0; i < 6; i++) {
+  switch (i % 3) {
+    case 0:
+      continue
+    case 1:
+      out.push('one:' + i)
+      break
+    default:
+      out.push('other:' + i)
+  }
+  out.push('after:' + i)
+}
+print(out.join(' '))
+
+// break inside a loop inside a switch belongs to the loop
+switch (true) {
+  case true:
+    for (const x of [1, 2, 3]) {
+      if (x == 2) break
+      print('loop', x)
+    }
+    print('still in case')
+}
+
+// the clauses share one block scope; function declarations are hoisted to its start
+switch (1) {
+  case 0:
+    function helper() { return 'hoisted' }
+    let shared = 'zero'
+    break
+  case 1:
+    print(helper())
+}
+
+// cases with blocks, and a ternary in a case expression
+const flag = true
+switch ('x') {
+  case flag ? 'x' : 'y': {
+    const local = 'block'
+    print(local)
+  }
+  default: print('fell into default')
+}
+
+// no match and no default: nothing happens
+switch (42) {
+  case 1: print('never')
+}
+switch (42) {}
+print('done')

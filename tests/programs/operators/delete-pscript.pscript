@@ -1,0 +1,20 @@
+// @pscript-only: delete works on plain objects only (D41)
+class Point {
+  x = 1
+}
+function attempt(label, f) {
+  try {
+    print(label, f())
+  } catch (e) {
+    print(label, e.name + ': ' + e.message)
+  }
+}
+const p = new Point()
+attempt('instance', () => delete p.x)
+attempt('array', () => delete [1, 2][0])
+attempt('array length', () => delete [1, 2].length)
+attempt('function', () => delete attempt.name)
+attempt('class', () => delete Point.name)
+attempt('frozen', () => delete Object.freeze({ a: 1 }).a)
+attempt('null', () => delete null.x)
+attempt('string', () => delete 'abc'.length)

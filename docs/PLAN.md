@@ -98,6 +98,7 @@ Each feature in this document has one of these tags:
 | R25 | Implicit member access without `this.`, with the strict ambiguity rule (D33) | 4.5.8 |
 | R22 | Only classes are constructable; `instanceof` works only with classes and class-constructed objects (D25–D27) | 4.5.5 |
 | R29 | Destructuring: object and array patterns (nested, defaults, rest) in parameters, declarations, `for…of`, `catch` and assignments; object patterns in parameters are strict named parameters (D40) | 4.4.14 |
+| R30 | `do … while`, `switch`, `void` and `delete` (D41) | 4.4.15 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -117,7 +118,7 @@ Each feature in this document has one of these tags:
 
 ### 1.5 COULD (Phase 3+)
 
-Rest parameters and spread (`...`), optional chaining `?.`, computed keys `{ [k]: v }`, the comma operator in `for` headers, `do … while`, `switch`, `for … in`, bitwise operators, hex/binary/octal literals, ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, Map/Set, a CLI/REPL, a disassembler CLI, source maps for errors.
+Rest parameters and spread (`...`), optional chaining `?.`, computed keys `{ [k]: v }`, the comma operator in `for` headers, ~~`do … while`, `switch`~~ (done, D41), `for … in`, bitwise operators, hex/binary/octal literals, ~~destructuring~~ (done, D40), user-defined iterables, abstract classes (`abstract` is reserved), a structural `x implements I` operator (D32), `private constructor`, Map/Set, a CLI/REPL, a disassembler CLI, source maps for errors.
 
 ### 1.6 WON'T (v1)
 
@@ -202,6 +203,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D38 | Arity | **Strict, as in Java/C#/Delphi**: required parameters must be passed, extra arguments are an error (unless a rest parameter exists), defaults apply only to omitted arguments, required parameters come before optional ones. Checked at compile time when the callee is known, otherwise at class-definition time, link time or runtime. Function declarations become constant bindings; overrides keep their signature. Details in §4.4.13 | yes |
 | D39 | `typeof null` | **`'null'`** (JS gives `'object'`) | yes |
 | D40 | Destructuring and named parameters | **JavaScript destructuring, with strict named parameters**: object and array patterns everywhere a binding or assignment target is allowed. An object pattern inside a *parameter* rejects an argument object that has properties the pattern does not name (unless the pattern has `...rest`): at compile time for object literals passed to a known callee, otherwise at runtime. Details in §4.4.14 | yes |
+| D41 | `do … while`, `switch`, `void`, `delete` | **As in JavaScript, with two PScript rules**: `switch` compares with `==`, which is strict (D1), so it behaves like JS's `===` matching; `delete` removes own properties of **plain objects** (and host objects) only: on class instances, arrays, functions, classes, namespaces, frozen objects and primitives it is a `TypeError` (JS would leave a hole in an array or silently fail), and `delete x` / `delete 1` are `SyntaxError`s. `void x` gives `undefined`. Details in §4.4.15 | minor (delete errors) |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -343,13 +345,13 @@ A small local Vite plugin that turns `import parser from './pscript.jison'` into
 
 - `IDENT`: `[A-Za-z_$][A-Za-z0-9_$]*`. `$` is an ordinary identifier character with no special meaning (D30).
 - `#` is not a valid character: `SyntaxError: Unexpected '#'. Use the 'private' modifier for private members`.
-- Keywords (reserved): `let const function return if else for of while break continue class extends new this super true false null undefined typeof instanceof in throw try catch finally static import export public protected private interface implements`.
+- Keywords (reserved): `let const function return if else for of while break continue class extends new this super true false null undefined typeof instanceof in throw try catch finally static import export public protected private interface implements do switch case default delete void` (the last six since D41).
 - **Contextual keywords** (ordinary identifiers everywhere else; the token filter turns them into keyword tokens only in the positions below, §4.2.5):
   - `get`, `set`: in a class member-name or object-literal key position when followed by another member name → `GET` / `SET`. A method *named* `get` (`get() {}`) stays an identifier.
   - `as`: inside an import/export specifier list, or right after `import *` → `AS`.
   - `override`, `final`: in a class member-name position when followed by another modifier, `get`/`set`, or a member name → `OVERRIDE` / `FINAL`. `final` directly before `class` (at statement start, after `export`, or in expression position) → `FINAL`. Elsewhere both are ordinary identifiers (`let final = 1` works).
   - `from`: after the closing `}` of an import/export specifier list, or after `import * as IDENT` → `FROM`.
-- Reserved for the future (always a `SyntaxError` as an identifier): `var switch case default do async await yield delete void enum package abstract`.
+- Reserved for the future (always a `SyntaxError` as an identifier): `var async await yield enum package abstract`.
 - Keywords are allowed as **property names** after `.` and as object-literal or class-member keys. The token filter rewrites them to `IDENT` in those positions (§4.2.4).
 
 #### 4.1.3 Literals: booleans, null, undefined
@@ -696,7 +698,7 @@ As in JS. Falsy values: `false`, `0`, `-0`, `NaN`, `''`, `null`, `undefined`. Ev
 | 9 | `+ -` | left |
 | 10 | `* / %` | left |
 | 11 | `**` | right |
-| 12 | prefix `! - + typeof ++ --` | right |
+| 12 | prefix `! - + typeof void delete ++ --` | right |
 | 13 | postfix `++ --` | — |
 | 14 | `new`, call, `.`, `[]` | left |
 
@@ -714,6 +716,7 @@ Semantics:
 - `&& || ??`: short-circuit, returning an operand value as in JS. The compound forms `&&= ||= ??=` short-circuit as in JS.
 - `!`: boolean negation of truthiness. Unary `-`/`+`: `ToNumber`.
 - `typeof x` on an undeclared identifier returns `'undefined'` (no ReferenceError).
+- `void x` evaluates `x` and gives `undefined`; `delete o.k` / `delete o[k]` see §4.4.15 (D41).
 - `a instanceof T` (D26, D32): `T` must be a class (script, built-in or host) or an interface, otherwise `TypeError`. The result is `true` iff `a` was constructed from `T` or a subclass of `T`, or (for an interface) from a class that implements `T` (§4.5.5). Everything else is `false`, including primitives, object literals and arrays (use `Array.isArray`).
 - `k in o`: the property exists on `o` or its prototype chain. A non-object `o` → `TypeError`.
   - For an array, `k in arr` checks indices and `length`.
@@ -785,7 +788,8 @@ Semantics:
   - Anything else → `TypeError: x is not iterable`.
   - The binding is fresh per iteration.
   - COULD: a user-defined protocol (an object with an `iterator()` method returning `{ next() }`).
-- `break` and `continue` apply to the innermost loop. Labels are WON'T.
+- `do body while (test)` (D41): the body runs before the first test. ASI as in JS: the statement ends after the `)` even on the same line (`do x++; while (c) y()`).
+- `break` and `continue` apply to the innermost loop (`break` also leaves a `switch`, §4.4.15). Labels are WON'T.
 - `maxSteps` (default `Infinity`) counts executed instructions → `RangeError: Execution step limit exceeded`. The check costs one comparison per instruction; with `Infinity` the VM may skip counting entirely.
 
 #### 4.4.9 Exceptions (D3)
@@ -957,6 +961,35 @@ for (const [key, value] of Object.entries(map)) print(key, value)
 **Strict named parameters**: an object pattern that is a parameter, or nested inside one, accepts only the keys it names, unless it has a `...rest` element. Unknown keys of a **plain object** argument are an error: at compile time (`SyntaxError`) when the callee is known (D38's rule) and the argument is an object literal (nested literals are checked against nested patterns), otherwise at runtime (`TypeError`), with the message `Unknown named parameter 'z' of testme({x?, y?}?)` (a nested key is named by its path, `'pos.z'`). Class instances, arrays and host objects are not checked (class instances are closed anyway). Patterns in declarations, `for…of`, `catch` and assignments pick properties like JavaScript and never complain about extra keys.
 
 **Signatures**: patterns appear in signatures as `{x, y?}` / `[a, b?]` (`?` marks a default), e.g. `testme({x?, y?}?)`.
+
+#### 4.4.15 `do … while`, `switch`, `void` and `delete` (D41)
+
+```js
+do line = next() while (line != null)
+
+switch (command) {
+  case 'start':
+  case 'run':
+    start()
+    break
+  case 'stop':
+    stop()
+    break
+  default:
+    print(`unknown: ${command}`)
+}
+
+delete options.verbose      // plain objects only
+const ignored = void f()    // undefined
+```
+
+**`switch`** works as in JavaScript: the discriminant is evaluated once, then the `case` expressions in source order until one is `==` (strict, D1) to it; execution starts at that clause (or at `default`, wherever it is, when none matches) and falls through the following clauses until `break`. `continue` inside a `switch` belongs to the enclosing loop (without one it is a `SyntaxError`). The clauses share one block scope: a `let` declared in one clause is visible (and in its TDZ) in the others; function declarations are hoisted to the start of the block. More than one `default` is a `SyntaxError`. The completion value (§4.4.10) is reset on entry, like other statements.
+
+**`do … while`** runs the body, then tests; `continue` jumps to the test. The body is a single statement (a declaration needs a block). ASI ends the statement after its `)` even without a newline, as in JS.
+
+**`void x`** evaluates `x` and gives `undefined` (the "missing property" value of JS; D37's `null` rules are not involved).
+
+**`delete o.k` / `delete o[k]`** removes an own property and gives `true` (also when there is no such property). Only **plain objects** (object literals, `Object.create`, `JSON.parse` results, …) and host objects (through the host, `Reflect.deleteProperty`) can lose properties. Everything else keeps its shape, so `delete` is a **`TypeError`**: class instances (D36: their members are declared), arrays (no holes, §4.4.7; use `splice`), functions and classes (D29), interfaces, module namespaces, `globalThis`, frozen objects, primitives, `null` and `undefined` (`Cannot delete property 'x' of a class instance`). The operand must be a member expression: `delete x` (`Delete of an unqualified identifier is not allowed`, as in strict mode), `delete 1`, `delete f()` and `delete super.x` are `SyntaxError`s.
 
 ### 4.5 Classes, access control and interfaces (R12, R24)
 
@@ -1595,8 +1628,8 @@ export interface ExportSpecifier extends NodeBase { type: 'ExportSpecifier', loc
 
 export type Statement =
   | VariableDeclaration | FunctionDeclaration | ClassDeclaration | InterfaceDeclaration | ReturnStatement | IfStatement
-  | ForStatement | ForOfStatement | WhileStatement | BreakStatement | ContinueStatement
-  | ThrowStatement | TryStatement | BlockStatement | ExpressionStatement | EmptyStatement
+  | ForStatement | ForOfStatement | WhileStatement | DoWhileStatement | SwitchStatement | BreakStatement
+  | ContinueStatement | ThrowStatement | TryStatement | BlockStatement | ExpressionStatement | EmptyStatement
 
 export type Expression =
   | Identifier | Literal | ArrayExpression | ObjectExpression | FunctionExpression
@@ -1700,6 +1733,8 @@ export interface MemberExpression extends NodeBase {
   computed: boolean, optional: false
 }
 ```
+
+D41 adds `DoWhileStatement { body, test }`, `SwitchStatement { discriminant, cases: SwitchCase[] }`, `SwitchCase { test: Expression | null, consequent: Statement[] }` and the unary operators `'void'` and `'delete'` (ESTree shapes).
 
 COULD extensions (`SpreadElement`, `ChainExpression`, `SequenceExpression`) must be additive.
 
@@ -1847,6 +1882,8 @@ export interface ModuleRecord {
 | `ITER_REST` | — | iter → arr | array pattern rest: the remaining values (D40) |
 | `CHECK_PATTERN` | k \| -1 | v → v | object patterns: TypeError for null/undefined; with k (JSON `{ keys, path }`), unknown keys of a plain object are a TypeError (strict named parameters, D40) |
 | `OBJECT_REST` | k | v → obj | object pattern rest: a plain object with the own public properties not listed in k (JSON array of keys) (D40) |
+| `DELETE_PROP` | k | obj → bool | `delete obj.k` (D41): plain and host objects only, otherwise `TypeError` |
+| `DELETE_INDEX` | — | obj key → bool | `delete obj[key]` (D41) |
 | `THROW` | — | v → | |
 | `TRY` | catchTarget finallyTarget | → | push handler (−1 = none); records stack height and env depth |
 | `END_TRY` | — | → | pop handler |
@@ -3201,7 +3238,9 @@ Programs that rely on these behave differently when compiled with `psc` (P5):
 - named parameters (D40) are checked only at compile time (object literals passed to known functions, also
   imported ones); at runtime a destructured parameter ignores unknown keys, and a parameter pattern's default also
   applies when `undefined` is passed;
-- runtime errors are native JS errors (`AccessError` does not exist; access violations on `#x` are `TypeError`s).
+- runtime errors are native JS errors (`AccessError` does not exist; access violations on `#x` are `TypeError`s);
+- `delete` (D41) goes through a helper that allows plain objects only (by prototype: `Object.prototype` or `null`), so
+  host objects such as a `Map` instance cannot lose properties in emitted code.
 
 ### 11.5 Testing
 

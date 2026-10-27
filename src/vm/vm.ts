@@ -22,6 +22,7 @@ import { DONE, getIterator, type ScriptIterator } from '@/runtime/iterators'
 import {
   defineAccessor,
   defineProperty,
+  deleteProperty,
   getArrayIndex,
   getProperty,
   hasPropertyIn,
@@ -1044,6 +1045,13 @@ export class VM implements AccessContext {
           break
         }
         case Op.OBJECT_REST: stack.push(objectRest(this, stack.pop(), constants[code[ip++]] as string)); break
+        case Op.DELETE_PROP:
+          stack[stack.length - 1] = deleteProperty(stack[stack.length - 1], constants[code[ip++]] as string)
+          break
+        case Op.DELETE_INDEX:
+          b = stack.pop()
+          stack[stack.length - 1] = deleteProperty(stack[stack.length - 1], propertyKey(b))
+          break
         case Op.DEFINE_GETTER:
           b = stack.pop()
           defineAccessor(stack[stack.length - 1] as ScriptObject, constants[code[ip++]] as string, 'get', b as ScriptFunction)
