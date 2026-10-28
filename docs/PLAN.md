@@ -120,6 +120,7 @@ Each feature in this document has one of these tags:
 | R49 | `private` / `protected` constructors (D60) | 4.5.1 |
 | R50 | Disassembler in the CLI (D61) | 5.8 |
 | R51 | CLI commands: `pscript transpile` (D62) | 11 |
+| R52 | Hashbang lines and executable scripts (D63) | 4.1.1 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -246,6 +247,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D60 | `private` / `protected` constructors | **TypeScript-like**: an access modifier on a constructor restricts `new C()` to code inside `C` (including nested classes); a `private` constructor's class can only be extended by classes nested in it, a `protected` one by any class. Early `SyntaxError` for a class declared in scope, `TypeError` at runtime otherwise. Details in §4.5.1 | no (new) |
 | D61 | Disassembler CLI | `pscript -d, --disassemble [file]` prints the bytecode listing of a file (or stdin) instead of running it, compiled as a module when it imports or exports. `disassemble(compiled, { locations: true })` annotates each instruction where a new source position starts with `@ line:column`; listings now include class constructors and field initialisers and name class templates (`<class A>`). | no |
 | D62 | CLI commands | **The first argument of `pscript` is a file only when it ends in `.pscript` or `.psc`**; any other argument that is not an option names a command, and an unknown one is an error (`unknown command 'x'`). The first command is `pscript transpile [options] <file\|directory>...`, the same as `psc` (which stays). Running an extensionless file (`pscript main` for `main.pscript`) is no longer possible; module imports still resolve without extensions (D10). | yes (CLI only) |
+| D63 | Hashbang lines, executable scripts | **As in JavaScript**: a `#!` line at the very start of a script or module is a comment, so `#!/usr/bin/env pscript` files can be made executable. `psc` drops the line from the emitted code. The CLI also treats an argument containing a `/` as a file whatever its extension (refines D62), because the OS passes such a script as a path (`./tool`, `bin/tool`, or its full path when found on `PATH`). Details in §4.1.1 | no |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".
@@ -381,6 +383,7 @@ A small local Vite plugin that turns `import parser from './pscript.jison'` into
 - Line terminators: `\n`, `\r\n`, `\r`, U+2028, U+2029. The lexer emits a **`NEWLINE`** token. The token filter consumes it (§4.2) and the parser never sees it.
 - `// …` to end of line.
 - `/* … */`, non-nesting. If a block comment contains a line terminator, it counts as a NEWLINE for ASI.
+- A hashbang `#!…` at offset 0 (D63) runs to the end of the line and is skipped like `// …`; `#` anywhere else (even after a BOM or whitespace) stays an error.
 - Unterminated block comment → `SyntaxError`.
 
 #### 4.1.2 Identifiers, private names, keywords

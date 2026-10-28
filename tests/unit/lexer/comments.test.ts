@@ -24,6 +24,33 @@ describe('comments', () => {
   })
 })
 
+describe('hashbang', () => {
+  it.each([
+    ['#!/usr/bin/env pscript\na', ['IDENT', ';', 'EOF']],
+    ['#!/usr/bin/env pscript', ['EOF']],
+    ['#! anything at all\r\n1 + 2', ['NUMBER', '+', 'NUMBER', ';', 'EOF']],
+  ])('skips %j', (source, tokens) => {
+    expect(tokenize(source)).toEqual(tokens)
+  })
+
+  it('keeps the locations of the following lines', () => {
+    expect(parse('#!/usr/bin/env pscript\nlet a = 1').body[0].loc.start).toEqual({ line: 2, column: 1 })
+  })
+
+  it('works in modules', () => {
+    expect(parse('#!/usr/bin/env pscript\nexport let a = 1', { goal: 'module' }).body[0].type)
+      .toBe('ExportNamedDeclaration')
+  })
+
+  it.each([
+    [' #!/usr/bin/env pscript', 2],
+    ['\n#!/usr/bin/env pscript', 1],
+    ['1\n#!/usr/bin/env pscript', 1],
+  ])('is only allowed at the very start: %j', (source, column) => {
+    expect(() => parse(source)).toThrow(expect.objectContaining({ reason: expect.stringContaining("Unexpected '#'"), column }))
+  })
+})
+
 describe('whitespace and line terminators', () => {
   it.each([
     ['a\r\nb', 2],

@@ -2,7 +2,7 @@
 
 PScript is a strict subset-and-variant of JavaScript. Programs look like JavaScript, many simple JavaScript programs
 run unchanged, and everything that differs is either removed or made an error instead of a silent surprise. This
-document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D62).
+document describes the language as implemented; the design rationale is in `docs/PLAN.md` (decisions D1–D63).
 
 - [Lexical structure](#lexical-structure)
 - [Values and types](#values-and-types)
@@ -25,7 +25,8 @@ document describes the language as implemented; the design rationale is in `docs
 ## Lexical structure
 
 - Source is Unicode text; identifiers are ASCII letters, digits, `_` and `$` (not starting with a digit).
-- Comments: `// line` and `/* block */`.
+- Comments: `// line` and `/* block */`. A `#!` line at the very start of a file (`#!/usr/bin/env pscript`) is
+  skipped, as in JavaScript.
 - Numbers: decimal (`1`, `1.5`, `.5`, `1e3`), `0x`, `0o` and `0b`. Legacy octal (`010`) and numeric separators
   (`1_000`) are syntax errors.
 - Strings: `'…'` and `"…"` with the JavaScript escapes (`\n`, `\t`, `\xHH`, `\uHHHH`, `\u{…}`). Octal escapes are

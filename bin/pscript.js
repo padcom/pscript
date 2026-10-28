@@ -22,9 +22,9 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
 const USAGE = `Usage: pscript [options] [file]
        pscript <command> [arguments]
 
-Runs a PScript file (.pscript or .psc; as a module when it imports or exports), a script given with -e, or the
-script on stdin. Without a file and with a terminal on stdin, starts an interactive REPL. An argument without a
-PScript extension is a command.
+Runs a PScript file (as a module when it imports or exports), a script given with -e, or the script on stdin.
+Without a file and with a terminal on stdin, starts an interactive REPL. A file is an argument ending in .pscript
+or .psc or containing a '/' (./tool, so that #!/usr/bin/env pscript scripts run); any other argument is a command.
 
 Commands:
   transpile                   compile PScript files to JavaScript (the same as psc; pscript transpile --help)
@@ -186,10 +186,14 @@ function lookup(arg) {
   return Object.hasOwn(table, arg) ? table[arg] : undefined
 }
 
-// An argument without a PScript extension is a command (D62).
+// An argument with a PScript extension or a '/' is a file (D62, D63: hashbang scripts), anything else a command.
+function isFileArg(arg) {
+  return isPScriptFile(arg) || arg.includes('/')
+}
+
 function commandFor(arg) {
   if (arg === undefined) return process.stdin.isTTY ? startRepl : runStdin
-  if (isPScriptFile(arg)) return runFile
+  if (isFileArg(arg)) return runFile
 
   return lookup(arg)
 }

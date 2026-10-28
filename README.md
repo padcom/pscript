@@ -52,8 +52,9 @@ npx @padcom/pscript -d main.pscript    # print the bytecode instead of running i
 echo 'print("hi")' | npx @padcom/pscript
 ```
 
-An argument without a `.pscript` or `.psc` extension is a command (`pscript transpile …`, below); anything else is
-an `unknown command` error. Modules are loaded from the file system: `./` and `../` resolve against the importing file, trying the exact path,
+An argument ending in `.pscript` or `.psc`, or containing a `/`, is a file; any other argument is a command
+(`pscript transpile …`, below), and an unknown one is an error. So a file starting with `#!/usr/bin/env pscript`
+can be made executable (`chmod +x bin/tool`) and run as `bin/tool`, whatever its name. Modules are loaded from the file system: `./` and `../` resolve against the importing file, trying the exact path,
 then `.pscript`, then `.psc`. Files may use top-level `await`. Errors go to stderr and set the exit code to 1.
 
 `pscript transpile` (also installed as `psc`) compiles PScript to JavaScript ES modules (see

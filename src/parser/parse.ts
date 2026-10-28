@@ -413,6 +413,12 @@ function createYy(source: string, options: ParseOptions, tokens: TokenState) {
   }
 }
 
+// A hashbang line (`#!…`) at the very start of the source is a line comment (D63). Replacing `#!` with `//` keeps
+// every offset, so locations and excerpts (which use the original source) stay right.
+function hideHashbang(source: string): string {
+  return source.startsWith('#!') ? `//${source.slice(2)}` : source
+}
+
 function createParser(source: string, options: ParseOptions) {
   const parser = new pscriptParser.Parser()
   const errors = new SyntaxErrorFactory(source, options.fileName)
@@ -434,7 +440,7 @@ export function tokenize(source: string): string[] {
   const { lexer, yy } = createParser(source, {})
   const names: string[] = []
 
-  lexer.setInput(source, yy)
+  lexer.setInput(hideHashbang(source), yy)
 
   for (let name = ''; name !== 'EOF';) names.push(name = String(lexer.lex()))
 
@@ -450,5 +456,5 @@ export function tokenize(source: string): string[] {
  * @throws {PScriptSyntaxError} on any lexical or syntax error
  */
 export function parse(source: string, options: ParseOptions = {}): Program {
-  return createParser(source, options).parse(source)
+  return createParser(source, options).parse(hideHashbang(source))
 }

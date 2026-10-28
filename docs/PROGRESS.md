@@ -62,6 +62,15 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L21 | `private` / `protected` constructors (D60) | done (2026-10-28) |
 | L22 | Disassembler CLI (D61) | done (2026-10-28) — COULD list complete |
 | L23 | CLI commands, `pscript transpile` (D62) | done (2026-10-28) |
+| L24 | Hashbang lines, executable scripts (D63) | done (2026-10-28) |
+
+## L24 — Hashbang lines, executable scripts (D63)
+
+- **Parser**: `parse()` / `tokenize()` turn a leading `#!` into `//` (`hideHashbang`, same offsets), so the
+  interpreter, compiler and `psc` all accept it; `psc` emits no comments, so the line is dropped.
+- **CLI**: arguments containing `/` are files (`isFileArg` in `bin/pscript.js`). Checked by hand with executable
+  extensionless scripts, run as `bin/tool`, `./tool` and through `PATH`.
+- **Tests**: `tests/unit/lexer/comments.test.ts`, `tests/unit/transpiler/program.test.ts`.
 
 ## L23 — CLI commands, `pscript transpile` (D62)
 

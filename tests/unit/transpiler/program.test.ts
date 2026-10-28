@@ -99,3 +99,12 @@ describe('psc programs: imported classes', () => {
     })).toBe('no error')
   })
 })
+
+describe('psc programs: hashbang lines (D63)', () => {
+  it('drops them from the emitted code', () => {
+    const emitted = code({ 'main.pscript': '#!/usr/bin/env pscript\nexport let a = 1' })
+
+    expect(emitted).not.toContain('#!')
+    expect(emitted).toContain('export let a = 1')
+  })
+})
