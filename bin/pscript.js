@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// The PScript command line (H5): runs a file, an inline script or stdin, or starts a REPL. Node-only, so it lives
-// outside `src/` and the library stays browser-safe.
+// The PScript command line (H5): runs a file, an inline script or stdin, starts a REPL, or runs a command (D62).
+// Node-only, so it lives outside `src/` and the library stays browser-safe.
 import { readFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import process from 'node:process'
@@ -14,14 +14,20 @@ import {
   disassemble,
   parse,
 } from '../dist/index.js'
-import { findFile, isPath } from './files.js'
+import { findFile, isPScriptFile, isPath } from './files.js'
+import { transpile } from './transpile.js'
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 
 const USAGE = `Usage: pscript [options] [file]
+       pscript <command> [arguments]
 
-Runs a PScript file (as a module when it imports or exports), a script given with -e, or the script on stdin.
-Without a file and with a terminal on stdin, starts an interactive REPL.
+Runs a PScript file (.pscript or .psc; as a module when it imports or exports), a script given with -e, or the
+script on stdin. Without a file and with a terminal on stdin, starts an interactive REPL. An argument without a
+PScript extension is a command.
+
+Commands:
+  transpile                   compile PScript files to JavaScript (the same as psc; pscript transpile --help)
 
 Options:
   -e, --eval <script>         run the script
@@ -158,6 +164,10 @@ function startRepl() {
 }
 /* eslint-enable promise/prefer-await-to-callbacks */
 
+const COMMANDS = {
+  transpile: (name, ...args) => transpile(args, 'pscript transpile'),
+}
+
 const OPTIONS = {
   '-h': () => console.log(USAGE),
   '--help': () => console.log(USAGE),
@@ -169,16 +179,28 @@ const OPTIONS = {
   '--disassemble': runDisassemble,
 }
 
+// Options start with '-', commands do not.
+function lookup(arg) {
+  const table = arg.startsWith('-') ? OPTIONS : COMMANDS
+
+  return Object.hasOwn(table, arg) ? table[arg] : undefined
+}
+
+// An argument without a PScript extension is a command (D62).
 function commandFor(arg) {
   if (arg === undefined) return process.stdin.isTTY ? startRepl : runStdin
-  if (!arg.startsWith('-')) return runFile
+  if (isPScriptFile(arg)) return runFile
 
-  return OPTIONS[arg]
+  return lookup(arg)
 }
 
 async function main(args) {
   const command = commandFor(args[0])
-  if (command === undefined) throw new Error(`unknown option '${args[0]}'\n\n${USAGE}`)
+  if (command === undefined) {
+    const kind = args[0].startsWith('-') ? 'option' : 'command'
+
+    throw new Error(`unknown ${kind} '${args[0]}'\n\n${USAGE}`)
+  }
 
   await command(...args)
 }

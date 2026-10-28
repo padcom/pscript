@@ -119,6 +119,7 @@ Each feature in this document has one of these tags:
 | R48 | Structural `x implements I` operator (D59) | 4.5.7 |
 | R49 | `private` / `protected` constructors (D60) | 4.5.1 |
 | R50 | Disassembler in the CLI (D61) | 5.8 |
+| R51 | CLI commands: `pscript transpile` (D62) | 11 |
 
 ### 1.4 SHOULD (planned for v1)
 
@@ -244,6 +245,7 @@ The owner reviewed every decision. The rest of this document applies them. In th
 | D59 | Structural `x implements I` | **A second, structural check next to the nominal `instanceof` (D32)**: `x implements I` (relational precedence, like `instanceof`) is `true` when `x` is an object that currently has every member `I` (and its parents) requires — a public method with exactly the required parameters (D38) for a method requirement, a readable property (data or getter) for `get`, a writable one (setter, or data on a non-frozen object) for `set`, both for a property — whatever its class declares. Works for object literals, class instances (public members only) and host objects; instances of classes that nominally implement `I` are accepted at once; primitives give `false`. A right-hand side that is not an interface is a `TypeError`. Details in §4.5.7 | no (new) |
 | D60 | `private` / `protected` constructors | **TypeScript-like**: an access modifier on a constructor restricts `new C()` to code inside `C` (including nested classes); a `private` constructor's class can only be extended by classes nested in it, a `protected` one by any class. Early `SyntaxError` for a class declared in scope, `TypeError` at runtime otherwise. Details in §4.5.1 | no (new) |
 | D61 | Disassembler CLI | `pscript -d, --disassemble [file]` prints the bytecode listing of a file (or stdin) instead of running it, compiled as a module when it imports or exports. `disassemble(compiled, { locations: true })` annotates each instruction where a new source position starts with `@ line:column`; listings now include class constructors and field initialisers and name class templates (`<class A>`). | no |
+| D62 | CLI commands | **The first argument of `pscript` is a file only when it ends in `.pscript` or `.psc`**; any other argument that is not an option names a command, and an unknown one is an error (`unknown command 'x'`). The first command is `pscript transpile [options] <file\|directory>...`, the same as `psc` (which stays). Running an extensionless file (`pscript main` for `main.pscript`) is no longer possible; module imports still resolve without extensions (D10). | yes (CLI only) |
 | D29 | Classes are sealed after definition | **A class's methods, accessors and prototype cannot be changed after the class is defined.** There is no script-visible `prototype` property, classes are non-extensible (static *fields* stay writable), and instances never gain properties beyond their declared members (D36). This turns method lookup into a per-class flattened method table (§5.6.7). Details in §4.5.6 | yes |
 
 Phase 0 also fixes the `package.json` description typo: "inspierd" → "inspired".

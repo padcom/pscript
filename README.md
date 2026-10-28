@@ -46,21 +46,23 @@ The full language reference, including a list of differences from JavaScript, is
 
 ```sh
 npx @padcom/pscript                    # interactive REPL (multi-line input, .help, .exit)
-npx @padcom/pscript main.pscript       # run a file; a file with imports or exports runs as a module
+npx @padcom/pscript main.pscript       # run a .pscript/.psc file; with imports or exports it runs as a module
 npx @padcom/pscript -e 'print(1 + 2)'  # run an inline script
 npx @padcom/pscript -d main.pscript    # print the bytecode instead of running it
 echo 'print("hi")' | npx @padcom/pscript
 ```
 
-Modules are loaded from the file system: `./` and `../` resolve against the importing file, trying the exact path,
+An argument without a `.pscript` or `.psc` extension is a command (`pscript transpile …`, below); anything else is
+an `unknown command` error. Modules are loaded from the file system: `./` and `../` resolve against the importing file, trying the exact path,
 then `.pscript`, then `.psc`. Files may use top-level `await`. Errors go to stderr and set the exit code to 1.
 
-`psc` compiles PScript to JavaScript ES modules (see [Transpiling to JavaScript](#transpiling-to-javascript-experimental)):
+`pscript transpile` (also installed as `psc`) compiles PScript to JavaScript ES modules (see
+[Transpiling to JavaScript](#transpiling-to-javascript-experimental)):
 
 ```sh
-npx -p @padcom/pscript psc main.pscript       # writes main.js, and a .js for every PScript file main imports
-npx -p @padcom/pscript psc -o dist src/       # every .pscript/.psc file under src/, laid out the same under dist/
-npx -p @padcom/pscript psc --source-map src/  # also write main.js.map …; --inline-source-map embeds them
+npx @padcom/pscript transpile main.pscript       # writes main.js, and a .js for every PScript file main imports
+npx @padcom/pscript transpile -o dist src/       # every .pscript/.psc file under src/, laid out the same under dist/
+npx @padcom/pscript transpile --source-map src/  # also write main.js.map …; --inline-source-map embeds them
 ```
 
 All files of a run are checked together as one program. Nothing is written when there is an error. With source maps,
@@ -159,7 +161,7 @@ values you give it can do. Only pass in what scripts are meant to use.
 | `src/modules/` | module loader and registry |
 | `src/transpiler/` | `psc`: the PScript-to-JavaScript transpiler |
 | `bin/pscript.js` | the command line and REPL (Node-only, outside the browser-safe library) |
-| `bin/psc.js` | the transpiler's command line |
+| `bin/transpile.js` | the transpiler's command line (`pscript transpile`, and `bin/psc.js` for `psc`) |
 | `tests/` | unit tests, program corpus (`tests/programs`, `tests/modules`), Node and acorn oracles |
 | `docs/PLAN.md` | the design: decisions, grammar, contracts, milestones |
 | `docs/PROGRESS.md` | implementation log per milestone |

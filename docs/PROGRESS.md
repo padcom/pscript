@@ -61,6 +61,13 @@ Tracks the sequential milestone path (`docs/PLAN.md` §7.12). Each session reads
 | L20 | Structural `x implements I` (D59) | done (2026-10-27) |
 | L21 | `private` / `protected` constructors (D60) | done (2026-10-28) |
 | L22 | Disassembler CLI (D61) | done (2026-10-28) — COULD list complete |
+| L23 | CLI commands, `pscript transpile` (D62) | done (2026-10-28) |
+
+## L23 — CLI commands, `pscript transpile` (D62)
+
+- **CLI**: `bin/pscript.js` runs only `.pscript`/`.psc` files; other arguments are commands (`COMMANDS`), unknown
+  ones an `unknown command` error. `bin/psc.js` moved to `bin/transpile.js` (`transpile(args, name)`), shared by
+  `psc` and `pscript transpile`. Manually checked like the rest of the CLI.
 
 ## L22 — Disassembler CLI (D61)
 
